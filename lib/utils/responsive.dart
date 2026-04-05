@@ -217,10 +217,10 @@ class Responsive {
 
   /// Camera preview padding for landscape tablets
   static EdgeInsets cameraPreviewPadding(BuildContext context) {
+    final size = MediaQuery.sizeOf(context);
     if (isLandscapeTablet(context)) {
-      final size = MediaQuery.sizeOf(context);
       final horizontal = (size.width * 0.018).clamp(10.0, 18.0).toDouble();
-      final vertical = (size.height * 0.014).clamp(8.0, 14.0).toDouble();
+      final vertical = (size.height * 0.008).clamp(4.0, 8.0).toDouble();
       return EdgeInsets.only(
         top: vertical,
         left: horizontal,
@@ -228,22 +228,38 @@ class Responsive {
         bottom: vertical,
       );
     }
-    return EdgeInsets.all(pagePadding(context));
+    return EdgeInsets.symmetric(
+      horizontal: pagePadding(context),
+      vertical: 16,
+    );
+  }
+
+  /// Camera preview viewport fitted inside an outer frame.
+  static Rect cameraPreviewViewport(BuildContext context, Rect redBox) {
+    final size = MediaQuery.sizeOf(context);
+    if (size.width <= 0 || size.height <= 0) {
+      return redBox;
+    }
+
+    final scaleX = redBox.width / size.width;
+    final scaleY = redBox.height / size.height;
+    final scale = scaleX < scaleY ? scaleX : scaleY;
+
+    final width = size.width * scale;
+    final height = size.height * scale;
+    final offsetX = redBox.left + (redBox.width - width) / 2;
+    final offsetY = redBox.top + (redBox.height - height) / 2;
+
+    return Rect.fromLTWH(offsetX, offsetY, width, height);
   }
 
   /// Camera media window constraints
   static BoxConstraints cameraMediaConstraints(BuildContext context) {
-    if (isLandscapeTablet(context)) {
-      final size = MediaQuery.sizeOf(context);
-      final maxWidth = (size.width - 32)
-          .clamp(0.0, 78 * size.width / 100)
-          .clamp(0.0, 72 * 16.0);
-      final maxHeight = (size.height - 32)
-          .clamp(0.0, 80 * size.height / 100)
-          .clamp(0.0, 52 * 16.0);
-      return BoxConstraints(maxWidth: maxWidth, maxHeight: maxHeight);
-    }
-    return const BoxConstraints.expand();
+    final size = MediaQuery.sizeOf(context);
+    return BoxConstraints(
+      maxWidth: size.width,
+      maxHeight: size.height,
+    );
   }
 
   /// Tools panel width for landscape tablets

@@ -307,7 +307,7 @@ class _CameraPageState extends State<CameraPage>
                 _cameraInitError = null;
                 _maxSupportedZoom = resolvedMaxZoom;
                 _settings = _settings.copyWith(
-                  zoom: _settings.zoom.clamp(AppConstants.minZoom, resolvedMaxZoom),
+                  zoom: AppConstants.minZoom.clamp(AppConstants.minZoom, resolvedMaxZoom),
                 );
               });
               break;
@@ -577,7 +577,7 @@ class _CameraPageState extends State<CameraPage>
     final sourceSize = previewSize != null
         ? Size(previewSize.width.toDouble(), previewSize.height.toDouble())
         : _getFallbackSourceSize();
-    
+
     _lastSourceSize = sourceSize;
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
@@ -585,136 +585,151 @@ class _CameraPageState extends State<CameraPage>
       onScaleUpdate: (details) => _setZoom(_pinchStartZoom * details.scale),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(18),
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-          Positioned.fill(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(18),
-                border: Border.all(
-                  color: const Color(0x334C68FF),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final frame = Offset.zero & Size(constraints.maxWidth, constraints.maxHeight);
+            final padding = Responsive.cameraPreviewPadding(context);
+            final innerFrame = Rect.fromLTWH(
+              padding.left,
+              padding.top,
+              (frame.width - padding.horizontal).clamp(1.0, double.infinity),
+              (frame.height - padding.vertical).clamp(1.0, double.infinity),
+            );
+            final viewport = Responsive.cameraPreviewViewport(context, innerFrame);
+            return Stack(
+              fit: StackFit.expand,
+              children: [
+                Positioned.fill(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(
+                        color: const Color(0x334C68FF),
+                      ),
+                    ),
+                  ),
                 ),
-              ),
-              child: Center(
-                child: FittedBox(
-                  fit: BoxFit.contain,
+                Center(
                   child: SizedBox(
-                    width: sourceSize.width,
-                    height: sourceSize.height,
-                    child: Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        Transform(
-                          alignment: Alignment.center,
-                          transform: Matrix4.identity()
-                            ..rotateZ(_rotation * math.pi / 180)
-                            ..scaleByDouble(
-                              (_flipH || _mirror)
-                                  ? -_settings.zoom
-                                  : _settings.zoom,
-                              _flipV ? -_settings.zoom : _settings.zoom,
-                              1,
-                              1,
-                            ),
-                          child: Stack(
-                            fit: StackFit.expand,
-                            children: [
-                              ColorFiltered(
-                                colorFilter:
-                                    ColorFilter.matrix(_buildColorMatrix()),
-                                child: cam.CameraPreview(_controller!),
-                              ),
-                              if (uiStateController.measurementMode)
-                                IgnorePointer(
-                                  child: CustomPaint(painter: _GridPainter()),
+                    width: viewport.width,
+                    height: viewport.height,
+                    child: FittedBox(
+                      fit: BoxFit.contain,
+                      child: SizedBox(
+                        width: sourceSize.width,
+                        height: sourceSize.height,
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            Transform(
+                              alignment: Alignment.center,
+                              transform: Matrix4.identity()
+                                ..rotateZ(_rotation * math.pi / 180)
+                                ..scaleByDouble(
+                                  (_flipH || _mirror) ? -1.0 : 1.0,
+                                  _flipV ? -1.0 : 1.0,
+                                  1,
+                                  1,
                                 ),
-                              IgnorePointer(
-                                child: CustomPaint(
-                                  painter: AnnotationPainter(
-                                    annotations: _displayAnnotations(),
-                                    currentDrawing: _isDrawing &&
-                                            _selectedTool != null
-                                        ? Annotation(
-                                            id: 'current',
-                                            type: _selectedTool!,
-                                            points: _currentPoints,
-                                            color: _drawingColor,
-                                            timestamp: '')
-                                        : null,
-                                    displaySize: sourceSize,
-                                    sourceSize: sourceSize,
-                                    fit: BoxFit.contain,
-                                    mirrorX: _flipH || _mirror,
-                                    mirrorY: _flipV,
-                                    zoom: _settings.zoom,
-                                    rotation: _rotation,
+                              child: Stack(
+                                fit: StackFit.expand,
+                                children: [
+                                  ColorFiltered(
+                                    colorFilter:
+                                        ColorFilter.matrix(_buildColorMatrix()),
+                                    child: cam.CameraPreview(_controller!),
                                   ),
-                                ),
+                                  if (uiStateController.measurementMode)
+                                    IgnorePointer(
+                                      child: CustomPaint(painter: _GridPainter()),
+                                    ),
+                                  IgnorePointer(
+                                    child: CustomPaint(
+                                      painter: AnnotationPainter(
+                                        annotations: _displayAnnotations(),
+                                        currentDrawing: _isDrawing &&
+                                                _selectedTool != null
+                                            ? Annotation(
+                                                id: 'current',
+                                                type: _selectedTool!,
+                                                points: _currentPoints,
+                                                color: _drawingColor,
+                                                timestamp: '')
+                                            : null,
+                                        displaySize: sourceSize,
+                                        sourceSize: sourceSize,
+                                        fit: BoxFit.contain,
+                                        mirrorX: _flipH || _mirror,
+                                        mirrorY: _flipV,
+                                        zoom: _settings.zoom,
+                                        rotation: _rotation,
+                                      ),
+                                    ),
+                                  ),
+                                  Positioned.fill(
+                                    child: GestureDetector(
+                                      behavior: HitTestBehavior.translucent,
+                                      onTapDown: _onTapDown,
+                                      onPanStart: _onPanStart,
+                                      onPanUpdate: _onPanUpdate,
+                                      onPanEnd: _onPanEnd,
+                                      child: const SizedBox.expand(),
+                                    ),
+                                  ),
+                                ],
                               ),
-                              Positioned.fill(
-                                child: GestureDetector(
-                                  behavior: HitTestBehavior.translucent,
-                                  onTapDown: _onTapDown,
-                                  onPanStart: _onPanStart,
-                                  onPanUpdate: _onPanUpdate,
-                                  onPanEnd: _onPanEnd,
-                                  child: const SizedBox.expand(),
-                                ),
-                              ),
-                            ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                if (_stampEnabled)
+                  Positioned(
+                    top: 18,
+                    left: 108,
+                    child: IgnorePointer(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: const Color(0xCC10162E),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.white24),
+                        ),
+                        child: Text(
+                          _buildStampLabel(),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 10,
                           ),
                         ),
-                      ],
+                      ),
+                    ),
+                  ),
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            Colors.black.withValues(alpha: 0.12),
+                            Colors.transparent,
+                            Colors.black.withValues(alpha: 0.20),
+                          ],
+                          stops: const [0, 0.4, 1],
+                        ),
+                      ),
                     ),
                   ),
                 ),
-              ),
-            ),
-          ),
-          if (_stampEnabled)
-            Positioned(
-              top: 14,
-              left: 14,
-              child: IgnorePointer(
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: const Color(0xCC10162E),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: Colors.white24),
-                  ),
-                  child: Text(
-                    _buildStampLabel(),
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 11,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          Positioned.fill(
-            child: IgnorePointer(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Colors.black.withValues(alpha: 0.12),
-                      Colors.transparent,
-                      Colors.black.withValues(alpha: 0.20),
-                    ],
-                    stops: const [0, 0.4, 1],
-                  ),
-                ),
-              ),
-            ),
-          ),
-          ],
+              ],
+            );
+          },
         ),
       ),
     );
@@ -2504,9 +2519,29 @@ class _CameraPageState extends State<CameraPage>
   HexaPoint _displayToSource(Offset point) {
     final sourceW = _lastSourceSize.width <= 0 ? 1.0 : _lastSourceSize.width;
     final sourceH = _lastSourceSize.height <= 0 ? 1.0 : _lastSourceSize.height;
-    final x = point.dx.clamp(0.0, sourceW);
-    final y = point.dy.clamp(0.0, sourceH);
+    final centerX = sourceW / 2;
+    final centerY = sourceH / 2;
+    final angle = -_rotation * math.pi / 180;
 
+    double dx = point.dx - centerX;
+    double dy = point.dy - centerY;
+
+    if (_flipV) {
+      dy = -dy;
+    }
+    if (_flipH || _mirror) {
+      dx = -dx;
+    }
+
+    if (_rotation % 360 != 0) {
+      final rotatedX = (dx * math.cos(angle)) - (dy * math.sin(angle));
+      final rotatedY = (dx * math.sin(angle)) + (dy * math.cos(angle));
+      dx = rotatedX;
+      dy = rotatedY;
+    }
+
+    final x = (dx + centerX).clamp(0.0, sourceW);
+    final y = (dy + centerY).clamp(0.0, sourceH);
     return HexaPoint(x: x, y: y);
   }
 
@@ -2554,7 +2589,7 @@ class _CameraPageState extends State<CameraPage>
   Future<void> _setZoom(double value) async {
     final controller = _controller;
     if (controller == null || !controller.value.isInitialized) return;
-    final zoom = value.clamp(AppConstants.minZoom, _maxSupportedZoom);
+    final zoom = AppConstants.minZoom;
     try {
       await controller.setZoomLevel(zoom);
     } catch (_) {}

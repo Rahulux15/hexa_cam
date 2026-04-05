@@ -5,14 +5,16 @@ import 'package:demo_app/data/services/file_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  String norm(String path) => path.replaceAll('\\', '/');
+
   test('builds Android public downloads path', () {
     final path = FileService.buildPublicDownloadPath(
       filename: 'report-test.pdf',
       downloadsRoot: '/storage/emulated/0/Download',
     );
 
-    expect(path, '/storage/emulated/0/Download/report-test.pdf');
-    expect(path, contains('Download'));
+    expect(norm(path), '/storage/emulated/0/Download/report-test.pdf');
+    expect(norm(path), contains('Download'));
   });
 
   test('builds Android fallback downloads path', () {
@@ -21,8 +23,8 @@ void main() {
       downloadsRoot: '/storage/emulated/0/MyAppDownloads',
     );
 
-    expect(path, '/storage/emulated/0/MyAppDownloads/report-test.pdf');
-    expect(path, contains('MyAppDownloads'));
+    expect(norm(path), '/storage/emulated/0/MyAppDownloads/report-test.pdf');
+    expect(norm(path), contains('MyAppDownloads'));
   });
 
   test('builds iOS public downloads path', () {
@@ -31,8 +33,8 @@ void main() {
       downloadsRoot: '/Documents/Downloads',
     );
 
-    expect(path, '/Documents/Downloads/report-test.pdf');
-    expect(path, contains('Downloads'));
+    expect(norm(path), '/Documents/Downloads/report-test.pdf');
+    expect(norm(path), contains('Downloads'));
   });
 
   test('builds iOS fallback downloads path', () {
@@ -41,8 +43,8 @@ void main() {
       downloadsRoot: '/Documents/MyAppDownloads',
     );
 
-    expect(path, '/Documents/MyAppDownloads/report-test.pdf');
-    expect(path, contains('MyAppDownloads'));
+    expect(norm(path), '/Documents/MyAppDownloads/report-test.pdf');
+    expect(norm(path), contains('MyAppDownloads'));
   });
 
   test('saves bytes and preserves content on disk', () async {
@@ -63,7 +65,7 @@ void main() {
 
     expect(file.existsSync(), isTrue);
     expect(await FileService.readBytes(path), [1, 2, 3]);
-    expect(path, contains(tempRoot.path));
+    expect(norm(path), contains(norm(tempRoot.path)));
   });
 
   test('sanitizes invalid filename characters in public download path', () {
@@ -72,9 +74,9 @@ void main() {
       downloadsRoot: '/storage/emulated/0/Download',
     );
 
-    expect(path, isNot(contains(':')));
-    expect(path, isNot(contains('/?')));
-    expect(path, endsWith('report-test-.pdf'));
-    expect(path, contains('Download'));
+    expect(norm(path), isNot(contains(':')));
+    expect(norm(path), isNot(contains('/?')));
+    expect(norm(path), endsWith('report-test.pdf'));
+    expect(norm(path), contains('Download'));
   });
 }

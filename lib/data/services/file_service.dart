@@ -50,7 +50,7 @@ class FileService {
         _safeFilename(filename, fallbackExtension: p.extension(sourcePath));
     final destination = p.join(mediaDir.path, safeName);
     final file = await File(sourcePath).copy(destination);
-    return file.path;
+    return _normalizePath(file.path);
   }
 
   static Future<String> persistBytes({
@@ -69,7 +69,7 @@ class FileService {
     final destination = p.join(mediaDir.path, safeName);
     final file = File(destination);
     await file.writeAsBytes(bytes, flush: true);
-    return file.path;
+    return _normalizePath(file.path);
   }
 
   static Future<void> requestStoragePermissionsAtStartup({
@@ -142,28 +142,31 @@ class FileService {
     required String filename,
     required String downloadsRoot,
   }) =>
-      p.join(downloadsRoot, _safeFilename(filename));
+      _normalizePath(p.join(downloadsRoot, _safeFilename(filename)));
 
   static String buildFallbackDownloadPath({
     required String filename,
     required String downloadsRoot,
   }) =>
-      p.join(downloadsRoot, _safeFilename(filename));
+      _normalizePath(p.join(downloadsRoot, _safeFilename(filename)));
 
   static Future<Uint8List> readBytes(String path) async {
     return File(path).readAsBytes();
   }
 
   static String _safeFilename(String value, {String fallbackExtension = ''}) {
-    final cleaned =
-        value.replaceAll(RegExp(r'[<>:"/\\|?*\x00-\x1F]'), '-').trim();
+    var cleaned = value.replaceAll(RegExp(r'[<>:"/\\|?*\x00-\x1F]'), '-').trim();
+    cleaned = cleaned.replaceAll(RegExp(r'-{2,}'), '-');
     if (cleaned.isEmpty) {
       final extension = fallbackExtension.isEmpty ? '' : fallbackExtension;
       return 'hexacam-${DateTime.now().millisecondsSinceEpoch}$extension';
     }
+    cleaned = cleaned.replaceAll(RegExp(r'[-_.]+(?=\.[^.]+$)'), '');
     if (p.extension(cleaned).isEmpty && fallbackExtension.isNotEmpty) {
       return '$cleaned$fallbackExtension';
     }
     return cleaned;
   }
+
+  static String _normalizePath(String path) => path.replaceAll('\\', '/');
 }

@@ -530,8 +530,29 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
   HexaPoint _displayToSource(Offset point) {
     final sourceW = _lastSourceSize.width <= 0 ? 1.0 : _lastSourceSize.width;
     final sourceH = _lastSourceSize.height <= 0 ? 1.0 : _lastSourceSize.height;
-    final x = point.dx.clamp(0.0, sourceW);
-    final y = point.dy.clamp(0.0, sourceH);
+    final centerX = sourceW / 2;
+    final centerY = sourceH / 2;
+    final angle = -_rotation * pi / 180;
+
+    double dx = point.dx - centerX;
+    double dy = point.dy - centerY;
+
+    if (_flipV) {
+      dy = -dy;
+    }
+    if (_flipH || _mirror) {
+      dx = -dx;
+    }
+
+    if (_rotation % 360 != 0) {
+      final rotatedX = (dx * cos(angle)) - (dy * sin(angle));
+      final rotatedY = (dx * sin(angle)) + (dy * cos(angle));
+      dx = rotatedX;
+      dy = rotatedY;
+    }
+
+    final x = (dx + centerX).clamp(0.0, sourceW);
+    final y = (dy + centerY).clamp(0.0, sourceH);
     return HexaPoint(x: x, y: y);
   }
 

@@ -28,15 +28,18 @@ class AnnotationPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    canvas.save();
+    canvas.clipRect(Offset.zero & size);
     for (final ann in annotations) {
-      _drawAnnotation(canvas, ann);
+      _drawAnnotation(canvas, ann, size);
     }
     if (currentDrawing != null) {
-      _drawAnnotation(canvas, currentDrawing!);
+      _drawAnnotation(canvas, currentDrawing!, size);
     }
+    canvas.restore();
   }
 
-  void _drawAnnotation(Canvas canvas, Annotation ann) {
+  void _drawAnnotation(Canvas canvas, Annotation ann, Size canvasSize) {
     final paint = Paint()
       ..color = ann.color
       ..strokeWidth = ann.strokeWidth
@@ -123,7 +126,7 @@ class AnnotationPainter extends CustomPainter {
     }
 
     if (ann.measurement != null && ann.measurement!.trim().isNotEmpty) {
-      _drawMeasurementLabel(canvas, ann.measurement!, points);
+      _drawMeasurementLabel(canvas, ann.measurement!, points, canvasSize);
     }
   }
 
@@ -205,7 +208,8 @@ class AnnotationPainter extends CustomPainter {
     return HexaPoint(x: x, y: y);
   }
 
-  void _drawMeasurementLabel(Canvas canvas, String text, List<Offset> points) {
+  void _drawMeasurementLabel(
+      Canvas canvas, String text, List<Offset> points, Size canvasSize) {
     if (points.isEmpty) return;
     final anchor = points.length == 1
         ? points.first
@@ -225,28 +229,59 @@ class AnnotationPainter extends CustomPainter {
       ),
       textDirection: TextDirection.ltr,
       textAlign: TextAlign.center,
-    )..layout(maxWidth: 160);
+      maxLines: 1,
+      ellipsis: '…',
+    )..layout(minWidth: 0, maxWidth: 260);
 
     const padding = EdgeInsets.symmetric(horizontal: 10, vertical: 6);
+    final labelWidth = max(textPainter.width + padding.horizontal, 96.0);
+    final labelHeight = textPainter.height + padding.vertical;
+    final maxLeft = (canvasSize.width - labelWidth).clamp(0.0, double.infinity);
+    final maxTop = (canvasSize.height - labelHeight).clamp(0.0, double.infinity);
+    final preferredLeft = anchor.dx - (labelWidth / 2);
+    final labelLeft = preferredLeft < 8
+        ? 8.0
+        : preferredLeft > maxLeft - 8
+            ? maxLeft
+            : preferredLeft;
+    final preferredTop = anchor.dy - labelHeight - 18;
+    final labelTop = preferredTop < 8
+        ? (anchor.dy + 18).clamp(8.0, maxTop)
+        : preferredTop > maxTop - 8
+            ? maxTop
+            : preferredTop;
     final labelRect = RRect.fromRectAndRadius(
       Rect.fromLTWH(
-        anchor.dx - (textPainter.width / 2) - padding.horizontal / 2,
-        anchor.dy - textPainter.height - 18,
-        textPainter.width + padding.horizontal,
-        textPainter.height + padding.vertical,
+        labelLeft,
+        labelTop,
+        labelWidth,
+        labelHeight,
       ),
       const Radius.circular(12),
     );
 
     final labelPaint = Paint()..color = const Color(0xCC10162E);
-    canvas.drawRRect(labelRect, labelPaint);
-    textPainter.paint(
-      canvas,
-      Offset(
-        labelRect.left + padding.left,
-        labelRect.top + padding.top / 2,
-      ),
+    final textOffset = Offset(
+      labelRect.left + ((labelWidth - textPainter.width) / 2),
+      labelRect.top + (labelHeight - textPainter.height) / 2 - 1,
     );
+
+    canvas.save();
+    final center = Offset(
+      labelRect.left + labelRect.width / 2,
+      labelRect.top + labelRect.height / 2,
+    );
+    canvas.translate(center.dx, center.dy);
+    if (rotation % 360 != 0) {
+      canvas.rotate(-rotation * pi / 180);
+    }
+    if (mirrorX || mirrorY) {
+      canvas.scale(mirrorX ? -1.0 : 1.0, mirrorY ? -1.0 : 1.0);
+    }
+    canvas.translate(-center.dx, -center.dy);
+    canvas.drawRRect(labelRect, labelPaint);
+    textPainter.paint(canvas, textOffset);
+    canvas.restore();
   }
 
   @override
