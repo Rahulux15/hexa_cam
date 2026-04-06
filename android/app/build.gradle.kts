@@ -2,7 +2,7 @@ import java.util.Properties
 
 plugins {
     id("com.android.application")
-    id("kotlin-android")
+    id("org.jetbrains.kotlin.android")
     id("dev.flutter.flutter-gradle-plugin")
 }
 
@@ -18,8 +18,9 @@ val apiBaseUrl = (project.findProperty("API_BASE_URL") as String?)
     ?: "https://api.quasmoindianmicroscope.com/api"
 
 android {
-    namespace = "com.example.demo_app"
+    namespace = "com.hexa_cam"
     compileSdk = flutter.compileSdkVersion
+    buildToolsVersion = "35.0.0"
 
     buildFeatures {
         buildConfig = true
@@ -35,7 +36,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.example.demo_app"
+        applicationId = "com.hexa_cam"
         minSdk = 24
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode

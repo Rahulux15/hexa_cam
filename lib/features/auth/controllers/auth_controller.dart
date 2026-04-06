@@ -140,11 +140,6 @@ class AuthController extends GetxController {
       return false;
     }
 
-    if (passwordController.text.isEmpty) {
-      errorMessage.value = 'Please enter your password';
-      return false;
-    }
-
     errorMessage.value = '';
     isLoading.value = true;
     isOfflineMode.value = false;
@@ -157,6 +152,10 @@ class AuthController extends GetxController {
       bool success = false;
 
       if (hasInternet) {
+        if (password.isEmpty) {
+          errorMessage.value = 'Please enter your password';
+          return false;
+        }
         success = await firstTimeLogin(email, password);
       } else {
         final prefs = await SharedPreferences.getInstance();
@@ -177,6 +176,10 @@ class AuthController extends GetxController {
           isOfflineMode.value = true;
           success = true;
         } else {
+          if (password.isEmpty) {
+            errorMessage.value = 'Please enter your password';
+            return false;
+          }
           errorMessage.value = 'No internet. Please login online first.';
         }
       }

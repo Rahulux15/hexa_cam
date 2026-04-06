@@ -1,18 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter/foundation.dart';
 import 'package:get/get_core/src/get_main.dart';
 import 'package:get/get_instance/src/extension_instance.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'features/auth/controllers/auth_controller.dart';
-import 'data/services/file_service.dart';
+import 'controllers/permission_controller.dart';
 import 'state/providers.dart';
 import 'app.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final sharedPreferences = await SharedPreferences.getInstance();
-  Get.put(AuthController(), permanent: true);
+  initAppDependencies(sharedPreferences);
+  if (!Get.isRegistered<AuthController>()) {
+    Get.put(AuthController(), permanent: true);
+  }
 
   await SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
@@ -28,11 +30,6 @@ void main() async {
     systemNavigationBarIconBrightness: Brightness.light,
   ));
 
-  initAppDependencies(sharedPreferences);
-  if (!kIsWeb) {
-    await FileService.requestStoragePermissionsAtStartup(
-      prefs: sharedPreferences,
-    );
-  }
+  await Get.find<PermissionController>().requestStartupPermissions();
   runApp(const HexaCamApp());
 }

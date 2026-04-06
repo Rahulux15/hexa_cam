@@ -78,5 +78,6 @@ void main() {
     expect(norm(path), isNot(contains('/?')));
     expect(norm(path), endsWith('report-test.pdf'));
     expect(norm(path), contains('Download'));
-  });
+  }
+  );
 }

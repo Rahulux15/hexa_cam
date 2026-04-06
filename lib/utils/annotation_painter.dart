@@ -2,6 +2,8 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import '../data/models/annotation.dart';
 import '../data/models/point.dart';
+import 'coordinate_transformer.dart';
+import 'package:vector_math/vector_math_64.dart' show Vector3;
 
 class AnnotationPainter extends CustomPainter {
   final List<Annotation> annotations;
@@ -40,12 +42,14 @@ class AnnotationPainter extends CustomPainter {
   }
 
   void _drawAnnotation(Canvas canvas, Annotation ann, Size canvasSize) {
+    final strokeWidth = ann.strokeWidth.clamp(1.0, 2.0).toDouble();
     final paint = Paint()
       ..color = ann.color
-      ..strokeWidth = ann.strokeWidth
+      ..strokeWidth = strokeWidth
       ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round;
+      ..strokeJoin = StrokeJoin.round
+      ..isAntiAlias = true;
     final points = _toDisplayPoints(ann.points);
     if (points.isEmpty) return;
 
@@ -60,16 +64,28 @@ class AnnotationPainter extends CustomPainter {
         break;
       case AnnotationType.text:
         if (ann.text != null) {
+          final shortSide = sourceSize.shortestSide <= 0 ? 1.0 : sourceSize.shortestSide;
+          final fontSize = (shortSide * 0.015).clamp(16.0, 36.0).toDouble();
           final tp = TextPainter(
               text: TextSpan(
                   text: ann.text,
                   style: TextStyle(
                       color: ann.color,
-                      fontSize: 24,
+                      fontSize: fontSize,
                       fontWeight: FontWeight.bold)),
               textDirection: TextDirection.ltr);
-          tp.layout();
-          tp.paint(canvas, Offset(points[0].dx, points[0].dy));
+          tp.layout(minWidth: 0, maxWidth: shortSide * 0.55);
+          final boxWidth = max(tp.width + 20, 96.0);
+          final boxHeight = tp.height + 12;
+          final anchor = points[0];
+          final left = (anchor.dx - boxWidth).clamp(8.0, canvasSize.width - boxWidth - 8.0);
+          final top = (anchor.dy - boxHeight).clamp(8.0, canvasSize.height - boxHeight - 8.0);
+          final rect = RRect.fromRectAndRadius(
+            Rect.fromLTWH(left, top, boxWidth, boxHeight),
+            const Radius.circular(12),
+          );
+          canvas.drawRRect(rect, Paint()..color = const Color(0xCC10162E));
+          tp.paint(canvas, Offset(rect.left + 10, rect.top + (rect.height - tp.height) / 2));
         }
         break;
       case AnnotationType.arrow:
@@ -93,22 +109,24 @@ class AnnotationPainter extends CustomPainter {
         if (points.length >= 2) {
           final fill = Paint()
             ..color = ann.color
-            ..style = PaintingStyle.fill;
+            ..style = PaintingStyle.fill
+            ..isAntiAlias = true;
           canvas.drawLine(points[0], points[1], paint);
-          canvas.drawCircle(points[0], 5, fill);
-          canvas.drawCircle(points[1], 5, fill);
+          canvas.drawCircle(points[0], 3.5, fill);
+          canvas.drawCircle(points[1], 3.5, fill);
         }
         break;
       case AnnotationType.singlePointer:
         final fill = Paint()
           ..color = ann.color
-          ..style = PaintingStyle.fill;
+          ..style = PaintingStyle.fill
+          ..isAntiAlias = true;
         final p = points[0];
-        canvas.drawCircle(Offset(p.dx, p.dy), 6, fill);
+        canvas.drawCircle(Offset(p.dx, p.dy), 4, fill);
         canvas.drawLine(
-            Offset(p.dx - 12, p.dy), Offset(p.dx + 12, p.dy), paint);
+            Offset(p.dx - 8, p.dy), Offset(p.dx + 8, p.dy), paint);
         canvas.drawLine(
-            Offset(p.dx, p.dy - 12), Offset(p.dx, p.dy + 12), paint);
+            Offset(p.dx, p.dy - 8), Offset(p.dx, p.dy + 8), paint);
         break;
       case AnnotationType.rectangle:
       case AnnotationType.square:
@@ -135,77 +153,45 @@ class AnnotationPainter extends CustomPainter {
     final sourceH = sourceSize.height <= 0 ? 1.0 : sourceSize.height;
     final displayW = displaySize.width <= 0 ? 1.0 : displaySize.width;
     final displayH = displaySize.height <= 0 ? 1.0 : displaySize.height;
+    final transformed = CoordinateTransformer.buildImageTransform(
+      imageSize: Size(sourceW, sourceH),
+      mirrorX: mirrorX,
+      mirrorY: mirrorY,
+      rotation: rotation,
+    );
 
-    final transformedCorners = _transformedCorners(sourceW, sourceH);
-    final minX = transformedCorners
-        .map((p) => p.dx)
-        .reduce((a, b) => a < b ? a : b);
-    final maxX = transformedCorners
-        .map((p) => p.dx)
-        .reduce((a, b) => a > b ? a : b);
-    final minY = transformedCorners
-        .map((p) => p.dy)
-        .reduce((a, b) => a < b ? a : b);
-    final maxY = transformedCorners
-        .map((p) => p.dy)
-        .reduce((a, b) => a > b ? a : b);
+    final corners = [
+      const HexaPoint(x: 0, y: 0),
+      HexaPoint(x: sourceW, y: 0),
+      HexaPoint(x: 0, y: sourceH),
+      HexaPoint(x: sourceW, y: sourceH),
+    ].map((point) {
+      final v = transformed.transform3(
+        Vector3(point.x, point.y, 1),
+      );
+      return Offset(v.x, v.y);
+    }).toList();
 
+    final minX = corners.map((p) => p.dx).reduce(min);
+    final maxX = corners.map((p) => p.dx).reduce(max);
+    final minY = corners.map((p) => p.dy).reduce(min);
+    final maxY = corners.map((p) => p.dy).reduce(max);
     final transformedW = (maxX - minX).clamp(1.0, double.infinity);
     final transformedH = (maxY - minY).clamp(1.0, double.infinity);
-
     final scale = fit == BoxFit.cover
         ? max(displayW / transformedW, displayH / transformedH)
         : min(displayW / transformedW, displayH / transformedH);
     final zoomedScale = scale * zoom;
-    final renderedW = transformedW * zoomedScale;
-    final renderedH = transformedH * zoomedScale;
-    final offsetX = (displayW - renderedW) / 2;
-    final offsetY = (displayH - renderedH) / 2;
+    final offsetX = (displayW - transformedW * zoomedScale) / 2;
+    final offsetY = (displayH - transformedH * zoomedScale) / 2;
 
     return sourcePoints.map((point) {
-      final transformed = _applyPreviewTransform(point, sourceW, sourceH);
-      final x = transformed.x - minX;
-      final y = transformed.y - minY;
+      final v = transformed.transform3(Vector3(point.x, point.y, 1));
       return Offset(
-        offsetX + (x * zoomedScale),
-        offsetY + (y * zoomedScale),
+        offsetX + ((v.x - minX) * zoomedScale),
+        offsetY + ((v.y - minY) * zoomedScale),
       );
     }).toList();
-  }
-
-  List<Offset> _transformedCorners(double sourceW, double sourceH) {
-    return [
-      _applyPreviewTransform(const HexaPoint(x: 0, y: 0), sourceW, sourceH),
-      _applyPreviewTransform(HexaPoint(x: sourceW, y: 0), sourceW, sourceH),
-      _applyPreviewTransform(HexaPoint(x: 0, y: sourceH), sourceW, sourceH),
-      _applyPreviewTransform(
-          HexaPoint(x: sourceW, y: sourceH), sourceW, sourceH),
-    ].map((p) => Offset(p.x, p.y)).toList();
-  }
-
-  HexaPoint _applyPreviewTransform(
-      HexaPoint point, double sourceW, double sourceH) {
-    final centerX = sourceW / 2;
-    final centerY = sourceH / 2;
-    final angle = rotation * pi / 180;
-
-    double dx = point.x - centerX;
-    double dy = point.y - centerY;
-
-    if (rotation % 360 != 0) {
-      final rotatedX = (dx * cos(angle)) - (dy * sin(angle));
-      final rotatedY = (dx * sin(angle)) + (dy * cos(angle));
-      dx = rotatedX;
-      dy = rotatedY;
-    }
-
-    double x = dx + centerX;
-    double y = dy + centerY;
-
-    if (mirrorX) x = sourceW - x;
-    if (mirrorY) y = sourceH - y;
-
-    return HexaPoint(x: x, y: y);
   }
 
   void _drawMeasurementLabel(
@@ -222,7 +208,7 @@ class AnnotationPainter extends CustomPainter {
         text: text,
         style: const TextStyle(
           color: Colors.white,
-          fontSize: 12,
+          fontSize: 9,
           fontWeight: FontWeight.w700,
           height: 1.25,
         ),
@@ -231,10 +217,10 @@ class AnnotationPainter extends CustomPainter {
       textAlign: TextAlign.center,
       maxLines: 1,
       ellipsis: '…',
-    )..layout(minWidth: 0, maxWidth: 260);
+    )..layout(minWidth: 0, maxWidth: 220);
 
-    const padding = EdgeInsets.symmetric(horizontal: 10, vertical: 6);
-    final labelWidth = max(textPainter.width + padding.horizontal, 96.0);
+    const padding = EdgeInsets.symmetric(horizontal: 6, vertical: 4);
+    final labelWidth = max(textPainter.width + padding.horizontal, 64.0);
     final labelHeight = textPainter.height + padding.vertical;
     final maxLeft = (canvasSize.width - labelWidth).clamp(0.0, double.infinity);
     final maxTop = (canvasSize.height - labelHeight).clamp(0.0, double.infinity);

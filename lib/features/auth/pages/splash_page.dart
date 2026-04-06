@@ -1,4 +1,5 @@
 import 'dart:math';
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -18,6 +19,7 @@ class _SplashPageState extends State<SplashPage> with TickerProviderStateMixin {
   late final AnimationController _scaleController;
   late final Animation<double> _scaleAnimation;
   late final List<_Particle> _particles;
+  Timer? _navigationTimer;
   final _random = Random();
   final AuthController authController = Get.find<AuthController>();
 
@@ -50,15 +52,26 @@ class _SplashPageState extends State<SplashPage> with TickerProviderStateMixin {
   }
 
   Future<void> _navigateBasedOnLoginStatus() async {
-    await Future.delayed(const Duration(milliseconds: 2500));
-    final hasLoggedInBefore =
-        authController.isLoggedIn.value || await authController.hasValidSession();
+    _navigationTimer?.cancel();
+    _navigationTimer = Timer(
+      const Duration(milliseconds: 2500),
+      _navigateAfterSplashDelay,
+    );
+  }
+
+  Future<void> _navigateAfterSplashDelay() async {
     if (!mounted) return;
+    var hasLoggedInBefore = authController.isLoggedIn.value;
+    if (!hasLoggedInBefore) {
+      hasLoggedInBefore = await authController.hasValidSession();
+      if (!mounted) return;
+    }
     context.go(hasLoggedInBefore ? '/folders' : '/login');
   }
 
   @override
   void dispose() {
+    _navigationTimer?.cancel();
     _scaleController.dispose();
     for (final particle in _particles) {
       particle.controller.dispose();

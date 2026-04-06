@@ -18,6 +18,7 @@ import '../../../data/services/file_service.dart';
 import '../../../data/services/video_export_service.dart';
 import '../../../state/providers.dart';
 import '../../../utils/app_logger.dart';
+import '../../../utils/coordinate_transformer.dart';
 import '../../../utils/annotation_painter.dart';
 import '../../../utils/calibration_calculator.dart';
 import '../../../utils/marked_media_renderer.dart';
@@ -172,6 +173,7 @@ class _CameraPageState extends State<CameraPage>
   }
 
   Future<void> _requestPermissionsAndInitCamera() async {
+    var shouldInitCamera = true;
     try {
       // Handle permissions for mobile platforms
       if (!kIsWeb) {
@@ -204,15 +206,21 @@ class _CameraPageState extends State<CameraPage>
               onTimeout: () => PermissionStatus.denied,
             );
           }
-          if (!cameraStatus.isGranted && mounted) {
-            _showMessage('Camera permission is required to capture photos');
+          if (!cameraStatus.isGranted) {
+            shouldInitCamera = false;
+            if (mounted) {
+              _showMessage('Camera permission is required to capture photos');
+            }
           }
         } else if (Platform.isIOS) {
           // Request camera permission on iOS
           final status = await Permission.camera.request();
           await Permission.microphone.request();
-          if (!status.isGranted && mounted) {
-            _showMessage('Camera permission is required to capture photos');
+          if (!status.isGranted) {
+            shouldInitCamera = false;
+            if (mounted) {
+              _showMessage('Camera permission is required to capture photos');
+            }
           }
         }
       }
@@ -221,7 +229,9 @@ class _CameraPageState extends State<CameraPage>
     } catch (error) {
       logDebug('Permission flow error: $error');
     } finally {
-      await _initCamera();
+      if (shouldInitCamera) {
+        await _initCamera();
+      }
     }
   }
 
@@ -272,21 +282,26 @@ class _CameraPageState extends State<CameraPage>
             c.lensDirection != cam.CameraLensDirection.front),
       ];
 
-      const maxInitAttempts = 3;
+      final resolutions = kIsWeb
+          ? <cam.ResolutionPreset>[cam.ResolutionPreset.medium]
+          : <cam.ResolutionPreset>[
+              cam.ResolutionPreset.max,
+              cam.ResolutionPreset.high,
+              cam.ResolutionPreset.medium,
+              cam.ResolutionPreset.low,
+            ];
+      const maxInitAttempts = 2;
       for (var attempt = 1; attempt <= maxInitAttempts; attempt++) {
         for (final camera in orderedCameras) {
-          for (final resolution in [
-            cam.ResolutionPreset.medium,
-            cam.ResolutionPreset.high,
-            cam.ResolutionPreset.low,
-          ]) {
+          for (final resolution in resolutions) {
             try {
               await _controller?.dispose();
               _controller = cam.CameraController(
                 camera,
                 resolution,
                 enableAudio: false,
-                imageFormatGroup: cam.ImageFormatGroup.jpeg,
+                imageFormatGroup:
+                    kIsWeb ? cam.ImageFormatGroup.unknown : null,
               );
               await _controller!.initialize().timeout(
                 const Duration(seconds: 10),
@@ -338,12 +353,16 @@ class _CameraPageState extends State<CameraPage>
           _viewMode = CameraViewMode.defaultOpen;
           _showCameraSettings = false;
           _cameraInitError =
-              'Unable to start camera. Check permission and close other camera apps, then retry.';
+              'Camera initialization failed. Please close other camera apps/tabs and retry.';
         });
       }
     } catch (error) {
       logDebug('Camera init error: $error');
       if (mounted) {
+        _showMessage(
+          'Unable to start camera. Please try a lower resolution or close other camera apps.',
+          backgroundColor: AppTheme.danger,
+        );
         setState(() {
           _isInitialized = false;
           _viewMode = CameraViewMode.defaultOpen;
@@ -613,82 +632,90 @@ class _CameraPageState extends State<CameraPage>
                   child: SizedBox(
                     width: viewport.width,
                     height: viewport.height,
-                    child: FittedBox(
-                      fit: BoxFit.contain,
-                      child: SizedBox(
-                        width: sourceSize.width,
-                        height: sourceSize.height,
-                        child: Stack(
-                          fit: StackFit.expand,
-                          children: [
-                            Transform(
-                              alignment: Alignment.center,
-                              transform: Matrix4.identity()
-                                ..rotateZ(_rotation * math.pi / 180)
-                                ..scaleByDouble(
-                                  (_flipH || _mirror) ? -1.0 : 1.0,
-                                  _flipV ? -1.0 : 1.0,
-                                  1,
-                                  1,
-                                ),
-                              child: Stack(
-                                fit: StackFit.expand,
-                                children: [
-                                  ColorFiltered(
-                                    colorFilter:
-                                        ColorFilter.matrix(_buildColorMatrix()),
-                                    child: cam.CameraPreview(_controller!),
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        // Camera preview is still drawn in source coordinates and fitted into the viewport.
+                        AspectRatio(
+                          aspectRatio: _controller!.value.aspectRatio,
+                          child: FittedBox(
+                            fit: BoxFit.contain,
+                            child: SizedBox(
+                              width: sourceSize.width,
+                              height: sourceSize.height,
+                              child: Transform(
+                                alignment: Alignment.center,
+                                transform: Matrix4.identity()
+                                  ..rotateZ(_rotation * math.pi / 180)
+                                  ..scaleByDouble(
+                                    (_flipH || _mirror) ? -1.0 : 1.0,
+                                    _flipV ? -1.0 : 1.0,
+                                    1,
+                                    1,
                                   ),
-                                  if (uiStateController.measurementMode)
-                                    IgnorePointer(
-                                      child: CustomPaint(painter: _GridPainter()),
+                                child: Stack(
+                                  fit: StackFit.expand,
+                                  children: [
+                                    ColorFiltered(
+                                      colorFilter:
+                                          ColorFilter.matrix(_buildColorMatrix()),
+                                      child: cam.CameraPreview(_controller!),
                                     ),
-                                  IgnorePointer(
-                                    child: CustomPaint(
-                                      painter: AnnotationPainter(
-                                        annotations: _displayAnnotations(),
-                                        currentDrawing: _isDrawing &&
-                                                _selectedTool != null
-                                            ? Annotation(
-                                                id: 'current',
-                                                type: _selectedTool!,
-                                                points: _currentPoints,
-                                                color: _drawingColor,
-                                                timestamp: '')
-                                            : null,
-                                        displaySize: sourceSize,
-                                        sourceSize: sourceSize,
-                                        fit: BoxFit.contain,
-                                        mirrorX: _flipH || _mirror,
-                                        mirrorY: _flipV,
-                                        zoom: _settings.zoom,
-                                        rotation: _rotation,
+                                    if (uiStateController.measurementMode)
+                                      IgnorePointer(
+                                        child: CustomPaint(painter: _GridPainter()),
+                                      ),
+                                    // Keep gesture capture in source coordinates (so existing transforms stay correct).
+                                    Positioned.fill(
+                                      child: GestureDetector(
+                                        behavior: HitTestBehavior.translucent,
+                                        onTapDown: _onTapDown,
+                                        onPanStart: _onPanStart,
+                                        onPanUpdate: _onPanUpdate,
+                                        onPanEnd: _onPanEnd,
+                                        child: const SizedBox.expand(),
                                       ),
                                     ),
-                                  ),
-                                  Positioned.fill(
-                                    child: GestureDetector(
-                                      behavior: HitTestBehavior.translucent,
-                                      onTapDown: _onTapDown,
-                                      onPanStart: _onPanStart,
-                                      onPanUpdate: _onPanUpdate,
-                                      onPanEnd: _onPanEnd,
-                                      child: const SizedBox.expand(),
-                                    ),
-                                  ),
-                                ],
+                                  ],
+                                ),
                               ),
                             ),
-                          ],
+                          ),
                         ),
-                      ),
+
+                        // Draw annotations at viewport resolution (prevents pixelated text/labels).
+                        IgnorePointer(
+                          child: CustomPaint(
+                            painter: AnnotationPainter(
+                              annotations: _displayAnnotations(),
+                              currentDrawing:
+                                  _isDrawing && _selectedTool != null
+                                      ? Annotation(
+                                          id: 'current',
+                                          type: _selectedTool!,
+                                          points: _currentPoints,
+                                          color: _drawingColor,
+                                          timestamp: '',
+                                        )
+                                      : null,
+                              displaySize: Size(viewport.width, viewport.height),
+                              sourceSize: sourceSize,
+                              fit: BoxFit.contain,
+                              mirrorX: _flipH || _mirror,
+                              mirrorY: _flipV,
+                              zoom: 1,
+                              rotation: _rotation,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
                 if (_stampEnabled)
                   Positioned(
                     top: 18,
-                    left: 108,
+                    right: 18,
                     child: IgnorePointer(
                       child: Container(
                         padding: const EdgeInsets.symmetric(
@@ -2285,7 +2312,6 @@ class _CameraPageState extends State<CameraPage>
                               return MediaImage(
                                 source: preview.imageUrl,
                                 mediaId: preview.mediaId,
-                                annotations: preview.annotations,
                                 mirrorX: preview.mirrored ?? false,
                                 rotation: preview.rotation ?? 0,
                                 fit: BoxFit.cover,
@@ -2423,6 +2449,8 @@ class _CameraPageState extends State<CameraPage>
         );
         if (exported != null) {
           mediaSourcePath = exported;
+          // Ensure the bytes we store/download match the burned-in video.
+          finalBytes = await FileService.readBytes(mediaSourcePath);
         }
       }
 
@@ -2459,6 +2487,7 @@ class _CameraPageState extends State<CameraPage>
         type: isVideo ? MediaType.video : MediaType.image,
         sourceWidth: _lastSourceSize.width > 0 ? _lastSourceSize.width : null,
         sourceHeight: _lastSourceSize.height > 0 ? _lastSourceSize.height : null,
+        isMarkingsBaked: !isVideo && annotations.isNotEmpty,
       );
 
       await foldersController.addImage(widget.folderId, image);
@@ -2478,12 +2507,15 @@ class _CameraPageState extends State<CameraPage>
   List<Annotation> _annotationsForSave() {
     final base = _displayAnnotations();
     if (!_stampEnabled) return base;
+    final stampPoint = Responsive.calibrationStampAnchor(
+      _lastSourceSize == Size.zero ? _getFallbackSourceSize() : _lastSourceSize,
+    );
     return [
       ...base,
       Annotation(
         id: _uuid.v4(),
         type: AnnotationType.text,
-        points: const [HexaPoint(x: 24, y: 24)],
+        points: [HexaPoint(x: stampPoint.dx, y: stampPoint.dy)],
         color: Colors.white,
         timestamp: DateTime.now().toIso8601String(),
         text: _buildStampLabel(),
@@ -2517,32 +2549,17 @@ class _CameraPageState extends State<CameraPage>
   }
 
   HexaPoint _displayToSource(Offset point) {
-    final sourceW = _lastSourceSize.width <= 0 ? 1.0 : _lastSourceSize.width;
-    final sourceH = _lastSourceSize.height <= 0 ? 1.0 : _lastSourceSize.height;
-    final centerX = sourceW / 2;
-    final centerY = sourceH / 2;
-    final angle = -_rotation * math.pi / 180;
-
-    double dx = point.dx - centerX;
-    double dy = point.dy - centerY;
-
-    if (_flipV) {
-      dy = -dy;
-    }
-    if (_flipH || _mirror) {
-      dx = -dx;
-    }
-
-    if (_rotation % 360 != 0) {
-      final rotatedX = (dx * math.cos(angle)) - (dy * math.sin(angle));
-      final rotatedY = (dx * math.sin(angle)) + (dy * math.cos(angle));
-      dx = rotatedX;
-      dy = rotatedY;
-    }
-
-    final x = (dx + centerX).clamp(0.0, sourceW);
-    final y = (dy + centerY).clamp(0.0, sourceH);
-    return HexaPoint(x: x, y: y);
+    final transformed = CoordinateTransformer.screenToImage(
+      point,
+      imageSize: Size(
+        _lastSourceSize.width <= 0 ? 1.0 : _lastSourceSize.width,
+        _lastSourceSize.height <= 0 ? 1.0 : _lastSourceSize.height,
+      ),
+      mirrorX: _flipH || _mirror,
+      mirrorY: _flipV,
+      rotation: _rotation,
+    );
+    return HexaPoint(x: transformed.dx, y: transformed.dy);
   }
 
   Future<ImageData> _buildPreviewMediaForReport({
@@ -2583,13 +2600,14 @@ class _CameraPageState extends State<CameraPage>
       type: isVideo ? MediaType.video : MediaType.image,
       sourceWidth: _lastSourceSize.width > 0 ? _lastSourceSize.width : null,
       sourceHeight: _lastSourceSize.height > 0 ? _lastSourceSize.height : null,
+      isMarkingsBaked: !isVideo && annotations.isNotEmpty,
     );
   }
 
   Future<void> _setZoom(double value) async {
     final controller = _controller;
     if (controller == null || !controller.value.isInitialized) return;
-    final zoom = AppConstants.minZoom;
+    final zoom = value.clamp(AppConstants.minZoom, _maxSupportedZoom);
     try {
       await controller.setZoomLevel(zoom);
     } catch (_) {}

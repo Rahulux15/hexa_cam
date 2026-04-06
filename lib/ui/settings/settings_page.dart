@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../data/services/database_service.dart';
-import '../../config/constants.dart';
 import '../../config/theme.dart';
 import '../../state/providers.dart';
 import '../../utils/responsive.dart';
@@ -36,28 +36,15 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   Future<void> _loadSavedSettings() async {
-    final storage = storageService;
-    final profile = storage.get<Map<String, dynamic>>(AppConstants.keyProfile);
+    final prefs = await SharedPreferences.getInstance();
+    final fullName = (prefs.getString('user_full_name') ?? '').trim();
+    final email = (prefs.getString('user_email') ?? '').trim();
 
     if (!mounted) return;
     setState(() {
-      _nameController.text = (profile?['name'] ?? '').toString();
-      _emailController.text = (profile?['email'] ?? '').toString();
-
+      _nameController.text = fullName;
+      _emailController.text = email;
     });
-  }
-
-  Future<void> _saveProfile() async {
-    await storageService.set(
-      AppConstants.keyProfile,
-      {
-        'name': _nameController.text.trim(),
-        'email': _emailController.text.trim(),
-      },
-    );
-    if (!mounted) return;
-    HexaToast.show(context, 'Profile saved', type: HexaToastType.success);
-    setState(() => _currentView = SettingsView.main);
   }
 
   @override
@@ -220,16 +207,14 @@ class _SettingsPageState extends State<SettingsPage> {
       _buildProfileField('Full Name', _nameController, Icons.badge_outlined),
       SizedBox(height: isTab ? 14 : 12),
       _buildProfileField('Email Address', _emailController, Icons.alternate_email_rounded),
-      SizedBox(height: isTab ? 22 : 20),
-      SizedBox(
-        width: double.infinity,
-        height: Responsive.buttonHeight(context),
-        child: ElevatedButton(
-          onPressed: _saveProfile,
-          style: ElevatedButton.styleFrom(padding: EdgeInsets.zero, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), backgroundColor: Colors.transparent),
-          child: Ink(
-            decoration: BoxDecoration(gradient: AppTheme.primaryGradient, borderRadius: BorderRadius.circular(12)),
-            child: const Center(child: Row(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.check, color: Colors.white, size: 20), SizedBox(width: 8), Text('Save Changes', style: TextStyle(fontWeight: FontWeight.w600, color: Colors.white))]))
+      SizedBox(height: isTab ? 18 : 14),
+      Align(
+        alignment: Alignment.centerLeft,
+        child: Text(
+          'Profile details are managed by your login account.',
+          style: TextStyle(
+            fontSize: isTab ? 13 : 12,
+            color: AppTheme.textMuted,
           ),
         ),
       ),
@@ -243,6 +228,8 @@ class _SettingsPageState extends State<SettingsPage> {
       SizedBox(height: isTab ? 8 : 6),
       TextField(
         controller: controller,
+        readOnly: true,
+        enabled: false,
         style: TextStyle(color: AppTheme.textPrimary, fontSize: isTab ? 16 : 14),
         decoration: InputDecoration(
           prefixIcon: Icon(icon, color: AppTheme.textMuted, size: isTab ? 22 : 20),

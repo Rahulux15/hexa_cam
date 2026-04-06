@@ -1,12 +1,13 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:get/get.dart';
 import 'package:go_router/go_router.dart';
 import '../../config/theme.dart';
 import '../../data/models/folder.dart';
 import '../../data/models/image_data.dart';
 import '../../data/models/report_data.dart';
 import '../../data/services/database_service.dart';
-import '../../data/services/file_service.dart';
+import '../../controllers/report_controller.dart';
 import '../../state/providers.dart';
 import '../../utils/responsive.dart';
 import '../common/media_image.dart';
@@ -23,6 +24,10 @@ class _FolderDetailPageState extends State<FolderDetailPage> {
   bool _gridView = true;
   final Set<String> _selectedImages = {};
   Timer? _longPressTimer;
+  final ReportController _reportController = Get.put(
+    ReportController(),
+    permanent: true,
+  );
 
   Folder? _getFolder(List<Folder> folders) {
     try {
@@ -690,18 +695,15 @@ class _FolderDetailPageState extends State<FolderDetailPage> {
       );
       return;
     }
-    final savedPath = await FileService.persistBytes(
+    await _reportController.downloadReport(
       bytes: bytes,
       filename: report.filename,
       folderName: widget.folderId,
-      subdirectory: 'downloads',
-    );
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Report saved to $savedPath'),
-        backgroundColor: AppTheme.success,
-      ),
+      showMessage: (message, color) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(message), backgroundColor: color),
+        );
+      },
     );
   }
 }

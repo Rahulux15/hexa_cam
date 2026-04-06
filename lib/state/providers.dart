@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import '../data/models/folder.dart';
@@ -9,13 +10,20 @@ import '../data/models/report_data.dart';
 import '../data/models/camera_settings.dart';
 import '../data/models/annotation.dart';
 import '../data/models/stored_calibration.dart';
+import '../data/services/api_service.dart';
 import '../data/services/storage_service.dart';
+import '../controllers/camera_controller.dart';
+import '../controllers/permission_controller.dart';
 import '../config/constants.dart';
 import 'microscope_calibration_provider.dart';
 
 void initAppDependencies(SharedPreferences sharedPreferences) {
   Get.put<SharedPreferences>(sharedPreferences, permanent: true);
+  Get.put<ApiService>(ApiService(), permanent: true);
+  Get.put<FlutterSecureStorage>(const FlutterSecureStorage(), permanent: true);
   Get.put<StorageService>(StorageService(sharedPreferences), permanent: true);
+  Get.put<CameraController>(CameraController(), permanent: true);
+  Get.put<PermissionController>(PermissionController(sharedPreferences), permanent: true);
   Get.put<FoldersController>(FoldersController(Get.find<StorageService>()), permanent: true);
   Get.put<CalibrationController>(CalibrationController(sharedPreferences), permanent: true);
   Get.put<MicroscopeCalibrationProvider>(MicroscopeCalibrationProvider(sharedPreferences), permanent: true);
@@ -114,7 +122,16 @@ class FoldersController extends GetxController {
   Future<void> addReport(String folderId, ReportData report) async {
     folders = folders.map((folder) {
       if (folder.id != folderId) return folder;
-      return folder.copyWith(reports: [...?folder.reports, report]);
+      final existing = [...?folder.reports];
+      final alreadyExists = existing.any(
+        (r) =>
+            r.id == report.id ||
+            (r.pdfAssetId != null &&
+                report.pdfAssetId != null &&
+                r.pdfAssetId == report.pdfAssetId),
+      );
+      if (alreadyExists) return folder;
+      return folder.copyWith(reports: [...existing, report]);
     }).toList();
     await _saveAndRefresh();
   }
@@ -123,6 +140,7 @@ class FoldersController extends GetxController {
     folders = <Folder>[];
     update();
     await _storage.remove(AppConstants.keyFolders);
+    await _storage.remove('${AppConstants.keyFolders}_backup');
   }
 
   Future<void> _saveAndRefresh() async {

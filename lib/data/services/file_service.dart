@@ -9,6 +9,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 
+import 'web_download_stub.dart'
+    if (dart.library.html) 'web_download_web.dart';
+
 class FileService {
   static const _uuid = Uuid();
   static const _startupPermissionKey = 'storage_permissions_requested';
@@ -17,12 +20,28 @@ class FileService {
       '$prefix-${_uuid.v4()}';
 
   static Future<void> saveToDevice(Uint8List bytes, String filename) async {
+    if (kIsWeb) {
+      await downloadBytesWeb(bytes, _safeFilename(filename));
+      return;
+    }
     final sanitized =
         filename.replaceAll(RegExp(r'[<>:"/\\|?*\x00-\x1F]'), '-').trim();
     final name = sanitized.isEmpty
         ? 'hexacam-${DateTime.now().millisecondsSinceEpoch}'
         : sanitized;
     await Gal.putImageBytes(bytes, name: name);
+  }
+
+  static Future<void> savePdfToDevice(Uint8List bytes, String filename) async {
+    if (kIsWeb) {
+      await downloadBytesWeb(bytes, _safeFilename(filename));
+      return;
+    }
+    await saveToAppFolder(
+      bytes: bytes,
+      filename: filename,
+      folderName: 'reports',
+    );
   }
 
   static Future<void> saveVideoToDevice(
@@ -60,16 +79,49 @@ class FileService {
     String subdirectory = 'reports',
     bool preferDownloads = true,
   }) async {
+    if (kIsWeb) {
+      await downloadBytesWeb(bytes, _safeFilename(filename));
+      return _safeFilename(filename);
+    }
     final safeName = _safeFilename(filename);
     final mediaDir = await _resolveTargetDirectory(
       folderName: folderName,
       subdirectory: subdirectory,
       preferDownloads: preferDownloads,
     );
-    final destination = p.join(mediaDir.path, safeName);
-    final file = File(destination);
-    await file.writeAsBytes(bytes, flush: true);
+    final destination = await _uniqueDestination(mediaDir, safeName);
+    final file = await _atomicWriteBytes(destination, bytes);
     return _normalizePath(file.path);
+  }
+
+  static Future<String> saveToAppFolder({
+    required Uint8List bytes,
+    required String filename,
+    required String folderName,
+    String subdirectory = 'reports',
+  }) {
+    return persistBytes(
+      bytes: bytes,
+      filename: filename,
+      folderName: folderName,
+      subdirectory: subdirectory,
+      preferDownloads: false,
+    );
+  }
+
+  static Future<String> saveToDownloads({
+    required Uint8List bytes,
+    required String filename,
+    required String folderName,
+    String subdirectory = 'reports',
+  }) {
+    return persistBytes(
+      bytes: bytes,
+      filename: filename,
+      folderName: folderName,
+      subdirectory: subdirectory,
+      preferDownloads: true,
+    );
   }
 
   static Future<void> requestStoragePermissionsAtStartup({
@@ -125,6 +177,37 @@ class FileService {
     final mediaDir = Directory(p.join(docs.path, subdirectory, folderName));
     await mediaDir.create(recursive: true);
     return mediaDir;
+  }
+
+  static Future<File> _atomicWriteBytes(
+    String destination,
+    Uint8List bytes,
+  ) async {
+    final target = File(destination);
+    final temp = File('$destination.tmp');
+    await temp.writeAsBytes(bytes, flush: true);
+    if (await target.exists()) {
+      await target.delete();
+    }
+    return temp.rename(target.path);
+  }
+
+  static Future<String> _uniqueDestination(
+    Directory directory,
+    String safeName,
+  ) async {
+    final base = p.basenameWithoutExtension(safeName);
+    final ext = p.extension(safeName);
+    var candidate = p.join(directory.path, safeName);
+    var index = 1;
+    while (await File(candidate).exists()) {
+      candidate = p.join(
+        directory.path,
+        '$base-${DateTime.now().millisecondsSinceEpoch}-$index$ext',
+      );
+      index++;
+    }
+    return candidate;
   }
 
   static Future<bool> _ensureVisibleDirectory(Directory directory) async {

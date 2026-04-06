@@ -290,4 +290,26 @@ class Responsive {
     }
     return 0;
   }
+
+  static double calibrationStampMinPx() => 24.0;
+
+  static double calibrationStampMaxPx() => 120.0;
+
+  static double calibrationStampFontSize(Size imageSize) {
+    final shortSide = imageSize.shortestSide <= 0 ? 1.0 : imageSize.shortestSide;
+    return (shortSide * 0.06)
+        .clamp(calibrationStampMinPx(), calibrationStampMaxPx())
+        .toDouble();
+  }
+
+  static EdgeInsets calibrationStampPadding(Size imageSize) {
+    final shortSide = imageSize.shortestSide <= 0 ? 1.0 : imageSize.shortestSide;
+    final pad = (shortSide * 0.02).clamp(8.0, 32.0).toDouble();
+    return EdgeInsets.all(pad);
+  }
+
+  static Offset calibrationStampAnchor(Size imageSize) {
+    final pad = calibrationStampPadding(imageSize).left;
+    return Offset(imageSize.width - pad, imageSize.height - pad);
+  }
 }

@@ -1,13 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:get/get.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
-import 'package:printing/printing.dart';
 
 import '../../config/theme.dart';
+import '../../controllers/report_controller.dart';
 import '../../data/models/annotation.dart';
 import '../../data/models/image_data.dart';
 import '../../data/models/report_data.dart';
@@ -16,6 +17,8 @@ import '../../data/services/file_service.dart';
 import '../../state/providers.dart';
 import '../../utils/responsive.dart';
 import '../common/media_image.dart';
+import '../common/responsive_action.dart';
+import '../../controllers/async_action_controller.dart';
 
 class ReportPage extends ConsumerStatefulWidget {
   final String folderId;
@@ -27,6 +30,9 @@ class ReportPage extends ConsumerStatefulWidget {
 }
 
 class _ReportPageState extends ConsumerState<ReportPage> {
+  final ReportController _reportController = Get.put(ReportController(), permanent: true);
+  final AsyncActionController _asyncActions =
+      Get.put(AsyncActionController(), permanent: true);
   final _orgController = TextEditingController(text: 'Organization Name');
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
@@ -100,20 +106,73 @@ class _ReportPageState extends ConsumerState<ReportPage> {
                     const Spacer(),
                     SizedBox(
                       width: 170,
-                      child: _headerAction(
-                        icon: Icons.download_outlined,
-                        label: 'Download',
-                        onTap: () => _generatePDF(),
+                      child: Tooltip(
+                        message: 'Download to public Downloads + App Folder',
+                        child: ResponsiveActionButton(
+                          actionKey: 'report_download',
+                          asyncController: _asyncActions,
+                          onPressed: _downloadReport,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF232651),
+                            shadowColor: Colors.transparent,
+                            padding: EdgeInsets.zero,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(18),
+                            ),
+                          ),
+                          child: const Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.download_outlined,
+                                  color: Colors.white),
+                              SizedBox(width: 10),
+                              Text(
+                                'Download',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
                     ),
                     const SizedBox(width: 12),
                     SizedBox(
                       width: 132,
-                      child: _headerAction(
-                        icon: Icons.save_alt_outlined,
-                        label: 'Save',
-                        onTap: () => _saveToFolder(),
-                        filled: true,
+                      child: Tooltip(
+                        message: 'Save to App Folder only',
+                        child: ResponsiveActionButton(
+                          actionKey: 'report_save',
+                          asyncController: _asyncActions,
+                          onPressed: _saveReport,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.transparent,
+                            shadowColor: Colors.transparent,
+                            padding: EdgeInsets.zero,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(18),
+                            ),
+                          ),
+                          child: const Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.save_alt_outlined,
+                                  color: Colors.white),
+                              SizedBox(width: 10),
+                              Text(
+                                'Save',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
                     ),
                   ],
@@ -428,48 +487,6 @@ class _ReportPageState extends ConsumerState<ReportPage> {
     );
   }
 
-  Widget _headerAction(
-      {required IconData icon,
-      required String label,
-      required VoidCallback onTap,
-      bool filled = false}) {
-    return SizedBox(
-      height: 50,
-      child: ElevatedButton(
-        onPressed: onTap,
-        style: ElevatedButton.styleFrom(
-          backgroundColor:
-              filled ? Colors.transparent : const Color(0xFF232651),
-          shadowColor: Colors.transparent,
-          padding: EdgeInsets.zero,
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-        ),
-        child: Ink(
-          decoration: BoxDecoration(
-            gradient: filled ? AppTheme.buttonGradient : null,
-            color: filled ? null : const Color(0xFF232651),
-            borderRadius: BorderRadius.circular(18),
-          ),
-          child: Center(
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(icon, color: Colors.white),
-                const SizedBox(width: 10),
-                Text(label,
-                    style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w500)),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
   Widget _sectionCard({required Widget child}) {
     return Container(
       width: double.infinity,
@@ -756,11 +773,46 @@ class _ReportPageState extends ConsumerState<ReportPage> {
     return true;
   }
 
-  Future<void> _generatePDF() async {
+  Future<void> _downloadReport() async {
     if (!_validateForm()) return;
     final bytes = await _buildReportPdf();
     final filename = 'report-${DateTime.now().millisecondsSinceEpoch}.pdf';
-    await Printing.sharePdf(bytes: bytes, filename: filename);
+    final ok = await _reportController.downloadReport(
+      bytes: bytes,
+      filename: filename,
+      folderName: widget.folderId,
+      showMessage: _showMessage,
+    );
+    if (!ok) return;
+
+    final assetId = FileService.generateAssetId('report');
+    await MediaDatabase.saveAsset(assetId, bytes);
+
+    final preview =
+        _items.isNotEmpty ? (_items.first['imageUrl'] as String?) : null;
+    final primaryImage = _primaryImage;
+    final report = ReportData(
+      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      filename: filename,
+      timestamp: DateTime.now().toIso8601String(),
+      pdfAssetId: assetId,
+      previewImageUrl: preview,
+      description: 'Annotations: ${primaryImage?.annotations.length ?? 0}',
+      lens: primaryImage?.lens,
+      formData: ReportFormData(
+        organizationName: _orgController.text,
+        fullName: _nameController.text,
+        email: _emailController.text,
+        phone: _phoneController.text,
+        location: _locationController.text,
+      ),
+      sourceImages: _items,
+    );
+    ref.read(foldersProvider).addReport(widget.folderId, report);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      Navigator.of(context).pop();
+    });
   }
 
   pw.Widget _pdfMetric(String label, String value) {
@@ -800,21 +852,23 @@ class _ReportPageState extends ConsumerState<ReportPage> {
         );
         return pw.MemoryImage(bytes);
       }
-      return await networkImage(source);
+      return null;
     } catch (_) {
       return null;
     }
   }
 
-  Future<void> _saveToFolder() async {
+  Future<void> _saveReport() async {
     if (!_validateForm()) return;
     final bytes = await _buildReportPdf();
     final filename = 'report-${DateTime.now().millisecondsSinceEpoch}.pdf';
-    final savedPath = await FileService.persistBytes(
+    final ok = await _reportController.saveReport(
       bytes: bytes,
       filename: filename,
       folderName: widget.folderId,
+      showMessage: _showMessage,
     );
+    if (!ok) return;
     final assetId = FileService.generateAssetId('report');
     await MediaDatabase.saveAsset(assetId, bytes);
 
@@ -826,7 +880,7 @@ class _ReportPageState extends ConsumerState<ReportPage> {
       filename: filename,
       timestamp: DateTime.now().toIso8601String(),
       pdfAssetId: assetId,
-      previewImageUrl: preview ?? 'file://$savedPath',
+      previewImageUrl: preview,
       description: 'Annotations: ${primaryImage?.annotations.length ?? 0}',
       lens: primaryImage?.lens,
       formData: ReportFormData(
@@ -839,7 +893,6 @@ class _ReportPageState extends ConsumerState<ReportPage> {
       sourceImages: _items,
     );
     ref.read(foldersProvider).addReport(widget.folderId, report);
-    _showMessage('Report saved to folder', AppTheme.success);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       Navigator.of(context).pop();

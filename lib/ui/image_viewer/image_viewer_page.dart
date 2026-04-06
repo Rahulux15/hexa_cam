@@ -13,6 +13,7 @@ import '../../data/services/database_service.dart';
 import '../../data/services/file_service.dart';
 import '../../data/models/point.dart';
 import '../../state/providers.dart';
+import '../../utils/coordinate_transformer.dart';
 import '../../utils/annotation_painter.dart';
 import '../../utils/measurement_calculator.dart';
 import '../../utils/responsive.dart';
@@ -528,32 +529,17 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
   }
 
   HexaPoint _displayToSource(Offset point) {
-    final sourceW = _lastSourceSize.width <= 0 ? 1.0 : _lastSourceSize.width;
-    final sourceH = _lastSourceSize.height <= 0 ? 1.0 : _lastSourceSize.height;
-    final centerX = sourceW / 2;
-    final centerY = sourceH / 2;
-    final angle = -_rotation * pi / 180;
-
-    double dx = point.dx - centerX;
-    double dy = point.dy - centerY;
-
-    if (_flipV) {
-      dy = -dy;
-    }
-    if (_flipH || _mirror) {
-      dx = -dx;
-    }
-
-    if (_rotation % 360 != 0) {
-      final rotatedX = (dx * cos(angle)) - (dy * sin(angle));
-      final rotatedY = (dx * sin(angle)) + (dy * cos(angle));
-      dx = rotatedX;
-      dy = rotatedY;
-    }
-
-    final x = (dx + centerX).clamp(0.0, sourceW);
-    final y = (dy + centerY).clamp(0.0, sourceH);
-    return HexaPoint(x: x, y: y);
+    final transformed = CoordinateTransformer.screenToImage(
+      point,
+      imageSize: Size(
+        _lastSourceSize.width <= 0 ? 1.0 : _lastSourceSize.width,
+        _lastSourceSize.height <= 0 ? 1.0 : _lastSourceSize.height,
+      ),
+      mirrorX: _flipH || _mirror,
+      mirrorY: _flipV,
+      rotation: _rotation,
+    );
+    return HexaPoint(x: transformed.dx, y: transformed.dy);
   }
 
   String? _measurementFor(Annotation annotation) {

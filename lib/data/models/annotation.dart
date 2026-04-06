@@ -20,7 +20,7 @@ class Annotation {
     required this.points,
     this.text,
     required this.color,
-    this.strokeWidth = 3.0,
+    this.strokeWidth = 1.6,
     required this.timestamp,
     this.measurement,
     this.coordinateSpace = 'source',
@@ -36,7 +36,7 @@ class Annotation {
     id: json['id'], type: AnnotationType.values.byName(json['type'] ?? 'draw'),
     points: (json['points'] as List).map((p) => HexaPoint.fromJson(p)).toList(),
     text: json['text'], color: _parseColor(json['color']),
-    strokeWidth: (json['strokeWidth'] ?? 3.0).toDouble(), timestamp: json['timestamp'],
+    strokeWidth: (json['strokeWidth'] ?? 1.6).toDouble(), timestamp: json['timestamp'],
     measurement: json['measurement'], coordinateSpace: json['coordinateSpace'] ?? 'source',
   );
 

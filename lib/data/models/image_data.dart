@@ -28,6 +28,7 @@ class ImageData {
   final bool? showCalibrationStamp;
   final double? sourceWidth;
   final double? sourceHeight;
+  final bool? isMarkingsBaked;
 
   ImageData({
     required this.id, required this.imageUrl, this.mediaId, this.mediaMimeType,
@@ -35,7 +36,7 @@ class ImageData {
     required this.cameraSettings, this.annotations = const [], this.measurements = const [],
     this.calibration, this.type = MediaType.image, this.duration, this.rotation,
     this.mirrored, this.lens, this.filename, this.description, this.showCalibrationStamp,
-    this.sourceWidth, this.sourceHeight,
+    this.sourceWidth, this.sourceHeight, this.isMarkingsBaked = false,
   });
 
   ImageData copyWith({String? imageUrl, String? thumbnail, List<Annotation>? annotations, int? rotation, bool? mirrored, String? filename, String? description}) => ImageData(
@@ -46,6 +47,7 @@ class ImageData {
     rotation: rotation ?? this.rotation, mirrored: mirrored ?? this.mirrored, lens: lens,
     filename: filename ?? this.filename, description: description ?? this.description,
     showCalibrationStamp: showCalibrationStamp, sourceWidth: sourceWidth, sourceHeight: sourceHeight,
+    isMarkingsBaked: isMarkingsBaked ?? false,
   );
 
   factory ImageData.fromJson(Map<String, dynamic> json) => ImageData(
@@ -62,6 +64,7 @@ class ImageData {
     mirrored: json['mirrored'], lens: json['lens'], filename: json['filename'],
     description: json['description'], showCalibrationStamp: json['showCalibrationStamp'],
     sourceWidth: json['sourceWidth']?.toDouble(), sourceHeight: json['sourceHeight']?.toDouble(),
+    isMarkingsBaked: json['isMarkingsBaked'],
   );
 
   Map<String, dynamic> toJson() => {
@@ -77,5 +80,6 @@ class ImageData {
     if (filename != null) 'filename': filename, if (description != null) 'description': description,
     if (showCalibrationStamp != null) 'showCalibrationStamp': showCalibrationStamp,
     if (sourceWidth != null) 'sourceWidth': sourceWidth, if (sourceHeight != null) 'sourceHeight': sourceHeight,
+    'isMarkingsBaked': isMarkingsBaked ?? false,
   };
 }
