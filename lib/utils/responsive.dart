@@ -228,25 +228,50 @@ class Responsive {
         bottom: vertical,
       );
     }
+    if (isTablet(context)) {
+      // Tablet-first: maximize usable preview while keeping controls tappable.
+      final horizontal = (size.width * 0.010).clamp(6.0, 12.0).toDouble();
+      final vertical = (size.height * 0.006).clamp(4.0, 10.0).toDouble();
+      return EdgeInsets.only(
+        top: vertical + MediaQuery.paddingOf(context).top * 0.25,
+        left: horizontal,
+        right: horizontal,
+        bottom: vertical,
+      );
+    }
     return EdgeInsets.symmetric(
       horizontal: pagePadding(context),
       vertical: 16,
     );
   }
 
-  /// Camera preview viewport fitted inside an outer frame.
-  static Rect cameraPreviewViewport(BuildContext context, Rect redBox) {
+  /// Camera preview viewport fitted inside an outer frame with no crop.
+  static Rect cameraPreviewViewport(
+    BuildContext context,
+    Rect redBox, {
+    double? targetAspectRatio,
+  }) {
     final size = MediaQuery.sizeOf(context);
     if (size.width <= 0 || size.height <= 0) {
       return redBox;
     }
 
-    final scaleX = redBox.width / size.width;
-    final scaleY = redBox.height / size.height;
-    final scale = scaleX < scaleY ? scaleX : scaleY;
+    final rawAspect = targetAspectRatio == null || targetAspectRatio <= 0
+        ? (size.width / size.height)
+        : targetAspectRatio;
 
-    final width = size.width * scale;
-    final height = size.height * scale;
+    final boxAspect = redBox.width / redBox.height;
+    late final double width;
+    late final double height;
+    if (boxAspect > rawAspect) {
+      // Box is wider than target; constrain by height.
+      height = redBox.height;
+      width = height * rawAspect;
+    } else {
+      // Box is taller/narrower than target; constrain by width.
+      width = redBox.width;
+      height = width / rawAspect;
+    }
     final offsetX = redBox.left + (redBox.width - width) / 2;
     final offsetY = redBox.top + (redBox.height - height) / 2;
 

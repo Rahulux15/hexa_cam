@@ -62,14 +62,9 @@ android {
         }
     }
 
-    // splits {
-    //     abi {
-    //         isEnable = true
-    //         reset()
-    //         include("armeabi-v7a", "arm64-v8a")
-    //         isUniversalApk = false
-    //     }
-    // }
+    // Keep default ABI behavior in Gradle config to avoid conflicts with
+    // Flutter's debug abiFilters. For small release artifacts, build with:
+    // flutter build apk --release --split-per-abi
 }
 
 flutter {

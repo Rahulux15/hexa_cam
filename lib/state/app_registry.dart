@@ -3,6 +3,7 @@ import 'package:get/get.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
+import 'dart:async';
 import '../data/models/folder.dart';
 import '../data/models/image_data.dart';
 import '../data/models/report_data.dart';
@@ -57,6 +58,9 @@ class FoldersController extends GetxController {
 
   final StorageService _storage;
   List<Folder> folders = <Folder>[];
+  Timer? _saveDebounce;
+  bool _isSaving = false;
+  bool _saveQueued = false;
 
   void _load() {
     final data = _storage.get<List<dynamic>>(AppConstants.keyFolders);
@@ -77,19 +81,19 @@ class FoldersController extends GetxController {
         images: const <ImageData>[],
       ),
     ];
-    await _saveAndRefresh();
+    await _saveAndRefresh(immediate: true);
   }
 
   Future<void> deleteFolder(String id) async {
     folders = folders.where((f) => f.id != id).toList();
-    await _saveAndRefresh();
+    await _saveAndRefresh(immediate: true);
   }
 
   Future<void> renameFolder(String id, String newName) async {
     folders = folders
         .map((f) => f.id == id ? f.copyWith(name: newName) : f)
         .toList();
-    await _saveAndRefresh();
+    await _saveAndRefresh(immediate: true);
   }
 
   Future<void> addImage(String folderId, ImageData image) async {
@@ -97,7 +101,7 @@ class FoldersController extends GetxController {
       if (f.id != folderId) return f;
       return f.copyWith(images: [...f.images, image]);
     }).toList();
-    await _saveAndRefresh();
+    await _saveAndRefresh(immediate: true);
   }
 
   Future<void> removeImage(String folderId, String imageId) async {
@@ -107,7 +111,7 @@ class FoldersController extends GetxController {
         images: f.images.where((i) => i.id != imageId).toList(),
       );
     }).toList();
-    await _saveAndRefresh();
+    await _saveAndRefresh(immediate: true);
   }
 
   Future<void> removeImages(String folderId, Set<String> imageIds) async {
@@ -117,7 +121,7 @@ class FoldersController extends GetxController {
         images: f.images.where((i) => !imageIds.contains(i.id)).toList(),
       );
     }).toList();
-    await _saveAndRefresh();
+    await _saveAndRefresh(immediate: true);
   }
 
   Future<void> updateImage(
@@ -125,12 +129,20 @@ class FoldersController extends GetxController {
     String imageId,
     ImageData updated,
   ) async {
+    var changed = false;
     folders = folders.map((f) {
       if (f.id != folderId) return f;
+      final nextImages = f.images.map((i) {
+        if (i.id != imageId) return i;
+        if (identical(i, updated)) return i;
+        changed = true;
+        return updated;
+      }).toList();
       return f.copyWith(
-        images: f.images.map((i) => i.id == imageId ? updated : i).toList(),
+        images: nextImages,
       );
     }).toList();
+    if (!changed) return;
     await _saveAndRefresh();
   }
 
@@ -148,7 +160,7 @@ class FoldersController extends GetxController {
       if (alreadyExists) return folder;
       return folder.copyWith(reports: [...existing, report]);
     }).toList();
-    await _saveAndRefresh();
+    await _saveAndRefresh(immediate: true);
   }
 
   Future<void> clearAll() async {
@@ -158,12 +170,46 @@ class FoldersController extends GetxController {
     await _storage.remove('${AppConstants.keyFolders}_backup');
   }
 
-  Future<void> _saveAndRefresh() async {
-    await _storage.set(
-      AppConstants.keyFolders,
-      folders.map((f) => f.toJson()).toList(),
-    );
+  Future<void> _saveAndRefresh({bool immediate = false}) async {
     update();
+    if (immediate) {
+      await _flushSaveNow();
+      return;
+    }
+    _scheduleSave();
+  }
+
+  void _scheduleSave() {
+    _saveDebounce?.cancel();
+    _saveDebounce = Timer(const Duration(milliseconds: 280), () {
+      unawaited(_flushSaveNow());
+    });
+  }
+
+  Future<void> _flushSaveNow() async {
+    if (_isSaving) {
+      _saveQueued = true;
+      return;
+    }
+    _isSaving = true;
+    try {
+      await _storage.set(
+        AppConstants.keyFolders,
+        folders.map((f) => f.toJson()).toList(),
+      );
+    } finally {
+      _isSaving = false;
+      if (_saveQueued) {
+        _saveQueued = false;
+        unawaited(_flushSaveNow());
+      }
+    }
+  }
+
+  @override
+  void onClose() {
+    _saveDebounce?.cancel();
+    super.onClose();
   }
 }
 

@@ -385,7 +385,8 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
                   subtitle: 'Download image or video to your device',
                   onTap: () {
                     Navigator.pop(sheetCtx);
-                    _saveToGalleryWithMarks();
+                    _showMessage('Download started...', AppTheme.success);
+                    unawaited(_saveToGalleryWithMarks());
                   },
                 ),
                 const SizedBox(height: 12),
@@ -579,23 +580,14 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
       return;
     }
 
-    final bytes = await _buildStillExportBytes();
-    if (bytes == null || bytes.isEmpty) {
-      _showMessage('Unable to prepare image for report', AppTheme.danger);
-      return;
-    }
-
-    final previewAssetId = FileService.generateAssetId('report_preview');
-    await MediaDatabase.saveAsset(previewAssetId, bytes);
-
     final forReport = ImageData(
       id: image.id,
-      imageUrl: 'asset:$previewAssetId',
-      mediaId: previewAssetId,
-      thumbnailId: previewAssetId,
+      imageUrl: image.imageUrl,
+      mediaId: image.mediaId,
+      thumbnailId: image.thumbnailId,
       timestamp: image.timestamp,
       cameraSettings: image.cameraSettings,
-      annotations: const [],
+      annotations: _syncedAnnotations(),
       measurements: image.measurements,
       calibration: image.calibration,
       type: MediaType.image,
@@ -608,7 +600,7 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
       showCalibrationStamp: image.showCalibrationStamp,
       sourceWidth: image.sourceWidth,
       sourceHeight: image.sourceHeight,
-      isMarkingsBaked: true,
+      isMarkingsBaked: image.isMarkingsBaked == true,
     );
 
     if (!mounted) return;
@@ -883,9 +875,9 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
 
   Widget _buildImageSource(String source) {
     return MediaImage(
-      // Quality-first: always prefer full-resolution media bytes in viewer.
-      // Thumbnail is only a fallback when the main media asset is unavailable.
-      source: _image?.mediaId?.isNotEmpty == true ? '' : source,
+      // Keep source path/url even when mediaId exists, so viewer can fall back
+      // immediately if in-app asset cache is missing.
+      source: source,
       mediaId: _image?.mediaId?.isNotEmpty == true
           ? _image?.mediaId
           : _image?.thumbnailId,

@@ -50,6 +50,8 @@ class MediaImage extends StatefulWidget {
 }
 
 class _MediaImageState extends State<MediaImage> {
+  static final Map<String, Uint8List> _assetByteCache = <String, Uint8List>{};
+  static const int _maxAssetCacheEntries = 80;
   Future<Uint8List?>? _bytesFuture;
 
   @override
@@ -88,8 +90,16 @@ class _MediaImageState extends State<MediaImage> {
 
   Future<Uint8List?> _buildBytesFuture() async {
     if (widget.mediaId != null && widget.mediaId!.isNotEmpty) {
+      final cached = _assetByteCache[widget.mediaId!];
+      if (cached != null && cached.isNotEmpty) {
+        return cached;
+      }
       final bytes = await MediaDatabase.getAsset(widget.mediaId!);
       if (bytes == null || bytes.isEmpty) return null;
+      _assetByteCache[widget.mediaId!] = bytes;
+      if (_assetByteCache.length > _maxAssetCacheEntries) {
+        _assetByteCache.remove(_assetByteCache.keys.first);
+      }
       if (widget.annotations.isEmpty || !widget.burnAnnotationsIntoPreview) {
         return bytes;
       }
@@ -140,8 +150,11 @@ class _MediaImageState extends State<MediaImage> {
         builder: (context, snapshot) {
           final bytes = snapshot.data;
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(
-                child: CircularProgressIndicator(strokeWidth: 2));
+            return widget.source.isNotEmpty
+                ? _buildFromSource()
+                : const Center(
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  );
           }
           if (bytes != null && bytes.isNotEmpty) {
             return Image.memory(

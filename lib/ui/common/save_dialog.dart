@@ -64,15 +64,20 @@ class _SaveDialogState extends State<SaveDialog> {
   @override
   Widget build(BuildContext context) {
     final isTab = Responsive.isTablet(context);
+    final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
     return Dialog(
       backgroundColor: Colors.transparent,
       insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
       child: ConstrainedBox(
         constraints: BoxConstraints(maxWidth: isTab ? 420 : 360),
-        child: Container(
-          padding: EdgeInsets.all(isTab ? 26 : 22),
-          decoration: AppTheme.softCardDecoration(borderRadius: BorderRadius.circular(22), color: const Color(0xFF2A295D)),
-          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+        child: AnimatedPadding(
+          duration: const Duration(milliseconds: 160),
+          padding: EdgeInsets.only(bottom: keyboardInset > 0 ? 8 : 0),
+          child: Container(
+            padding: EdgeInsets.all(isTab ? 26 : 22),
+            decoration: AppTheme.softCardDecoration(borderRadius: BorderRadius.circular(22), color: const Color(0xFF2A295D)),
+            child: SingleChildScrollView(
+              child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text('Save Capture', style: TextStyle(color: Colors.white, fontSize: isTab ? 22 : 18, fontWeight: FontWeight.w700)),
             const SizedBox(height: 18),
             if (widget.imageUrl != null)
@@ -130,7 +135,9 @@ class _SaveDialogState extends State<SaveDialog> {
                 ),
               ],
             ),
-          ]),
+              ]),
+            ),
+          ),
         ),
       ),
     );

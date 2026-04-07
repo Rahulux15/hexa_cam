@@ -1,0 +1,16 @@
+/*
+  camera_web (Flutter) sets object-fit: cover on the platform-view wrapper div
+  and on the <video> element. That crops the stream to fill the box — unlike the
+  device’s native camera preview. Force contain so the full camera frame is visible.
+  Safe here: this app does not use other HTML <video> elements on web.
+*/
+flt-platform-view video,
+flt-html-element-view video,
+video {
+  object-fit: contain !important;
+}
+
+flt-platform-view div[style*="object-fit"],
+flt-html-element-view div[style*="object-fit"] {
+  object-fit: contain !important;
+}

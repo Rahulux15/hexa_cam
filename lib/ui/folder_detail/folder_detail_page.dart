@@ -618,7 +618,8 @@ class _FolderDetailPageState extends State<FolderDetailPage> {
               : image.imageUrl);
       return MediaImage(
         source: source,
-        mediaId: hasThumb ? image.thumbnailId : image.mediaId,
+        // Never decode video binary as image bytes.
+        mediaId: hasThumb ? image.thumbnailId : null,
         annotations: const [],
         burnAnnotationsIntoPreview: true,
         mirrorX: image.mirrored ?? false,

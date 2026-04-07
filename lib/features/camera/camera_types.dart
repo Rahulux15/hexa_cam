@@ -4,6 +4,7 @@ enum CameraViewMode { defaultOpen, toolsExpanded }
 
 enum CameraSideAction {
   lens,
+  aspectRatio,
   flipVertical,
   flipHorizontal,
   rotate,
