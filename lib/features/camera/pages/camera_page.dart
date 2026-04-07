@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 import 'package:camera/camera.dart' as cam;
@@ -2568,11 +2569,17 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                           onPressed: () async {
                             Navigator.pop(sheetContext);
                             if (!mounted) return;
-                            await _persistMedia(
-                              sourcePath: filePath,
-                              preferredName: defaultName,
-                              isVideo: isVideo,
-                              exportToDevice: true,
+                            _showMessage(
+                              'Download started in background',
+                              backgroundColor: const Color(0xFF2563EB),
+                            );
+                            unawaited(
+                              _persistMedia(
+                                sourcePath: filePath,
+                                preferredName: defaultName,
+                                isVideo: isVideo,
+                                exportToDevice: true,
+                              ),
                             );
                           },
                           icon: const Icon(Icons.download_outlined),
@@ -2598,14 +2605,20 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                               annotations: _annotationsForSave(),
                               isVideo: isVideo,
                               onSave: (filename, description) async {
-                                await _persistMedia(
-                                  sourcePath: filePath,
-                                  preferredName: filename.trim().isEmpty
-                                      ? defaultName
-                                      : filename.trim(),
-                                  description: description,
-                                  isVideo: isVideo,
-                                  exportToDevice: false,
+                                _showMessage(
+                                  'Saving started in background',
+                                  backgroundColor: const Color(0xFF2563EB),
+                                );
+                                unawaited(
+                                  _persistMedia(
+                                    sourcePath: filePath,
+                                    preferredName: filename.trim().isEmpty
+                                        ? defaultName
+                                        : filename.trim(),
+                                    description: description,
+                                    isVideo: isVideo,
+                                    exportToDevice: false,
+                                  ),
                                 );
                               },
                             );
@@ -2720,8 +2733,9 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
       }
 
       await MediaDatabase.saveAsset(mediaId, finalBytes);
-      final thumbnailId = isVideo ? null : mediaId;
-      if (thumbnailId != null && thumbnailId != mediaId) {
+      final thumbnailId =
+          isVideo ? null : FileService.generateAssetId('thumb');
+      if (thumbnailId != null) {
         final thumbBytes = kIsWeb
             ? thumbnailOrCompressed(finalBytes)
             : await compute(thumbnailOrCompressed, finalBytes);
@@ -2840,32 +2854,12 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
     required bool isVideo,
     required String defaultName,
   }) async {
-    final rawBytes = kIsWeb
-        ? await cam.XFile(filePath).readAsBytes()
-        : await FileService.readBytes(filePath);
     final annotations = _annotationsForSave();
-    Uint8List previewBytes = rawBytes;
-    if (!isVideo && annotations.isNotEmpty) {
-      previewBytes = await MarkedMediaRenderer.renderPhotoWithAnnotations(
-        baseImageBytes: rawBytes,
-        annotations: annotations,
-        mirrorX: _mirror || _flipH,
-        mirrorY: _flipV,
-        rotation: _rotation,
-      );
-      // PNG from renderer → high-quality JPEG; unmarked previews keep camera JPEG as-is.
-      previewBytes = kIsWeb
-          ? compressMarkedStillForStore(previewBytes)
-          : await compute(compressMarkedStillForStore, previewBytes);
-    }
-
-    final previewAssetId = FileService.generateAssetId('preview');
-    await MediaDatabase.saveAsset(previewAssetId, previewBytes);
     return ImageData(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
-      imageUrl: 'asset:$previewAssetId',
-      mediaId: previewAssetId,
-      thumbnailId: previewAssetId,
+      imageUrl: kIsWeb ? filePath : 'file://$filePath',
+      mediaId: null,
+      thumbnailId: null,
       timestamp: DateTime.now().toIso8601String(),
       cameraSettings: _settings,
       annotations: annotations,
@@ -2877,7 +2871,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
       type: isVideo ? MediaType.video : MediaType.image,
       sourceWidth: _lastSourceSize.width > 0 ? _lastSourceSize.width : null,
       sourceHeight: _lastSourceSize.height > 0 ? _lastSourceSize.height : null,
-      isMarkingsBaked: !isVideo && annotations.isNotEmpty,
+      isMarkingsBaked: false,
     );
   }
 

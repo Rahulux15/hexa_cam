@@ -42,6 +42,7 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
   final bool _flipV = false;
   final bool _mirror = false;
   Timer? _annotationSaveDebounce;
+  Timer? _imageMetaSaveDebounce;
   final GlobalKey<ViewerScreenState> _viewerKey =
       GlobalKey<ViewerScreenState>();
 
@@ -116,6 +117,7 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
   @override
   void dispose() {
     _annotationSaveDebounce?.cancel();
+    _imageMetaSaveDebounce?.cancel();
     _videoController?.dispose();
     super.dispose();
   }
@@ -149,30 +151,22 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
                 showFab: false,
                 showMeasurements: _showMeasurements,
                 onAnnotationsChanged: (list) {
-                  setState(() => _annotations = list);
+                  _annotations = list;
                   _schedulePersistAnnotations();
                 },
                 onFiltersChanged: (f) {
                   final img = _image;
                   if (img == null) return;
                   final upd = img.copyWith(cameraSettings: f.toCameraSettings());
-                  foldersController.updateImage(
-                    widget.folderId,
-                    widget.imageId,
-                    upd,
-                  );
-                  setState(() => _image = upd);
+                  _image = upd;
+                  _schedulePersistImageMeta(upd);
                 },
                 onStampChanged: (enabled) {
                   final img = _image;
                   if (img == null) return;
                   final upd = img.copyWith(showCalibrationStamp: enabled);
-                  foldersController.updateImage(
-                    widget.folderId,
-                    widget.imageId,
-                    upd,
-                  );
-                  setState(() => _image = upd);
+                  _image = upd;
+                  _schedulePersistImageMeta(upd);
                 },
                 buildMedia: (ctx) => isVideo
                     ? _buildVideoSource()
@@ -326,19 +320,15 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
                   initialAnnotations: List<Annotation>.from(_annotations),
                   hiddenAnnotationIds: _bakedAnnotationIdsAtOpen ?? const <String>{},
                   onAnnotationsChanged: (list) {
-                    setState(() => _annotations = list);
+                    _annotations = list;
                     _schedulePersistAnnotations();
                   },
                   onFiltersChanged: (f) {
                     final img = _image;
                     if (img == null) return;
                     final upd = img.copyWith(cameraSettings: f.toCameraSettings());
-                    foldersController.updateImage(
-                      widget.folderId,
-                      widget.imageId,
-                      upd,
-                    );
-                    setState(() => _image = upd);
+                    _image = upd;
+                    _schedulePersistImageMeta(upd);
                   },
                   buildMedia: (c) => isVideo
                       ? _buildVideoSource()
@@ -652,10 +642,20 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
       widget.imageId,
       updated,
     );
-    if (!mounted) return;
-    setState(() {
-      _annotations = synced;
-      _image = updated;
+    _annotations = synced;
+    _image = updated;
+  }
+
+  void _schedulePersistImageMeta(ImageData updated) {
+    _imageMetaSaveDebounce?.cancel();
+    _imageMetaSaveDebounce = Timer(const Duration(milliseconds: 280), () {
+      unawaited(
+        foldersController.updateImage(
+          widget.folderId,
+          widget.imageId,
+          updated,
+        ),
+      );
     });
   }
 

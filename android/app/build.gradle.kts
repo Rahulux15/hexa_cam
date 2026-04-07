@@ -21,6 +21,7 @@ android {
     namespace = "com.hexa_cam"
     compileSdk = flutter.compileSdkVersion
     buildToolsVersion = "35.0.0"
+    ndkVersion = "28.2.13676358"
 
     buildFeatures {
         buildConfig = true

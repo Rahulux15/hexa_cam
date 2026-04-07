@@ -109,7 +109,12 @@ class _SettingsPageState extends State<SettingsPage> {
           ),
           Expanded(
             child: SingleChildScrollView(
-              padding: EdgeInsets.all(pad),
+              padding: EdgeInsets.fromLTRB(
+                pad,
+                pad,
+                pad,
+                pad + MediaQuery.paddingOf(context).bottom + 12,
+              ),
               child: Responsive.constrain(context, child: _buildCurrentView()),
             ),
           ),

@@ -163,21 +163,29 @@ class FileService {
     if (Platform.isAndroid) {
       final preferred = Directory('/storage/emulated/0/Download');
       if (await _ensureVisibleDirectory(preferred)) {
-        return Directory(p.join(preferred.path, folderName));
+        final target = Directory(p.join(preferred.path, folderName));
+        await target.create(recursive: true);
+        return target;
       }
       final fallback = Directory('/storage/emulated/0/MyAppDownloads');
       if (await _ensureVisibleDirectory(fallback)) {
-        return Directory(p.join(fallback.path, folderName));
+        final target = Directory(p.join(fallback.path, folderName));
+        await target.create(recursive: true);
+        return target;
       }
     } else if (Platform.isIOS) {
       final docs = await getApplicationDocumentsDirectory();
       final preferred = Directory(p.join(docs.path, 'Downloads'));
       if (await _ensureVisibleDirectory(preferred)) {
-        return Directory(p.join(preferred.path, folderName));
+        final target = Directory(p.join(preferred.path, folderName));
+        await target.create(recursive: true);
+        return target;
       }
       final fallback = Directory(p.join(docs.path, 'MyAppDownloads'));
       if (await _ensureVisibleDirectory(fallback)) {
-        return Directory(p.join(fallback.path, folderName));
+        final target = Directory(p.join(fallback.path, folderName));
+        await target.create(recursive: true);
+        return target;
       }
     }
     final docs = await getApplicationDocumentsDirectory();

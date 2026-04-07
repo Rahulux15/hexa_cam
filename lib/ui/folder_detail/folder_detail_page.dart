@@ -630,9 +630,15 @@ class _FolderDetailPageState extends State<FolderDetailPage> {
     }
 
     final baked = image.isMarkingsBaked == true;
+    final previewMediaId = (image.thumbnailId?.isNotEmpty == true)
+        ? image.thumbnailId
+        : image.mediaId;
+    final previewSource = (image.imageUrl.isNotEmpty)
+        ? image.imageUrl
+        : (image.thumbnail ?? '');
     return MediaImage(
-      source: '',
-      mediaId: image.mediaId,
+      source: previewSource,
+      mediaId: previewMediaId,
       annotations: baked ? const [] : image.annotations,
       burnAnnotationsIntoPreview: !baked,
       mirrorX: image.mirrored ?? false,

@@ -35,6 +35,13 @@ class AnnotationPainter extends CustomPainter {
     this.uiTextScale = 1.0,
   });
 
+  Matrix4? _cachedTransform;
+  double? _cachedMinX;
+  double? _cachedMinY;
+  double? _cachedScale;
+  double? _cachedOffsetX;
+  double? _cachedOffsetY;
+
   @override
   void paint(Canvas canvas, Size size) {
     canvas.save();
@@ -158,6 +165,25 @@ class AnnotationPainter extends CustomPainter {
   }
 
   List<Offset> _toDisplayPoints(List<HexaPoint> sourcePoints) {
+    _ensureTransformCache();
+    final transformed = _cachedTransform!;
+    final minX = _cachedMinX!;
+    final minY = _cachedMinY!;
+    final zoomedScale = _cachedScale!;
+    final offsetX = _cachedOffsetX!;
+    final offsetY = _cachedOffsetY!;
+
+    return sourcePoints.map((point) {
+      final v = transformed.transform3(Vector3(point.x, point.y, 1));
+      return Offset(
+        offsetX + ((v.x - minX) * zoomedScale),
+        offsetY + ((v.y - minY) * zoomedScale),
+      );
+    }).toList();
+  }
+
+  void _ensureTransformCache() {
+    if (_cachedTransform != null) return;
     final sourceW = sourceSize.width <= 0 ? 1.0 : sourceSize.width;
     final sourceH = sourceSize.height <= 0 ? 1.0 : sourceSize.height;
     final displayW = displaySize.width <= 0 ? 1.0 : displaySize.width;
@@ -175,9 +201,7 @@ class AnnotationPainter extends CustomPainter {
       HexaPoint(x: 0, y: sourceH),
       HexaPoint(x: sourceW, y: sourceH),
     ].map((point) {
-      final v = transformed.transform3(
-        Vector3(point.x, point.y, 1),
-      );
+      final v = transformed.transform3(Vector3(point.x, point.y, 1));
       return Offset(v.x, v.y);
     }).toList();
 
@@ -187,20 +211,19 @@ class AnnotationPainter extends CustomPainter {
     final maxY = corners.map((p) => p.dy).reduce(max);
     final transformedW = (maxX - minX).clamp(1.0, double.infinity);
     final transformedH = (maxY - minY).clamp(1.0, double.infinity);
-    final scale = fit == BoxFit.cover
+    final baseScale = fit == BoxFit.cover
         ? max(displayW / transformedW, displayH / transformedH)
         : min(displayW / transformedW, displayH / transformedH);
-    final zoomedScale = scale * zoom;
-    final offsetX = (displayW - transformedW * zoomedScale) / 2;
-    final offsetY = (displayH - transformedH * zoomedScale) / 2;
+    final scale = baseScale * zoom;
+    final offsetX = (displayW - transformedW * scale) / 2;
+    final offsetY = (displayH - transformedH * scale) / 2;
 
-    return sourcePoints.map((point) {
-      final v = transformed.transform3(Vector3(point.x, point.y, 1));
-      return Offset(
-        offsetX + ((v.x - minX) * zoomedScale),
-        offsetY + ((v.y - minY) * zoomedScale),
-      );
-    }).toList();
+    _cachedTransform = transformed;
+    _cachedMinX = minX;
+    _cachedMinY = minY;
+    _cachedScale = scale;
+    _cachedOffsetX = offsetX;
+    _cachedOffsetY = offsetY;
   }
 
   void _drawMeasurementLabel(

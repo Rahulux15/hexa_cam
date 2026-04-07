@@ -8,6 +8,13 @@ import '../data/models/annotation.dart';
 import 'annotation_painter.dart';
 
 class MarkedMediaRenderer {
+  // Exported media is usually much higher resolution than on-screen preview.
+  // Scale strokes/labels up so saved output visually matches editing thickness.
+  static double _exportUiScale(Size sourceSize) {
+    final shortSide = sourceSize.shortestSide <= 0 ? 1.0 : sourceSize.shortestSide;
+    return (shortSide / 1080.0).clamp(1.0, 3.0).toDouble();
+  }
+
   static Future<Uint8List> renderAnnotationOverlay({
     required Size sourceSize,
     required List<Annotation> annotations,
@@ -15,6 +22,7 @@ class MarkedMediaRenderer {
     required bool mirrorY,
     required int rotation,
   }) async {
+    final exportScale = _exportUiScale(sourceSize);
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder);
     final painter = AnnotationPainter(
@@ -26,6 +34,8 @@ class MarkedMediaRenderer {
       mirrorY: mirrorY,
       zoom: 1,
       rotation: rotation,
+      lineWidthScale: exportScale,
+      uiTextScale: exportScale,
     );
     painter.paint(canvas, sourceSize);
     final outImage = await recorder.endRecording().toImage(
@@ -45,6 +55,7 @@ class MarkedMediaRenderer {
   }) async {
     final image = await _decodeImage(baseImageBytes);
     final sourceSize = Size(image.width.toDouble(), image.height.toDouble());
+    final exportScale = _exportUiScale(sourceSize);
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder);
 
@@ -74,6 +85,8 @@ class MarkedMediaRenderer {
       mirrorY: mirrorY,
       zoom: 1,
       rotation: rotation,
+      lineWidthScale: exportScale,
+      uiTextScale: exportScale,
     );
     painter.paint(canvas, sourceSize);
 

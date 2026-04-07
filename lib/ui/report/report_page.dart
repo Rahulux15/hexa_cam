@@ -198,7 +198,12 @@ class _ReportPageState extends State<ReportPage> {
             ),
             Expanded(
               child: SingleChildScrollView(
-                padding: EdgeInsets.fromLTRB(pad, 26, pad, 32),
+                padding: EdgeInsets.fromLTRB(
+                  pad,
+                  26,
+                  pad,
+                  32 + MediaQuery.paddingOf(context).bottom,
+                ),
                 child: Center(
                   child: ConstrainedBox(
                     constraints: BoxConstraints(maxWidth: maxWidth),
@@ -412,9 +417,14 @@ class _ReportPageState extends State<ReportPage> {
   }
 
   Widget _buildPreviewImage(ImageData image) {
+    final previewMediaId = (image.thumbnailId?.isNotEmpty == true)
+        ? image.thumbnailId
+        : image.mediaId;
     return MediaImage(
       source: image.imageUrl,
-      mediaId: image.mediaId,
+      mediaId: previewMediaId,
+      annotations: image.isMarkingsBaked == true ? const [] : image.annotations,
+      burnAnnotationsIntoPreview: image.isMarkingsBaked != true,
       fit: BoxFit.contain,
       filterQuality: FilterQuality.high,
       errorWidget: const Center(
@@ -605,196 +615,60 @@ class _ReportPageState extends State<ReportPage> {
   }
 
   Future<Uint8List> _buildReportPdf() async {
-    final pdf = pw.Document();
-    final logoProvider = await _loadReportLogoForPdf();
-    final now = DateTime.now();
     final reportImages = _reportImages;
-    final imageProviders = <pw.ImageProvider?>[];
+    final imageBytes = <Uint8List?>[];
     for (final image in reportImages) {
-      imageProviders.add(await _loadPdfImage(image));
+      imageBytes.add(await _collectPdfImageBytes(image));
     }
-    final primary = reportImages.isEmpty ? null : reportImages.first;
+    final logoBytes = await _loadReportLogoBytes();
+    final payload = <String, dynamic>{
+      'organizationName': _orgController.text.trim().isEmpty
+          ? 'Organization Name'
+          : _orgController.text.trim(),
+      'fullName': _nameController.text.isEmpty ? '-' : _nameController.text,
+      'email': _emailController.text.isEmpty ? '-' : _emailController.text,
+      'phone': _phoneController.text.isEmpty ? '-' : _phoneController.text,
+      'location': _locationController.text.isEmpty ? '-' : _locationController.text,
+      'date': DateTime.now().toIso8601String(),
+      'logoBytes': logoBytes,
+      'primaryExposure': (reportImages.isEmpty
+              ? 100
+              : reportImages.first.cameraSettings.exposure)
+          .round(),
+      'primaryIso': (reportImages.isEmpty ? 400 : reportImages.first.cameraSettings.iso)
+          .round(),
+      'primaryTemperature': (reportImages.isEmpty
+              ? 6500
+              : reportImages.first.cameraSettings.temperature)
+          .round(),
+      'primaryTint': (reportImages.isEmpty ? 0 : reportImages.first.cameraSettings.tint)
+          .round(),
+      'entries': List<Map<String, dynamic>>.generate(reportImages.length, (index) {
+        final image = reportImages[index];
+        return {
+          'title': reportImages.length > 1 ? 'Media ${index + 1}' : 'Marked Image',
+          'imageBytes': imageBytes[index],
+          'annotations': image.annotations
+              .asMap()
+              .entries
+              .map((entry) => '${entry.key + 1}. ${_annotationTitle(entry.value.type)}'
+                  '${(entry.value.measurement ?? '').isNotEmpty ? ' - ${entry.value.measurement}' : ''}')
+              .toList(),
+        };
+      }),
+    };
 
-    pdf.addPage(
-      pw.MultiPage(
-        pageFormat: PdfPageFormat.a4,
-        margin: const pw.EdgeInsets.all(20),
-        header: (context) => pw.Column(
-          crossAxisAlignment: pw.CrossAxisAlignment.start,
-          children: [
-            pw.Row(
-              crossAxisAlignment: pw.CrossAxisAlignment.start,
-              children: [
-                pw.Expanded(
-                  child: pw.Column(
-                    crossAxisAlignment: pw.CrossAxisAlignment.start,
-                    children: [
-                      pw.Text(
-                        _orgController.text.trim().isEmpty
-                            ? 'Organization Name'
-                            : _orgController.text.trim(),
-                        style: pw.TextStyle(
-                            fontSize: 24, fontWeight: pw.FontWeight.bold),
-                      ),
-                      pw.SizedBox(height: 8),
-                      pw.Text(
-                          'Email: ${_emailController.text.isEmpty ? '-' : _emailController.text}    Full Name: ${_nameController.text.isEmpty ? '-' : _nameController.text}'),
-                      pw.SizedBox(height: 4),
-                      pw.Text(
-                          'Phone: ${_phoneController.text.isEmpty ? '-' : _phoneController.text}'),
-                      pw.SizedBox(height: 4),
-                      pw.Text(
-                          'Address: ${_locationController.text.isEmpty ? '-' : _locationController.text}'),
-                    ],
-                  ),
-                ),
-                pw.Column(
-                  crossAxisAlignment: pw.CrossAxisAlignment.end,
-                  children: [
-                    pw.Text(
-                      'Page: ${context.pageNumber} of ${context.pagesCount}',
-                      style: const pw.TextStyle(fontSize: 10),
-                    ),
-                    pw.SizedBox(height: 6),
-                    pw.Text('Date: ${now.day}-${now.month}-${now.year}',
-                        style: const pw.TextStyle(fontSize: 10)),
-                  ],
-                ),
-              ],
-            ),
-            pw.SizedBox(height: 16),
-            pw.Divider(color: PdfColors.grey300),
-            pw.SizedBox(height: 14),
-          ],
-        ),
-        footer: (context) => pw.Column(
-          children: [
-            pw.Divider(color: PdfColors.grey300),
-            pw.SizedBox(height: 10),
-            pw.Row(
-              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-              children: [
-                if (logoProvider != null)
-                  pw.SizedBox(
-                    width: 192,
-                    height: 60,
-                    child: pw.Image(logoProvider, fit: pw.BoxFit.contain),
-                  )
-                else
-                  pw.SizedBox(width: 192, height: 60),
-                pw.Text(
-                  'Generated by Hexa-Cam - Scientific Imaging & Microscopy Platform\n© 2026 All Rights Reserved',
-                  textAlign: pw.TextAlign.right,
-                  style: const pw.TextStyle(fontSize: 10),
-                ),
-              ],
-            ),
-          ],
-        ),
-        build: (context) => [
-          pw.Text('Camera Settings',
-              style:
-                  pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold)),
-          pw.SizedBox(height: 12),
-          pw.Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: [
-              _pdfMetric('Exposure',
-                  '${(primary?.cameraSettings.exposure ?? 100).round()}%'),
-              _pdfMetric(
-                  'ISO', '${(primary?.cameraSettings.iso ?? 400).round()}'),
-              _pdfMetric('Temperature',
-                  '${(primary?.cameraSettings.temperature ?? 6500).round()}K'),
-              _pdfMetric(
-                  'Tint', '${(primary?.cameraSettings.tint ?? 0).round()}'),
-            ],
-          ),
-          pw.SizedBox(height: 18),
-          ...reportImages.asMap().entries.expand((entry) {
-            final image = entry.value;
-            return [
-              pw.Container(
-                width: double.infinity,
-                padding: const pw.EdgeInsets.all(14),
-                decoration: pw.BoxDecoration(
-                  color: PdfColors.grey100,
-                  borderRadius: pw.BorderRadius.circular(10),
-                ),
-                child: pw.Column(
-                  crossAxisAlignment: pw.CrossAxisAlignment.start,
-                  children: [
-                    pw.Text(
-                      reportImages.length > 1
-                          ? 'Media ${entry.key + 1}'
-                          : 'Marked Image',
-                      style: pw.TextStyle(
-                        fontSize: 14,
-                        fontWeight: pw.FontWeight.bold,
-                      ),
-                    ),
-                    pw.SizedBox(height: 12),
-                    if (imageProviders.length > entry.key &&
-                        imageProviders[entry.key] != null)
-                      pw.Container(
-                        height: 340,
-                        width: double.infinity,
-                        decoration:
-                            const pw.BoxDecoration(color: PdfColors.grey100),
-                        child: pw.Image(
-                          imageProviders[entry.key]!,
-                          fit: pw.BoxFit.contain,
-                        ),
-                      )
-                    else
-                      pw.Container(
-                        height: 340,
-                        width: double.infinity,
-                        alignment: pw.Alignment.center,
-                        decoration:
-                            const pw.BoxDecoration(color: PdfColors.grey100),
-                        child: pw.Text(
-                          'No image available',
-                          style: const pw.TextStyle(fontSize: 10),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-              pw.SizedBox(height: 16),
-              pw.Text('Marking Details',
-                  style: pw.TextStyle(
-                      fontSize: 16, fontWeight: pw.FontWeight.bold)),
-              pw.SizedBox(height: 10),
-              if (image.annotations.isEmpty)
-                pw.Text('No markings available')
-              else
-                ...image.annotations.asMap().entries.map(
-                      (a) => pw.Padding(
-                        padding: const pw.EdgeInsets.only(bottom: 8),
-                        child: pw.Text(
-                          '${a.key + 1}. ${_annotationTitle(a.value.type)}${(a.value.measurement ?? '').isNotEmpty ? ' - ${a.value.measurement}' : ''}',
-                        ),
-                      ),
-                    ),
-              if (entry.key != reportImages.length - 1) pw.SizedBox(height: 20),
-            ];
-          }),
-        ],
-      ),
-    );
-
-    return pdf.save();
+    return compute(_generateReportPdfInBackground, payload);
   }
 
-  Future<pw.MemoryImage?> _loadReportLogoForPdf() async {
+  Future<Uint8List?> _loadReportLogoBytes() async {
     try {
       final logoBytes = await rootBundle.load('assets/images/report_logo.png');
-      return pw.MemoryImage(logoBytes.buffer.asUint8List());
+      return logoBytes.buffer.asUint8List();
     } catch (_) {
       try {
         final fallback = await rootBundle.load('assets/images/about_logo.png');
-        return pw.MemoryImage(fallback.buffer.asUint8List());
+        return fallback.buffer.asUint8List();
       } catch (_) {
         return null;
       }
@@ -853,34 +727,18 @@ class _ReportPageState extends State<ReportPage> {
     }
   }
 
-  pw.Widget _pdfMetric(String label, String value) {
-    return pw.Container(
-      width: 120,
-      padding: const pw.EdgeInsets.all(12),
-      decoration: pw.BoxDecoration(
-        color: PdfColors.grey200,
-        borderRadius: pw.BorderRadius.circular(8),
-      ),
-      child: pw.Column(
-        crossAxisAlignment: pw.CrossAxisAlignment.start,
-        children: [
-          pw.Text(label, style: const pw.TextStyle(fontSize: 10)),
-          pw.SizedBox(height: 8),
-          pw.Text(value,
-              style:
-                  pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold)),
-        ],
-      ),
-    );
-  }
-
-  Future<pw.ImageProvider?> _loadPdfImage(ImageData? image) async {
+  Future<Uint8List?> _collectPdfImageBytes(ImageData? image) async {
     if (image == null) return null;
     try {
-      if (image.mediaId != null && image.mediaId!.isNotEmpty) {
-        final bytes = await MediaDatabase.getAsset(image.mediaId!);
+      final primaryAssetId =
+          image.mediaId?.isNotEmpty == true ? image.mediaId! : image.thumbnailId;
+      if (primaryAssetId != null && primaryAssetId.isNotEmpty) {
+        final bytes = await MediaDatabase.getAsset(primaryAssetId);
         if (bytes != null && bytes.isNotEmpty) {
-          return pw.MemoryImage(bytes);
+          return _reportController.prepareMediaBytes(
+            image: image,
+            baseBytes: bytes,
+          );
         }
       }
       final source = image.imageUrl;
@@ -888,7 +746,10 @@ class _ReportPageState extends State<ReportPage> {
         final bytes = await FileService.readBytes(
           source.replaceFirst('file://', ''),
         );
-        return pw.MemoryImage(bytes);
+        return _reportController.prepareMediaBytes(
+          image: image,
+          baseBytes: bytes,
+        );
       }
       return null;
     } catch (_) {
@@ -988,4 +849,181 @@ class _MetricCard extends StatelessWidget {
       ),
     );
   }
+}
+
+Future<Uint8List> _generateReportPdfInBackground(Map<String, dynamic> payload) async {
+  final pdf = pw.Document();
+  final logoBytes = payload['logoBytes'] as Uint8List?;
+  final logoProvider = logoBytes != null ? pw.MemoryImage(logoBytes) : null;
+  final generatedAt = DateTime.tryParse(payload['date'] as String? ?? '') ?? DateTime.now();
+  final entries = (payload['entries'] as List<dynamic>? ?? const <dynamic>[])
+      .cast<Map<String, dynamic>>();
+
+  pw.Widget metric(String label, String value) {
+    return pw.Container(
+      width: 120,
+      padding: const pw.EdgeInsets.all(12),
+      decoration: pw.BoxDecoration(
+        color: PdfColors.grey200,
+        borderRadius: pw.BorderRadius.circular(8),
+      ),
+      child: pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          pw.Text(label, style: const pw.TextStyle(fontSize: 10)),
+          pw.SizedBox(height: 8),
+          pw.Text(value, style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold)),
+        ],
+      ),
+    );
+  }
+
+  pdf.addPage(
+    pw.MultiPage(
+      pageFormat: PdfPageFormat.a4,
+      margin: const pw.EdgeInsets.all(20),
+      header: (context) => pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          pw.Row(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              pw.Expanded(
+                child: pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  children: [
+                    pw.Text(
+                      payload['organizationName'] as String? ?? 'Organization Name',
+                      style: pw.TextStyle(fontSize: 24, fontWeight: pw.FontWeight.bold),
+                    ),
+                    pw.SizedBox(height: 8),
+                    pw.Text(
+                      'Email: ${payload['email']}    Full Name: ${payload['fullName']}',
+                    ),
+                    pw.SizedBox(height: 4),
+                    pw.Text('Phone: ${payload['phone']}'),
+                    pw.SizedBox(height: 4),
+                    pw.Text('Address: ${payload['location']}'),
+                  ],
+                ),
+              ),
+              pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.end,
+                children: [
+                  pw.Text(
+                    'Page: ${context.pageNumber} of ${context.pagesCount}',
+                    style: const pw.TextStyle(fontSize: 10),
+                  ),
+                  pw.SizedBox(height: 6),
+                  pw.Text(
+                    'Date: ${generatedAt.day}-${generatedAt.month}-${generatedAt.year}',
+                    style: const pw.TextStyle(fontSize: 10),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          pw.SizedBox(height: 16),
+          pw.Divider(color: PdfColors.grey300),
+          pw.SizedBox(height: 14),
+        ],
+      ),
+      footer: (context) => pw.Column(
+        children: [
+          pw.Divider(color: PdfColors.grey300),
+          pw.SizedBox(height: 10),
+          pw.Row(
+            mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+            children: [
+              if (logoProvider != null)
+                pw.SizedBox(
+                  width: 192,
+                  height: 60,
+                  child: pw.Image(logoProvider, fit: pw.BoxFit.contain),
+                )
+              else
+                pw.SizedBox(width: 192, height: 60),
+              pw.Text(
+                'Generated by Hexa-Cam - Scientific Imaging & Microscopy Platform\n© 2026 All Rights Reserved',
+                textAlign: pw.TextAlign.right,
+                style: const pw.TextStyle(fontSize: 10),
+              ),
+            ],
+          ),
+        ],
+      ),
+      build: (context) => [
+        pw.Text('Camera Settings', style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold)),
+        pw.SizedBox(height: 12),
+        pw.Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          children: [
+            metric('Exposure', '${payload['primaryExposure']}%'),
+            metric('ISO', '${payload['primaryIso']}'),
+            metric('Temperature', '${payload['primaryTemperature']}K'),
+            metric('Tint', '${payload['primaryTint']}'),
+          ],
+        ),
+        pw.SizedBox(height: 18),
+        ...entries.asMap().entries.expand((entry) {
+          final section = entry.value;
+          final bytes = section['imageBytes'] as Uint8List?;
+          final annotations = (section['annotations'] as List<dynamic>? ?? const <dynamic>[])
+              .map((e) => e.toString())
+              .toList();
+          return [
+            pw.Container(
+              width: double.infinity,
+              padding: const pw.EdgeInsets.all(14),
+              decoration: pw.BoxDecoration(
+                color: PdfColors.grey100,
+                borderRadius: pw.BorderRadius.circular(10),
+              ),
+              child: pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  pw.Text(
+                    section['title'] as String? ?? 'Marked Image',
+                    style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold),
+                  ),
+                  pw.SizedBox(height: 12),
+                  if (bytes != null && bytes.isNotEmpty)
+                    pw.Container(
+                      height: 340,
+                      width: double.infinity,
+                      decoration: const pw.BoxDecoration(color: PdfColors.grey100),
+                      child: pw.Image(pw.MemoryImage(bytes), fit: pw.BoxFit.contain),
+                    )
+                  else
+                    pw.Container(
+                      height: 340,
+                      width: double.infinity,
+                      alignment: pw.Alignment.center,
+                      decoration: const pw.BoxDecoration(color: PdfColors.grey100),
+                      child: pw.Text('No image available', style: const pw.TextStyle(fontSize: 10)),
+                    ),
+                ],
+              ),
+            ),
+            pw.SizedBox(height: 16),
+            pw.Text('Marking Details', style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold)),
+            pw.SizedBox(height: 10),
+            if (annotations.isEmpty)
+              pw.Text('No markings available')
+            else
+              ...annotations.map(
+                (text) => pw.Padding(
+                  padding: const pw.EdgeInsets.only(bottom: 8),
+                  child: pw.Text(text),
+                ),
+              ),
+            if (entry.key != entries.length - 1) pw.SizedBox(height: 20),
+          ];
+        }),
+      ],
+    ),
+  );
+
+  return pdf.save();
 }
