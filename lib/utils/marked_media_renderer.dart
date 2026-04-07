@@ -12,7 +12,7 @@ class MarkedMediaRenderer {
   // Scale strokes/labels up so saved output visually matches editing thickness.
   static double _exportUiScale(Size sourceSize) {
     final shortSide = sourceSize.shortestSide <= 0 ? 1.0 : sourceSize.shortestSide;
-    return (shortSide / 1080.0).clamp(1.0, 3.0).toDouble();
+    return (shortSide / 720.0).clamp(1.5, 5.5).toDouble();
   }
 
   static Future<Uint8List> renderAnnotationOverlay({

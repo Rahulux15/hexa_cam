@@ -57,7 +57,7 @@ class AnnotationPainter extends CustomPainter {
 
   void _drawAnnotation(Canvas canvas, Annotation ann, Size canvasSize) {
     final strokeWidth =
-        (ann.strokeWidth * lineWidthScale).clamp(1.2, 4.0).toDouble();
+        (ann.strokeWidth * lineWidthScale).clamp(1.4, 14.0).toDouble();
     final paint = Paint()
       ..color = ann.color
       ..strokeWidth = strokeWidth
@@ -81,7 +81,7 @@ class AnnotationPainter extends CustomPainter {
         if (ann.text != null) {
           final shortSide = sourceSize.shortestSide <= 0 ? 1.0 : sourceSize.shortestSide;
           final fontSize =
-              (shortSide * 0.015 * uiTextScale).clamp(14.0, 44.0).toDouble();
+              (shortSide * 0.015 * uiTextScale).clamp(14.0, 96.0).toDouble();
           final tp = TextPainter(
               text: TextSpan(
                   text: ann.text,
@@ -235,7 +235,7 @@ class AnnotationPainter extends CustomPainter {
             (points.first.dx + points.last.dx) / 2,
             (points.first.dy + points.last.dy) / 2,
           );
-    final mFont = (9 * uiTextScale).clamp(7.0, 16.0);
+    final mFont = (9 * uiTextScale).clamp(9.0, 42.0);
     final textPainter = TextPainter(
       text: TextSpan(
         text: text,

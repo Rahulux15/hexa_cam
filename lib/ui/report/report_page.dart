@@ -730,16 +730,25 @@ class _ReportPageState extends State<ReportPage> {
   Future<Uint8List?> _collectPdfImageBytes(ImageData? image) async {
     if (image == null) return null;
     try {
-      final primaryAssetId =
-          image.mediaId?.isNotEmpty == true ? image.mediaId! : image.thumbnailId;
-      if (primaryAssetId != null && primaryAssetId.isNotEmpty) {
-        final bytes = await MediaDatabase.getAsset(primaryAssetId);
-        if (bytes != null && bytes.isNotEmpty) {
-          return _reportController.prepareMediaBytes(
-            image: image,
-            baseBytes: bytes,
-          );
-        }
+      final assetCandidates = <String>[
+        // Video report previews should use still thumbnails first.
+        if (image.type == MediaType.video &&
+            image.thumbnailId != null &&
+            image.thumbnailId!.isNotEmpty)
+          image.thumbnailId!,
+        if (image.mediaId != null && image.mediaId!.isNotEmpty) image.mediaId!,
+        if (image.type != MediaType.video &&
+            image.thumbnailId != null &&
+            image.thumbnailId!.isNotEmpty)
+          image.thumbnailId!,
+      ];
+      for (final assetId in assetCandidates) {
+        final bytes = await MediaDatabase.getAsset(assetId);
+        if (bytes == null || bytes.isEmpty) continue;
+        return _reportController.prepareMediaBytes(
+          image: image,
+          baseBytes: bytes,
+        );
       }
       final source = image.imageUrl;
       if (!kIsWeb && source.startsWith('file://')) {

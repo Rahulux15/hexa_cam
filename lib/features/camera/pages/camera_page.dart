@@ -577,6 +577,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
     final isPortrait = !isLandscape;
     final isCompactHeight = Responsive.isCompactHeight(context);
     final safeTop = MediaQuery.paddingOf(context).top;
+    final safeBottom = MediaQuery.paddingOf(context).bottom;
     final previewPadding = isTablet
         ? Responsive.cameraPreviewPadding(context)
         : EdgeInsets.fromLTRB(
@@ -619,7 +620,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
             Positioned(
               left: 12,
               right: 12,
-              bottom: isTablet ? 22 : 18,
+              bottom: (isTablet ? 22 : 18) + safeBottom,
               child: _buildBottomHorizontalRail(isTablet),
             ),
             if (_settings.zoom > 1)
