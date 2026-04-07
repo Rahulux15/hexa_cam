@@ -1,5 +1,8 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+
+import '../utils/app_logger.dart';
 
 class AsyncActionController extends GetxController {
   final RxMap<String, bool> _running = <String, bool>{}.obs;
@@ -30,12 +33,13 @@ class AsyncActionController extends GetxController {
           colorText: Colors.white,
         );
       }
-      await Future<void>.delayed(const Duration(milliseconds: 150));
       return result;
     } catch (error, stackTrace) {
       if (logErrors) {
-        debugPrint('Async action "$key" failed: $error');
-        debugPrintStack(stackTrace: stackTrace);
+        logDebug('Async action "$key" failed: $error');
+        if (kDebugMode) {
+          debugPrintStack(stackTrace: stackTrace);
+        }
       }
       if (errorMessage != null && Get.context != null) {
         Get.snackbar(

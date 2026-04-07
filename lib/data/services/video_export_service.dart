@@ -32,9 +32,14 @@ class VideoExportService {
     if (!await inputFile.exists()) return null;
 
     final tempDir = await getTemporaryDirectory();
-    final overlayBytes = await _buildTransparentOverlay(
+    final overlaySize = _resolveOverlaySize(
+      annotations: annotations,
       sourceWidth: sourceWidth,
       sourceHeight: sourceHeight,
+    );
+    final overlayBytes = await _buildTransparentOverlay(
+      sourceWidth: overlaySize.$1,
+      sourceHeight: overlaySize.$2,
       annotations: annotations,
       mirrorX: mirrorX,
       mirrorY: mirrorY,
@@ -51,35 +56,117 @@ class VideoExportService {
       _safeOutputName(outputFilename),
     );
 
-    final command = [
+    final baseArgs = <String>[
       '-y',
       '-i',
-      _escapePath(inputPath),
+      inputPath,
       '-i',
-      _escapePath(overlayPath),
+      overlayPath,
       '-filter_complex',
-      '"[0:v]scale=\'min(1280,iw)\':-2:flags=lanczos[base];[base][1:v]overlay=0:0:format=auto[v]"',
+      '[1:v][0:v]scale2ref[ov][base];[base][ov]overlay=0:0:format=auto[v]',
       '-map',
-      '"[v]"',
-      '-map',
-      '0:a?',
+      '[v]',
       '-c:v',
       'libx264',
       '-preset',
-      'medium',
+      'slow',
       '-crf',
-      '23',
+      '16',
+      '-pix_fmt',
+      'yuv420p',
+    ];
+
+    final argsCopyAudio = <String>[
+      ...baseArgs,
+      '-map',
+      '0:a?',
       '-c:a',
       'copy',
-      _escapePath(outputPath),
-    ].join(' ');
+      outputPath,
+    ];
+    if (await _runFfmpeg(argsCopyAudio)) return outputPath;
 
-    final session = await FFmpegKit.execute(command);
-    final returnCode = await session.getReturnCode();
-    if (returnCode == null || !ReturnCode.isSuccess(returnCode)) {
-      return null;
+    final argsAacAudio = <String>[
+      ...baseArgs,
+      '-map',
+      '0:a?',
+      '-c:a',
+      'aac',
+      '-b:a',
+      '128k',
+      outputPath,
+    ];
+    if (await _runFfmpeg(argsAacAudio)) return outputPath;
+
+    final argsNoAudio = <String>[
+      ...baseArgs,
+      '-an',
+      outputPath,
+    ];
+    if (await _runFfmpeg(argsNoAudio)) return outputPath;
+
+    // Device fallback: some builds fail libx264; try MPEG-4 encoder.
+    final mpeg4BaseArgs = <String>[
+      '-y',
+      '-i',
+      inputPath,
+      '-i',
+      overlayPath,
+      '-filter_complex',
+      '[1:v][0:v]scale2ref[ov][base];[base][ov]overlay=0:0:format=auto[v]',
+      '-map',
+      '[v]',
+      '-c:v',
+      'mpeg4',
+      '-q:v',
+      '2',
+      '-pix_fmt',
+      'yuv420p',
+    ];
+    final mpeg4WithAudio = <String>[
+      ...mpeg4BaseArgs,
+      '-map',
+      '0:a?',
+      '-c:a',
+      'aac',
+      '-b:a',
+      '128k',
+      outputPath,
+    ];
+    if (await _runFfmpeg(mpeg4WithAudio)) return outputPath;
+
+    final mpeg4NoAudio = <String>[
+      ...mpeg4BaseArgs,
+      '-an',
+      outputPath,
+    ];
+    if (await _runFfmpeg(mpeg4NoAudio)) return outputPath;
+
+    return null;
+  }
+
+  static (double, double) _resolveOverlaySize({
+    required List<Annotation> annotations,
+    required double sourceWidth,
+    required double sourceHeight,
+  }) {
+    var maxX = 0.0;
+    var maxY = 0.0;
+    for (final annotation in annotations) {
+      for (final point in annotation.points) {
+        if (point.x > maxX) maxX = point.x;
+        if (point.y > maxY) maxY = point.y;
+      }
     }
-    return outputPath;
+    // Keep extra headroom for text labels and stroke thickness.
+    final safeW = (maxX + 48).clamp(1, 8192).toDouble();
+    final safeH = (maxY + 48).clamp(1, 8192).toDouble();
+    final resolvedW = sourceWidth > 0 ? sourceWidth : safeW;
+    final resolvedH = sourceHeight > 0 ? sourceHeight : safeH;
+    return (
+      resolvedW < safeW ? safeW : resolvedW,
+      resolvedH < safeH ? safeH : resolvedH,
+    );
   }
 
   static Future<Uint8List> _buildTransparentOverlay({
@@ -107,8 +194,10 @@ class VideoExportService {
     return cleaned.endsWith('.mp4') ? cleaned : '$cleaned.mp4';
   }
 
-  static String _escapePath(String input) {
-    if (input.contains(' ')) return '"$input"';
-    return input;
+  static Future<bool> _runFfmpeg(List<String> args) async {
+    final session = await FFmpegKit.executeWithArguments(args);
+    final returnCode = await session.getReturnCode();
+    if (returnCode == null) return false;
+    return ReturnCode.isSuccess(returnCode);
   }
 }

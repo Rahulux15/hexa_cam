@@ -9,6 +9,7 @@ import 'package:path_provider/path_provider.dart';
 import '../data/models/image_data.dart';
 import '../controllers/permission_controller.dart';
 import '../data/services/file_service.dart';
+import '../utils/app_logger.dart';
 import '../utils/marked_media_renderer.dart';
 
 class ReportController extends GetxController {
@@ -35,8 +36,8 @@ class ReportController extends GetxController {
     isSaving.value = true;
     try {
       if (kIsWeb) {
-        await FileService.savePdfToDevice(bytes, filename);
-        showMessage('Report downloaded', Colors.green);
+        // In-browser storage is [MediaDatabase] + folder list (see report page).
+        showMessage('Report saved to app library', Colors.green);
         return true;
       }
       await _saveToAppFolderOnly(
@@ -47,7 +48,7 @@ class ReportController extends GetxController {
       showMessage('Report saved to App Folder', Colors.green);
       return true;
     } catch (e) {
-      debugPrint('Save report failed: $e');
+      logDebug('Save report failed: $e');
       showMessage('Unable to save report', Colors.red);
       return false;
     } finally {
@@ -82,7 +83,10 @@ class ReportController extends GetxController {
     try {
       if (kIsWeb) {
         await FileService.savePdfToDevice(bytes, filename);
-        showMessage('Report downloaded', Colors.green);
+        showMessage(
+          'Report downloaded; copy kept in app library',
+          Colors.green,
+        );
         return true;
       }
       final appOk = await FileService.saveToAppFolder(
@@ -114,7 +118,7 @@ class ReportController extends GetxController {
       showMessage('Unable to download report', Colors.red);
       return false;
     } catch (e) {
-      debugPrint('Download report failed: $e');
+      logDebug('Download report failed: $e');
       showMessage('Unable to download report', Colors.red);
       return false;
     } finally {

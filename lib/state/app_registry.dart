@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
@@ -17,32 +16,39 @@ import '../controllers/permission_controller.dart';
 import '../config/constants.dart';
 import 'microscope_calibration_provider.dart';
 
+/// Registers shared services and GetX controllers for the whole app.
 void initAppDependencies(SharedPreferences sharedPreferences) {
   Get.put<SharedPreferences>(sharedPreferences, permanent: true);
   Get.put<ApiService>(ApiService(), permanent: true);
   Get.put<FlutterSecureStorage>(const FlutterSecureStorage(), permanent: true);
   Get.put<StorageService>(StorageService(sharedPreferences), permanent: true);
   Get.put<CameraController>(CameraController(), permanent: true);
-  Get.put<PermissionController>(PermissionController(sharedPreferences), permanent: true);
-  Get.put<FoldersController>(FoldersController(Get.find<StorageService>()), permanent: true);
-  Get.put<CalibrationController>(CalibrationController(sharedPreferences), permanent: true);
-  Get.put<MicroscopeCalibrationProvider>(MicroscopeCalibrationProvider(sharedPreferences), permanent: true);
+  Get.put<PermissionController>(
+    PermissionController(sharedPreferences),
+    permanent: true,
+  );
+  Get.put<FoldersController>(
+    FoldersController(Get.find<StorageService>()),
+    permanent: true,
+  );
+  Get.put<CalibrationController>(
+    CalibrationController(sharedPreferences),
+    permanent: true,
+  );
+  Get.put<MicroscopeCalibrationProvider>(
+    MicroscopeCalibrationProvider(sharedPreferences),
+    permanent: true,
+  );
   Get.put<UiStateController>(UiStateController(), permanent: true);
 }
 
 StorageService get storageService => Get.find<StorageService>();
 FoldersController get foldersController => Get.find<FoldersController>();
-CalibrationController get calibrationController => Get.find<CalibrationController>();
+CalibrationController get calibrationController =>
+    Get.find<CalibrationController>();
 MicroscopeCalibrationProvider get microscopeCalibrationController =>
     Get.find<MicroscopeCalibrationProvider>();
 UiStateController get uiStateController => Get.find<UiStateController>();
-
-final measurementModeProvider = StateProvider<bool>((ref) => false);
-final calibrationProvider =
-    Provider<Map<String, StoredCalibration>>((ref) => calibrationController.calibrations);
-final microscopeCalibrationProvider =
-    Provider<MicroscopeCalibrationProvider>((ref) => microscopeCalibrationController);
-final foldersProvider = Provider<FoldersController>((ref) => foldersController);
 
 class FoldersController extends GetxController {
   FoldersController(this._storage) {
@@ -80,8 +86,9 @@ class FoldersController extends GetxController {
   }
 
   Future<void> renameFolder(String id, String newName) async {
-    folders =
-        folders.map((f) => f.id == id ? f.copyWith(name: newName) : f).toList();
+    folders = folders
+        .map((f) => f.id == id ? f.copyWith(name: newName) : f)
+        .toList();
     await _saveAndRefresh();
   }
 
@@ -96,7 +103,9 @@ class FoldersController extends GetxController {
   Future<void> removeImage(String folderId, String imageId) async {
     folders = folders.map((f) {
       if (f.id != folderId) return f;
-      return f.copyWith(images: f.images.where((i) => i.id != imageId).toList());
+      return f.copyWith(
+        images: f.images.where((i) => i.id != imageId).toList(),
+      );
     }).toList();
     await _saveAndRefresh();
   }
@@ -104,12 +113,18 @@ class FoldersController extends GetxController {
   Future<void> removeImages(String folderId, Set<String> imageIds) async {
     folders = folders.map((f) {
       if (f.id != folderId) return f;
-      return f.copyWith(images: f.images.where((i) => !imageIds.contains(i.id)).toList());
+      return f.copyWith(
+        images: f.images.where((i) => !imageIds.contains(i.id)).toList(),
+      );
     }).toList();
     await _saveAndRefresh();
   }
 
-  Future<void> updateImage(String folderId, String imageId, ImageData updated) async {
+  Future<void> updateImage(
+    String folderId,
+    String imageId,
+    ImageData updated,
+  ) async {
     folders = folders.map((f) {
       if (f.id != folderId) return f;
       return f.copyWith(

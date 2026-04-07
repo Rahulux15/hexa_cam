@@ -15,6 +15,11 @@ class AnnotationPainter extends CustomPainter {
   final bool mirrorY;
   final double zoom;
   final int rotation;
+  /// Multiplier for stroke width (e.g. [MediaQuery.devicePixelRatio]) for crisper lines on screen.
+  final double lineWidthScale;
+
+  /// Accessibility / device text scaling for labels (pass [MediaQuery.textScalerOf] via `.scale(1.0)`).
+  final double uiTextScale;
 
   AnnotationPainter({
     required this.annotations,
@@ -26,6 +31,8 @@ class AnnotationPainter extends CustomPainter {
     this.mirrorY = false,
     this.zoom = 1,
     this.rotation = 0,
+    this.lineWidthScale = 1.0,
+    this.uiTextScale = 1.0,
   });
 
   @override
@@ -42,7 +49,8 @@ class AnnotationPainter extends CustomPainter {
   }
 
   void _drawAnnotation(Canvas canvas, Annotation ann, Size canvasSize) {
-    final strokeWidth = ann.strokeWidth.clamp(1.0, 2.0).toDouble();
+    final strokeWidth =
+        (ann.strokeWidth * lineWidthScale).clamp(1.2, 4.0).toDouble();
     final paint = Paint()
       ..color = ann.color
       ..strokeWidth = strokeWidth
@@ -65,7 +73,8 @@ class AnnotationPainter extends CustomPainter {
       case AnnotationType.text:
         if (ann.text != null) {
           final shortSide = sourceSize.shortestSide <= 0 ? 1.0 : sourceSize.shortestSide;
-          final fontSize = (shortSide * 0.015).clamp(16.0, 36.0).toDouble();
+          final fontSize =
+              (shortSide * 0.015 * uiTextScale).clamp(14.0, 44.0).toDouble();
           final tp = TextPainter(
               text: TextSpan(
                   text: ann.text,
@@ -203,12 +212,13 @@ class AnnotationPainter extends CustomPainter {
             (points.first.dx + points.last.dx) / 2,
             (points.first.dy + points.last.dy) / 2,
           );
+    final mFont = (9 * uiTextScale).clamp(7.0, 16.0);
     final textPainter = TextPainter(
       text: TextSpan(
         text: text,
-        style: const TextStyle(
+        style: TextStyle(
           color: Colors.white,
-          fontSize: 9,
+          fontSize: mFont,
           fontWeight: FontWeight.w700,
           height: 1.25,
         ),
@@ -252,22 +262,10 @@ class AnnotationPainter extends CustomPainter {
       labelRect.top + (labelHeight - textPainter.height) / 2 - 1,
     );
 
-    canvas.save();
-    final center = Offset(
-      labelRect.left + labelRect.width / 2,
-      labelRect.top + labelRect.height / 2,
-    );
-    canvas.translate(center.dx, center.dy);
-    if (rotation % 360 != 0) {
-      canvas.rotate(-rotation * pi / 180);
-    }
-    if (mirrorX || mirrorY) {
-      canvas.scale(mirrorX ? -1.0 : 1.0, mirrorY ? -1.0 : 1.0);
-    }
-    canvas.translate(-center.dx, -center.dy);
+    // Keep labels axis-aligned in display (viewport) space so text stays
+    // upright and readable; geometry is already transformed in [points].
     canvas.drawRRect(labelRect, labelPaint);
     textPainter.paint(canvas, textOffset);
-    canvas.restore();
   }
 
   @override

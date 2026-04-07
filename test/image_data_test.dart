@@ -17,4 +17,28 @@ void main() {
     expect(roundTrip.isMarkingsBaked, isTrue);
     expect(roundTrip.imageUrl, 'file://image.png');
   });
+
+  test('ImageData copyWith preserves isMarkingsBaked when omitted', () {
+    final base = ImageData(
+      id: '1',
+      imageUrl: 'a',
+      timestamp: 't',
+      cameraSettings: const CameraSettings(),
+      isMarkingsBaked: true,
+    );
+    final updated = base.copyWith(filename: 'x.png');
+    expect(updated.isMarkingsBaked, isTrue);
+    expect(updated.filename, 'x.png');
+  });
+
+  test('ImageData copyWith can set isMarkingsBaked explicitly', () {
+    final base = ImageData(
+      id: '1',
+      imageUrl: 'a',
+      timestamp: 't',
+      cameraSettings: const CameraSettings(),
+      isMarkingsBaked: true,
+    );
+    expect(base.copyWith(isMarkingsBaked: false).isMarkingsBaked, isFalse);
+  });
 }

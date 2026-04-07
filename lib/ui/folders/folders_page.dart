@@ -1,10 +1,10 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
+import 'package:get/get.dart';
 import '../../config/theme.dart';
 import '../../data/models/folder.dart';
 import '../../data/models/image_data.dart';
-import '../../state/providers.dart';
+import '../../state/app_registry.dart';
 import '../../utils/responsive.dart';
 
 class FoldersPage extends StatefulWidget {
@@ -27,7 +27,15 @@ class _FoldersPageState extends State<FoldersPage> {
 
   @override
   Widget build(BuildContext context) {
-    final folders = foldersController.folders;
+    return GetBuilder<FoldersController>(
+      builder: (controller) {
+        final folders = controller.folders;
+        return _buildFoldersScaffold(context, folders);
+      },
+    );
+  }
+
+  Widget _buildFoldersScaffold(BuildContext context, List<Folder> folders) {
     final filtered = _searchQuery.isEmpty
         ? folders
         : folders
@@ -71,7 +79,7 @@ class _FoldersPageState extends State<FoldersPage> {
                           const SizedBox(width: 5),
                           _circleIconButton(
                               icon: Icons.settings,
-                              onTap: () => context.push('/settings'),
+                              onTap: () => Get.toNamed<void>('/settings'),
                               size: isTab ? 38 : 34)
                         ]),
                         SizedBox(height: isTab ? 10 : 8),
@@ -287,7 +295,7 @@ class _FoldersPageState extends State<FoldersPage> {
           offset: Offset(0, (1 - value) * 20),
           child: Opacity(opacity: value, child: child)),
       child: GestureDetector(
-          onTap: () => context.push('/folder/${folder.id}'),
+          onTap: () => Get.toNamed<void>('/folder/${folder.id}'),
           child: Container(
             constraints: BoxConstraints(minHeight: isTab ? 92 : 82),
             padding: EdgeInsets.symmetric(
@@ -321,13 +329,17 @@ class _FoldersPageState extends State<FoldersPage> {
                             fontWeight: FontWeight.w700,
                             fontSize: isTab ? 16 : 14)),
                     const SizedBox(height: 4),
-                    Row(children: [
-                      _tinyMeta(Icons.photo_library_outlined, '$images'),
-                      const SizedBox(width: 10),
-                      _tinyMeta(Icons.videocam_outlined, '$videos'),
-                      const SizedBox(width: 10),
-                      _tinyMeta(Icons.calendar_today_outlined, created),
-                    ]),
+                    Wrap(
+                      spacing: 10,
+                      runSpacing: 4,
+                      children: [
+                        _tinyMeta(Icons.photo_library_outlined, '$images'),
+                        _tinyMeta(Icons.videocam_outlined, '$videos'),
+                        _tinyMeta(Icons.description_outlined,
+                            '${folder.reports?.length ?? 0}'),
+                        _tinyMeta(Icons.calendar_today_outlined, created),
+                      ],
+                    ),
                   ],
                 ),
               ),

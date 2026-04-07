@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 /// Responsive breakpoints and helpers - Exact from specification
@@ -102,15 +103,14 @@ class Responsive {
     return isTablet(context) ? 6 : 4;
   }
 
-  /// Content max width – keeps forms/cards from stretching edge-to-edge on tablets.
-  static double contentMaxWidth(BuildContext context) =>
-      isDesktop(context)
-          ? 1080
-          : isLandscapeTablet(context)
-              ? 940
-              : isTablet(context)
-                  ? 760
-                  : double.infinity;
+  /// Content max width – tablets, desktop, and wide browser windows (web) get a centered column.
+  static double contentMaxWidth(BuildContext context) {
+    final w = MediaQuery.sizeOf(context).width;
+    if (isDesktop(context) || (kIsWeb && w >= desktopMin)) return 1080;
+    if (isLandscapeTablet(context)) return 940;
+    if (isTablet(context) || (kIsWeb && w >= tabletMin)) return 760;
+    return double.infinity;
+  }
 
   /// Horizontal page padding.
   static double pagePadding(BuildContext context) =>

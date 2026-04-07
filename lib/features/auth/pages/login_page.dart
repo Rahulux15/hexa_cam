@@ -1,13 +1,10 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:go_router/go_router.dart';
-import '../controllers/auth_controller.dart';
+import '../../../controllers/auth_controller.dart';
 import '../../../config/theme.dart';
 import '../../../utils/responsive.dart';
 import '../../../ui/common/hexa_toast.dart';
-
-
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -64,7 +61,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
         type: HexaToastType.success,
       );
       // Navigate to folders page after successful login
-      context.go('/folders');
+      Get.offAllNamed<void>('/folders');
     } else if (mounted) {
       HexaToast.show(
         context,

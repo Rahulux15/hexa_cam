@@ -42,6 +42,11 @@ class CoordinateTransformer {
     return Offset(v.x, v.y);
   }
 
+  /// Maps a point from **layout** space (same box as the image, origin
+  /// top-left) into source image coordinates when the preview is **not**
+  /// wrapped in a [Transform] that already applies [rotation] / mirrors.
+  /// Camera preview gestures sit inside such a [Transform] and must **not**
+  /// use this — use local positions as source coords instead.
   static Offset screenToImage(
     Offset point, {
     required Size imageSize,

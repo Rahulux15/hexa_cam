@@ -2,8 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
@@ -14,22 +12,22 @@ import '../../data/models/image_data.dart';
 import '../../data/models/report_data.dart';
 import '../../data/services/database_service.dart';
 import '../../data/services/file_service.dart';
-import '../../state/providers.dart';
+import '../../state/app_registry.dart';
 import '../../utils/responsive.dart';
 import '../common/media_image.dart';
 import '../common/responsive_action.dart';
 import '../../controllers/async_action_controller.dart';
 
-class ReportPage extends ConsumerStatefulWidget {
+class ReportPage extends StatefulWidget {
   final String folderId;
   final Map<String, dynamic>? reportData;
   const ReportPage({super.key, required this.folderId, this.reportData});
 
   @override
-  ConsumerState<ReportPage> createState() => _ReportPageState();
+  State<ReportPage> createState() => _ReportPageState();
 }
 
-class _ReportPageState extends ConsumerState<ReportPage> {
+class _ReportPageState extends State<ReportPage> {
   final ReportController _reportController = Get.put(ReportController(), permanent: true);
   final AsyncActionController _asyncActions =
       Get.put(AsyncActionController(), permanent: true);
@@ -102,77 +100,96 @@ class _ReportPageState extends ConsumerState<ReportPage> {
                   children: [
                     _circleButton(
                         icon: Icons.arrow_back_rounded,
-                        onTap: () => context.pop()),
+                        onTap: () => Get.back<void>()),
                     const Spacer(),
-                    SizedBox(
-                      width: 170,
-                      child: Tooltip(
-                        message: 'Download to public Downloads + App Folder',
-                        child: ResponsiveActionButton(
-                          actionKey: 'report_download',
-                          asyncController: _asyncActions,
-                          onPressed: _downloadReport,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF232651),
-                            shadowColor: Colors.transparent,
-                            padding: EdgeInsets.zero,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(18),
-                            ),
-                          ),
-                          child: const Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
+                    Flexible(
+                      child: LayoutBuilder(
+                        builder: (context, constraints) {
+                          final compact = constraints.maxWidth < 320;
+                          final buttonWidth = compact
+                              ? constraints.maxWidth
+                              : (constraints.maxWidth - 12) / 2;
+                          return Wrap(
+                            alignment: WrapAlignment.end,
+                            spacing: 12,
+                            runSpacing: 8,
                             children: [
-                              Icon(Icons.download_outlined,
-                                  color: Colors.white),
-                              SizedBox(width: 10),
-                              Text(
-                                'Download',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w500,
+                              SizedBox(
+                                width: buttonWidth.clamp(120.0, 190.0),
+                                child: Tooltip(
+                                  message:
+                                      'Download to public Downloads + App Folder',
+                                  child: ResponsiveActionButton(
+                                    actionKey: 'report_download',
+                                    asyncController: _asyncActions,
+                                    onPressed: _downloadReport,
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: const Color(0xFF232651),
+                                      shadowColor: Colors.transparent,
+                                      padding: EdgeInsets.zero,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(18),
+                                      ),
+                                    ),
+                                    child: const Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      children: [
+                                        Icon(Icons.download_outlined,
+                                            color: Colors.white),
+                                        SizedBox(width: 10),
+                                        Text(
+                                          'Download',
+                                          style: TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              SizedBox(
+                                width: buttonWidth.clamp(110.0, 160.0),
+                                child: Tooltip(
+                                  message: 'Save to App Folder only',
+                                  child: ResponsiveActionButton(
+                                    actionKey: 'report_save',
+                                    asyncController: _asyncActions,
+                                    onPressed: _saveReport,
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.transparent,
+                                      shadowColor: Colors.transparent,
+                                      padding: EdgeInsets.zero,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(18),
+                                      ),
+                                    ),
+                                    child: const Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      children: [
+                                        Icon(Icons.save_alt_outlined,
+                                            color: Colors.white),
+                                        SizedBox(width: 10),
+                                        Text(
+                                          'Save',
+                                          style: TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
                                 ),
                               ),
                             ],
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    SizedBox(
-                      width: 132,
-                      child: Tooltip(
-                        message: 'Save to App Folder only',
-                        child: ResponsiveActionButton(
-                          actionKey: 'report_save',
-                          asyncController: _asyncActions,
-                          onPressed: _saveReport,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.transparent,
-                            shadowColor: Colors.transparent,
-                            padding: EdgeInsets.zero,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(18),
-                            ),
-                          ),
-                          child: const Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(Icons.save_alt_outlined,
-                                  color: Colors.white),
-                              SizedBox(width: 10),
-                              Text(
-                                'Save',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
+                          );
+                        },
                       ),
                     ),
                   ],
@@ -399,6 +416,7 @@ class _ReportPageState extends ConsumerState<ReportPage> {
       source: image.imageUrl,
       mediaId: image.mediaId,
       fit: BoxFit.contain,
+      filterQuality: FilterQuality.high,
       errorWidget: const Center(
           child: Icon(Icons.broken_image_outlined, color: AppTheme.textMuted)),
     );
@@ -760,16 +778,7 @@ class _ReportPageState extends ConsumerState<ReportPage> {
   }
 
   bool _validateForm() {
-    if (_orgController.text.trim().isEmpty ||
-        _nameController.text.trim().isEmpty ||
-        _emailController.text.trim().isEmpty ||
-        _locationController.text.trim().isEmpty) {
-      _showMessage(
-        'Fill organization, name, email, and location before generating the report',
-        AppTheme.danger,
-      );
-      return false;
-    }
+    // Report form fields are optional; allow generate/save with empty values.
     return true;
   }
 
@@ -808,7 +817,8 @@ class _ReportPageState extends ConsumerState<ReportPage> {
       ),
       sourceImages: _items,
     );
-    ref.read(foldersProvider).addReport(widget.folderId, report);
+    await foldersController.addReport(widget.folderId, report);
+    if (!mounted) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       Navigator.of(context).pop();
@@ -892,7 +902,8 @@ class _ReportPageState extends ConsumerState<ReportPage> {
       ),
       sourceImages: _items,
     );
-    ref.read(foldersProvider).addReport(widget.folderId, report);
+    await foldersController.addReport(widget.folderId, report);
+    if (!mounted) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       Navigator.of(context).pop();

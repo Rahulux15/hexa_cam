@@ -3,9 +3,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:go_router/go_router.dart';
-
-import '../controllers/auth_controller.dart';
+import '../../../controllers/auth_controller.dart';
 import '../../../utils/responsive.dart';
 
 class SplashPage extends StatefulWidget {
@@ -66,7 +64,7 @@ class _SplashPageState extends State<SplashPage> with TickerProviderStateMixin {
       hasLoggedInBefore = await authController.hasValidSession();
       if (!mounted) return;
     }
-    context.go(hasLoggedInBefore ? '/folders' : '/login');
+    Get.offAllNamed<void>(hasLoggedInBefore ? '/folders' : '/login');
   }
 
   @override

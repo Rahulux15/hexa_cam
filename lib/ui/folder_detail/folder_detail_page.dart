@@ -1,14 +1,13 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:go_router/go_router.dart';
 import '../../config/theme.dart';
 import '../../data/models/folder.dart';
 import '../../data/models/image_data.dart';
 import '../../data/models/report_data.dart';
 import '../../data/services/database_service.dart';
 import '../../controllers/report_controller.dart';
-import '../../state/providers.dart';
+import '../../state/app_registry.dart';
 import '../../utils/responsive.dart';
 import '../common/media_image.dart';
 
@@ -45,14 +44,21 @@ class _FolderDetailPageState extends State<FolderDetailPage> {
 
   @override
   Widget build(BuildContext context) {
-    final folders = foldersController.folders;
-    final folder = _getFolder(folders);
-    if (folder == null) {
-      WidgetsBinding.instance
-          .addPostFrameCallback((_) => context.go('/folders'));
-      return const SizedBox();
-    }
+    return GetBuilder<FoldersController>(
+      builder: (controller) {
+        final folders = controller.folders;
+        final folder = _getFolder(folders);
+        if (folder == null) {
+          WidgetsBinding.instance
+              .addPostFrameCallback((_) => Get.offAllNamed<void>('/folders'));
+          return const SizedBox();
+        }
+        return _buildFolderScaffold(context, folder);
+      },
+    );
+  }
 
+  Widget _buildFolderScaffold(BuildContext context, Folder folder) {
     final photos =
         folder.images.where((image) => image.type != MediaType.video).toList();
     final videos =
@@ -79,7 +85,7 @@ class _FolderDetailPageState extends State<FolderDetailPage> {
                   child: Row(children: [
                     _roundButton(
                         icon: Icons.arrow_back_rounded,
-                        onTap: () => context.pop(),
+                        onTap: () => Get.back<void>(),
                         isTab: isTab),
                     SizedBox(width: isTab ? 20 : 14),
                     Expanded(
@@ -133,26 +139,60 @@ class _FolderDetailPageState extends State<FolderDetailPage> {
                         horizontal: 16, vertical: 12),
                     decoration: AppTheme.softCardDecoration(
                         borderRadius: BorderRadius.circular(18)),
-                    child: Row(children: [
-                      Text('${_selectedImages.length} selected',
-                          style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w700)),
-                      const Spacer(),
-                      _selectionChip(
-                          'Report', AppTheme.primary, _generateReport),
-                      const SizedBox(width: 8),
-                      _selectionChip(
-                          'Delete', AppTheme.danger, _deleteSelected),
-                      const SizedBox(width: 8),
-                      _selectionChip(
-                          'Cancel',
-                          AppTheme.textMuted,
-                          () => setState(() {
-                                _selectedImages.clear();
-                                _selectionMode = false;
-                              })),
-                    ]),
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        final compact = constraints.maxWidth < 560;
+                        if (!compact) {
+                          return Row(children: [
+                            Text('${_selectedImages.length} selected',
+                                style: const TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w700)),
+                            const Spacer(),
+                            _selectionChip(
+                                'Report', AppTheme.primary, _generateReport),
+                            const SizedBox(width: 8),
+                            _selectionChip(
+                                'Delete', AppTheme.danger, _deleteSelected),
+                            const SizedBox(width: 8),
+                            _selectionChip(
+                                'Cancel',
+                                AppTheme.textMuted,
+                                () => setState(() {
+                                      _selectedImages.clear();
+                                      _selectionMode = false;
+                                    })),
+                          ]);
+                        }
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('${_selectedImages.length} selected',
+                                style: const TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w700)),
+                            const SizedBox(height: 10),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: [
+                                _selectionChip(
+                                    'Report', AppTheme.primary, _generateReport),
+                                _selectionChip(
+                                    'Delete', AppTheme.danger, _deleteSelected),
+                                _selectionChip(
+                                    'Cancel',
+                                    AppTheme.textMuted,
+                                    () => setState(() {
+                                          _selectedImages.clear();
+                                          _selectionMode = false;
+                                        })),
+                              ],
+                            ),
+                          ],
+                        );
+                      },
+                    ),
                   ),
                 ),
               ),
@@ -242,11 +282,16 @@ class _FolderDetailPageState extends State<FolderDetailPage> {
                                         crossAxisAlignment:
                                             CrossAxisAlignment.start,
                                         children: [
-                                          Text(report.filename,
-                                              style: const TextStyle(
-                                                  color: Colors.white,
-                                                  fontWeight: FontWeight.w700,
-                                                  fontSize: 16)),
+                    Text(
+                      report.filename,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 16,
+                      ),
+                    ),
                                           const SizedBox(height: 6),
                                           Text(
                                             (report.formData != null &&
@@ -369,7 +414,13 @@ class _FolderDetailPageState extends State<FolderDetailPage> {
             child: Stack(children: [
               AspectRatio(
                 aspectRatio: 1,
-                child: _buildMediaPreview(image),
+                child: _buildMediaPreview(
+                  image,
+                  layoutWidth: (cardWidth == double.infinity
+                          ? MediaQuery.sizeOf(context).width - 72
+                          : cardWidth) -
+                      28,
+                ),
               ),
               if (image.type == MediaType.video)
                 const Positioned.fill(
@@ -442,7 +493,7 @@ class _FolderDetailPageState extends State<FolderDetailPage> {
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  _buildMediaPreview(image),
+                  _buildMediaPreview(image, layoutWidth: 78),
                   if (image.annotations.isNotEmpty)
                     Positioned(
                       left: 5,
@@ -481,13 +532,18 @@ class _FolderDetailPageState extends State<FolderDetailPage> {
                     color: const Color(0xFF7472FF),
                     size: 16),
                 const SizedBox(width: 6),
-                Text(
+                Expanded(
+                  child: Text(
                     image.filename ??
                         (image.type == MediaType.video ? 'Video' : 'Photo'),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                         color: Colors.white,
                         fontWeight: FontWeight.w600,
-                        fontSize: 18))
+                        fontSize: 18),
+                  ),
+                ),
               ]),
               const SizedBox(height: 6),
               Row(children: [
@@ -512,7 +568,7 @@ class _FolderDetailPageState extends State<FolderDetailPage> {
     return SizedBox(
       height: Responsive.bottomBarHeight(context),
       child: ElevatedButton(
-        onPressed: () => context.push('/camera/${widget.folderId}'),
+        onPressed: () => Get.toNamed<void>('/camera/${widget.folderId}'),
         style: ElevatedButton.styleFrom(
             backgroundColor: Colors.transparent,
             shadowColor: Colors.transparent,
@@ -545,20 +601,47 @@ class _FolderDetailPageState extends State<FolderDetailPage> {
           child: Icon(Icons.broken_image_outlined,
               color: AppTheme.textMuted, size: 28)));
 
-  Widget _buildMediaPreview(ImageData image) {
-    final hasThumbnail = image.thumbnailId != null && image.thumbnailId!.isNotEmpty;
-    final source = hasThumbnail
-        ? ''
-        : (image.thumbnail != null && image.thumbnail!.isNotEmpty
-            ? image.thumbnail!
-            : image.imageUrl);
+  /// [layoutWidth]: logical width of the image area (decode uses DPR × this cap).
+  Widget _buildMediaPreview(ImageData image, {required double layoutWidth}) {
+    final dpr = MediaQuery.devicePixelRatioOf(context);
+    final decodeW = (layoutWidth * dpr * 1.25).round().clamp(384, 1536);
+
+    final isVideo = image.type == MediaType.video;
+    final hasThumb =
+        image.thumbnailId != null && image.thumbnailId!.isNotEmpty;
+
+    if (isVideo) {
+      final source = hasThumb
+          ? ''
+          : (image.thumbnail != null && image.thumbnail!.isNotEmpty
+              ? image.thumbnail!
+              : image.imageUrl);
+      return MediaImage(
+        source: source,
+        mediaId: hasThumb ? image.thumbnailId : image.mediaId,
+        annotations: const [],
+        burnAnnotationsIntoPreview: true,
+        mirrorX: image.mirrored ?? false,
+        rotation: image.rotation ?? 0,
+        fit: BoxFit.contain,
+        cacheWidth: decodeW,
+        errorWidget: _placeholder(),
+      );
+    }
+
+    final baked = image.isMarkingsBaked == true;
+    final thumbId = image.thumbnailId;
+    final useThumb = thumbId != null && thumbId.isNotEmpty;
     return MediaImage(
-      source: source,
-      mediaId: hasThumbnail ? image.thumbnailId : image.mediaId,
-      annotations: image.annotations,
+      source: useThumb ? '' : image.imageUrl,
+      mediaId: useThumb ? thumbId : image.mediaId,
+      annotations: useThumb || baked ? const [] : image.annotations,
+      burnAnnotationsIntoPreview: !useThumb && !baked,
       mirrorX: image.mirrored ?? false,
       rotation: image.rotation ?? 0,
       fit: BoxFit.contain,
+      cacheWidth: decodeW,
+      filterQuality: FilterQuality.low,
       errorWidget: _placeholder(),
     );
   } 
@@ -632,7 +715,7 @@ class _FolderDetailPageState extends State<FolderDetailPage> {
       });
       return;
     }
-    context.push('/image/${widget.folderId}/${image.id}');
+    Get.toNamed<void>('/image/${widget.folderId}/${image.id}');
   }
 
   String _formatTimestamp(String value) {
@@ -660,14 +743,18 @@ class _FolderDetailPageState extends State<FolderDetailPage> {
         .where((image) => _selectedImages.contains(image.id))
         .toList();
     if (selected.isEmpty) return;
-    context.push('/report/${widget.folderId}',
-        extra: {'images': selected.map((image) => image.toJson()).toList()});
+    Get.toNamed<void>(
+      '/report/${widget.folderId}',
+      arguments: {
+        'images': selected.map((image) => image.toJson()).toList(),
+      },
+    );
   }
 
   void _openSavedReport(ReportData report) {
-    context.push(
+    Get.toNamed<void>(
       '/report/${widget.folderId}',
-      extra: {
+      arguments: {
         'images': report.sourceImages ?? const <Map<String, dynamic>>[],
         'formData': report.formData?.toJson(),
       },

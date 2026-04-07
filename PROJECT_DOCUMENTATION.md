@@ -1,6 +1,31 @@
 # Hexa-Cam Complete Project Documentation
 
+## Document revision & changelog
+
+**App version (pubspec):** `1.0.0+1`  
+**Documentation last updated:** 2026-04-07  
+
+Use the same **version** line in release notes or tags as `pubspec.yaml` (`version:` field). Use **2026-04-07** (or the ship date) for the doc/changelog date when you publish.
+
+### 2026-04-07 — Media viewer, export, folder sync, and model updates
+
+| Area | What changed |
+|------|----------------|
+| **ViewerScreen** (`lib/ui/viewer/`) | New dedicated viewer layer: `Stack` with `ColorFiltered` pipeline (`ViewerFilterMatrix`) for exposure / ISO-driven contrast / temperature / tint; `AnnotationPainter` overlay; drawing tools sheet (Pause, Lock, Move, Draw, Text, Distance, Point, Square, Circle, Arrow, Color, Undo, Redo, Eraser, Clear); camera settings sliders; floating edit FAB; optional fullscreen via route. Uses **CustomPainter** (existing `AnnotationPainter`) rather than `flutter_painter` package. |
+| **Undo / history** (`draw_action.dart`) | Command-style **`DrawAction`** types (`DAAdd`, `DARemove`, `DAClear`, `DAMove`, `DARemoveBatch`) with **`DrawHistory`** for undo/redo stacks. |
+| **Hit testing** (`viewer_hit_test.dart`) | Source-space distance checks for move / eraser selection. |
+| **Image viewer page** (`lib/ui/image_viewer/image_viewer_page.dart`) | Delegates media + annotations + filters to **`ViewerScreen`**. Header: back, **+ ON/OFF** (shows/hides edit FAB), Info, **Download** (opens bottom sheet), **Undo** (viewer history), Rotate, Fullscreen, Delete. **Download** sheet: *Save to Gallery* (still: `RepaintBoundary` PNG capture when possible, else marked JPEG pipeline; video: `VideoExportService.burnAnnotationsIntoVideo` then `FileService.saveVideoToDevice`), *Generate Report* (still images → report route with baked preview asset). |
+| **Still export** | **`ViewerScreenState.captureFlattenedPng()`** via `RepaintBoundary` captures filters + annotations for gallery/share path; falls back to byte load + `MarkedMediaRenderer` if needed. |
+| **Video download** | Recordings with markings: FFmpeg overlay burn (`VideoExportService`) before save; web still no video download to device. |
+| **Folder detail** (`folder_detail_page.dart`) | **`GetBuilder<FoldersController>`** so returning from camera or after saves **refreshes the grid** without manual refresh when `FoldersController.update()` runs. |
+| **ImageData** | **`copyWith`** now accepts optional **`cameraSettings`** so viewer filter adjustments can persist on the media record. |
+
+**Platform notes:** Video annotation burning requires native FFmpeg (e.g. Android/iOS); filters on video are preview-level unless you add a full transcode pipeline. Web: gallery save uses download helpers; some paths differ from mobile.
+
+---
+
 ## Table of Contents
+0. [Document revision & changelog](#document-revision--changelog)
 1. [Project Overview](#project-overview)
 2. [Architecture & Design](#architecture--design)
 3. [Features & Functionality](#features--functionality)
@@ -95,6 +120,9 @@ lib/
 │   └── repositories/        # Data access
 ├── state/                    # State management
 ├── ui/                       # UI components
+│   ├── viewer/              # ViewerScreen, filters, draw history, hit tests
+│   ├── image_viewer/        # Route wrapper + header + export/report wiring
+│   └── …
 ├── utils/                    # Utility functions
 └── config/                   # Configuration
 ```
@@ -130,6 +158,7 @@ lib/
 - Hierarchical organization
 - Metadata storage (creation date, image counts)
 - Quick access to recent folders
+- **Live folder grid**: Folder detail is bound with **GetX `GetBuilder<FoldersController>`** so new captures or saves trigger a rebuild when `FoldersController.update()` runs (no manual refresh needed when navigating back from the camera).
 
 **Data Structure**:
 ```dart
@@ -212,6 +241,12 @@ class Annotation {
 - **Real-time Rendering**: Hardware-accelerated drawing
 - **Undo/Redo**: Full annotation history
 
+**ViewerScreen (opened media / post-capture review)**:
+- Central implementation lives under `lib/ui/viewer/`: **`viewer_screen.dart`** (UI), **`viewer_filters.dart`** (live `ColorFiltered` chain + `ViewerFilters` ↔ `CameraSettings`), **`draw_action.dart`** (undo/redo commands), **`viewer_hit_test.dart`** (move/erase hit testing).
+- Tools map to existing `Annotation` types (e.g. Distance → `twoPointer` with calibration text via `MeasurementCalculator`).
+- **Pause** disables editing; **Lock** blocks all edits; **Move** drags an annotation by hit-test; **Eraser** removes strokes in a batch (`DARemoveBatch`).
+- **Export capture**: `RepaintBoundary` + `RenderRepaintBoundary.toImage` produces a flattened PNG that includes filters and overlays (used by the image viewer save path when available).
+
 ### 5. Measurement & Calibration System
 **Purpose**: Precise scientific measurements with calibration
 
@@ -261,8 +296,12 @@ class StoredCalibration {
 
 **Export Options**:
 - **PDF Reports**: Multi-page with metadata
-- **Image Export**: With/without annotations
-- **Video Export**: FFmpeg processing with overlays
+- **Image Export**: With/without annotations; viewer can export a **flattened** still (filters + marks) via `ViewerScreenState.captureFlattenedPng()` or the existing `MarkedMediaRenderer` path
+- **Video Export**: FFmpeg processing with overlays (`VideoExportService.burnAnnotationsIntoVideo`); saved through `FileService.saveVideoToDevice`
+
+**Download UX (image viewer header)**:
+- Tapping **Download** opens a **Download Options** bottom sheet: **Save to Gallery** (device gallery / web download) and **Generate Report** (navigates to report flow with a baked still preview when applicable).
+- **Video with markings**: annotations are burned into a temporary MP4 before share/save on mobile/desktop (not supported the same way on web).
 
 ### 7. Report Generation System
 **Purpose**: Create professional scientific reports
@@ -527,6 +566,7 @@ class ImageData {
   final MediaType type;
   final String lens;
   final String timestamp;
+  // copyWith(...) includes optional cameraSettings updates (viewer filter persistence)
 }
 
 // Annotation system
@@ -1968,12 +2008,13 @@ Hexa-Cam App
 │   │   └── Bottom Panel (annotations)
 │   ├── Zoom Indicator
 │   └── Recording Indicator
-├── Image Viewer
-│   ├── Full-screen Image
-│   ├── Annotation Overlay
-│   ├── Measurement Labels
-│   ├── Export Options
-│   └── Edit Mode Toggle
+├── Image Viewer (`ImageViewerPage` + `ViewerScreen`)
+│   ├── Stack: filtered media (`ColorFiltered`) + `AnnotationPainter` overlay
+│   ├── Header: Back, + ON/OFF (edit FAB), Info, Download (sheet), Undo, Rotate, Fullscreen, Delete
+│   ├── Download sheet: Save to Gallery, Generate Report, Cancel
+│   ├── Edit FAB → Drawing Tools sheet (tools, sliders, undo/redo, clear)
+│   ├── Measurement Labels (incl. Distance / two-pointer with calibration)
+│   └── Fullscreen route (second `ViewerScreen`, zero padding)
 ├── Report Generator
 │   ├── Form Fields (organization, contact)
 │   ├── Camera Settings Display

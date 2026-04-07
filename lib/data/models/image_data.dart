@@ -39,16 +39,43 @@ class ImageData {
     this.sourceWidth, this.sourceHeight, this.isMarkingsBaked = false,
   });
 
-  ImageData copyWith({String? imageUrl, String? thumbnail, List<Annotation>? annotations, int? rotation, bool? mirrored, String? filename, String? description}) => ImageData(
-    id: id, imageUrl: imageUrl ?? this.imageUrl, mediaId: mediaId, mediaMimeType: mediaMimeType,
-    thumbnail: thumbnail ?? this.thumbnail, thumbnailId: thumbnailId, comment: comment,
-    timestamp: timestamp, cameraSettings: cameraSettings, annotations: annotations ?? this.annotations,
-    measurements: measurements, calibration: calibration, type: type, duration: duration,
-    rotation: rotation ?? this.rotation, mirrored: mirrored ?? this.mirrored, lens: lens,
-    filename: filename ?? this.filename, description: description ?? this.description,
-    showCalibrationStamp: showCalibrationStamp, sourceWidth: sourceWidth, sourceHeight: sourceHeight,
-    isMarkingsBaked: isMarkingsBaked ?? false,
-  );
+  ImageData copyWith({
+    String? imageUrl,
+    String? thumbnail,
+    List<Annotation>? annotations,
+    CameraSettings? cameraSettings,
+    bool? showCalibrationStamp,
+    int? rotation,
+    bool? mirrored,
+    String? filename,
+    String? description,
+    bool? isMarkingsBaked,
+  }) =>
+      ImageData(
+        id: id,
+        imageUrl: imageUrl ?? this.imageUrl,
+        mediaId: mediaId,
+        mediaMimeType: mediaMimeType,
+        thumbnail: thumbnail ?? this.thumbnail,
+        thumbnailId: thumbnailId,
+        comment: comment,
+        timestamp: timestamp,
+        cameraSettings: cameraSettings ?? this.cameraSettings,
+        annotations: annotations ?? this.annotations,
+        measurements: measurements,
+        calibration: calibration,
+        type: type,
+        duration: duration,
+        rotation: rotation ?? this.rotation,
+        mirrored: mirrored ?? this.mirrored,
+        lens: lens,
+        filename: filename ?? this.filename,
+        description: description ?? this.description,
+        showCalibrationStamp: showCalibrationStamp ?? this.showCalibrationStamp,
+        sourceWidth: sourceWidth,
+        sourceHeight: sourceHeight,
+        isMarkingsBaked: isMarkingsBaked ?? this.isMarkingsBaked,
+      );
 
   factory ImageData.fromJson(Map<String, dynamic> json) => ImageData(
     id: json['id'], imageUrl: json['imageUrl'] ?? '', mediaId: json['mediaId'],

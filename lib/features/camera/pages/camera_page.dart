@@ -3,7 +3,7 @@ import 'dart:math' as math;
 import 'package:camera/camera.dart' as cam;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
+import 'package:get/get.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:uuid/uuid.dart';
 import '../../../config/constants.dart';
@@ -16,54 +16,19 @@ import '../../../data/models/stored_calibration.dart';
 import '../../../data/services/database_service.dart';
 import '../../../data/services/file_service.dart';
 import '../../../data/services/video_export_service.dart';
-import '../../../state/providers.dart';
+import '../../../state/app_registry.dart';
+import '../camera_color_matrix.dart';
+import '../camera_types.dart';
+import '../widgets/camera_measurement_grid_painter.dart';
 import '../../../utils/app_logger.dart';
-import '../../../utils/coordinate_transformer.dart';
 import '../../../utils/annotation_painter.dart';
 import '../../../utils/calibration_calculator.dart';
+import '../../../utils/image_bytes_codec.dart';
 import '../../../utils/marked_media_renderer.dart';
 import '../../../utils/measurement_calculator.dart';
 import '../../../utils/responsive.dart';
-import '../../../ui/common/media_image.dart';
 import '../../../ui/common/hexa_toast.dart';
 import '../../../ui/common/save_dialog.dart';
-
-enum CameraViewMode { defaultOpen, toolsExpanded }
-
-enum CameraSideAction {
-  lens,
-  flipVertical,
-  flipHorizontal,
-  rotate,
-  calibration,
-  move,
-  status,
-  sparkle,
-  zoomIn,
-  zoomOut,
-  record,
-  capture,
-  inspect,
-  pen,
-}
-
-class CameraLayoutTokens {
-  static const Color background = Color(0xFF04072A);
-  static const Color railButtonBg = Color(0x220D1238);
-  static const Color railButtonBorder = Color(0x55A7B6FF);
-  static const Color railIcon = Color(0xFFE7ECFF);
-  static const Color railSubtleIcon = Color(0xCCDFE5FF);
-  static const Color statusOn = Color(0xFF6B5DFF);
-  static const Color recordRed = Color(0xFFFF3D42);
-  static const Color panelBg = Color(0xF2191A49);
-
-  static double railButtonSize(bool isTablet) => isTablet ? 54 : 40;
-  static double railTinyFont(bool isTablet) => isTablet ? 16 : 12;
-  static double railIconSize(bool isTablet) => isTablet ? 24 : 18;
-  static double recordButtonSize(bool isTablet) => isTablet ? 66 : 56;
-  static double edgePadding(bool isTablet) => isTablet ? 28 : 14;
-  static double railGap(bool isTablet) => isTablet ? 14 : 10;
-}
 
 class CameraPage extends StatefulWidget {
   final String folderId;
@@ -72,8 +37,7 @@ class CameraPage extends StatefulWidget {
   State<CameraPage> createState() => _CameraPageState();
 }
 
-class _CameraPageState extends State<CameraPage>
-    with WidgetsBindingObserver {
+class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
   cam.CameraController? _controller;
   bool _isInitialized = false;
   bool _isInitializingCamera = false;
@@ -97,8 +61,9 @@ class _CameraPageState extends State<CameraPage>
   bool _eraserMode = false;
   bool _moveMode = false;
   String _calibrationUnit = 'μm';
-  final TextEditingController _manualOverrideController =
-      TextEditingController(text: '0');
+  final TextEditingController _manualOverrideController = TextEditingController(
+    text: '0',
+  );
 
   String _selectedLens = '4X';
   AnnotationType? _selectedTool;
@@ -114,6 +79,9 @@ class _CameraPageState extends State<CameraPage>
   final Uuid _uuid = const Uuid();
   Size _lastSourceSize = Size.zero;
   double _pinchStartZoom = 1.0;
+
+  /// Last [CameraValue.previewSize] seen by [_onCameraPreviewValueChanged] (stream/orientation).
+  Size? _previewListenerSize;
 
   /// Returns a fallback source size when camera preview size is unavailable
   /// Uses a 4:3 aspect ratio adjusted for device orientation
@@ -131,7 +99,7 @@ class _CameraPageState extends State<CameraPage>
       width = viewportSize.width;
       height = width * 4 / 3;
     }
-    
+
     // Ensure reasonable bounds to prevent extremely large/small values
     // Fix clamp arguments to ensure min <= max
     final double maxWidth = math.max(64.0, viewportSize.width * 2);
@@ -158,8 +126,51 @@ class _CameraPageState extends State<CameraPage>
 
   CameraSettings _settings = const CameraSettings();
   double _maxSupportedZoom = AppConstants.maxZoom;
+
+  /// Web and devices without optical zoom: scale preview + overlay together.
+  bool _useDigitalPreviewZoom = false;
+
+  double get _previewDigitalZoomScale =>
+      _useDigitalPreviewZoom ? _settings.zoom : 1.0;
+
   bool get _isCameraReady =>
       _isInitialized && _controller != null && _controller!.value.isInitialized;
+
+  void _detachCameraListener() {
+    _controller?.removeListener(_onCameraPreviewValueChanged);
+  }
+
+  /// Some devices update [CameraValue.previewSize] after the first frame; keep overlay + gestures aligned.
+  void _onCameraPreviewValueChanged() {
+    if (!mounted) return;
+    final c = _controller;
+    if (c == null || !c.value.isInitialized) return;
+    final p = c.value.previewSize;
+    if (p == null) return;
+    final next = Size(p.width.toDouble(), p.height.toDouble());
+    final prev = _previewListenerSize;
+    if (prev != null &&
+        prev.width == next.width &&
+        prev.height == next.height) {
+      return;
+    }
+    _previewListenerSize = next;
+    setState(() {});
+  }
+
+  void _attachCameraListener() {
+    _detachCameraListener();
+    final c = _controller;
+    if (c == null) return;
+    final p = c.value.previewSize;
+    _previewListenerSize = p == null
+        ? null
+        : Size(p.width.toDouble(), p.height.toDouble());
+    c.addListener(_onCameraPreviewValueChanged);
+  }
+
+  double _annotationUiTextScale(BuildContext context) =>
+      MediaQuery.textScalerOf(context).scale(1.0).clamp(0.85, 1.65);
 
   @override
   void initState() {
@@ -274,68 +285,102 @@ class _CameraPageState extends State<CameraPage>
       }
       final orderedCameras = <cam.CameraDescription>[
         ...cameras.where(
-            (c) => c.lensDirection == cam.CameraLensDirection.back),
+          (c) => c.lensDirection == cam.CameraLensDirection.back,
+        ),
         ...cameras.where(
-            (c) => c.lensDirection == cam.CameraLensDirection.front),
-        ...cameras.where((c) =>
-            c.lensDirection != cam.CameraLensDirection.back &&
-            c.lensDirection != cam.CameraLensDirection.front),
+          (c) => c.lensDirection == cam.CameraLensDirection.front,
+        ),
+        ...cameras.where(
+          (c) =>
+              c.lensDirection != cam.CameraLensDirection.back &&
+              c.lensDirection != cam.CameraLensDirection.front,
+        ),
       ];
 
-      final resolutions = kIsWeb
-          ? <cam.ResolutionPreset>[cam.ResolutionPreset.medium]
-          : <cam.ResolutionPreset>[
-              cam.ResolutionPreset.max,
-              cam.ResolutionPreset.high,
-              cam.ResolutionPreset.medium,
-              cam.ResolutionPreset.low,
-            ];
+      // Prefer the highest preset the platform accepts (closest to native camera quality).
+      // Prefer highest preset first on every platform so stills use the device
+      // sensor’s best size the plugin allows (same order as native mobile).
+      final resolutions = <cam.ResolutionPreset>[
+        cam.ResolutionPreset.max,
+        cam.ResolutionPreset.ultraHigh,
+        cam.ResolutionPreset.veryHigh,
+        cam.ResolutionPreset.high,
+        cam.ResolutionPreset.medium,
+        cam.ResolutionPreset.low,
+      ];
       const maxInitAttempts = 2;
       for (var attempt = 1; attempt <= maxInitAttempts; attempt++) {
         for (final camera in orderedCameras) {
           for (final resolution in resolutions) {
             try {
+              _detachCameraListener();
               await _controller?.dispose();
               _controller = cam.CameraController(
                 camera,
                 resolution,
                 enableAudio: false,
-                imageFormatGroup:
-                    kIsWeb ? cam.ImageFormatGroup.unknown : null,
+                imageFormatGroup: kIsWeb
+                    ? cam.ImageFormatGroup.unknown
+                    : (Platform.isAndroid
+                        ? cam.ImageFormatGroup.jpeg
+                        : null),
               );
               await _controller!.initialize().timeout(
                 const Duration(seconds: 10),
               );
+              if (!kIsWeb && Platform.isIOS) {
+                try {
+                  await _controller!.prepareForVideoRecording();
+                } catch (_) {}
+              }
               if (_controller!.value.hasError) {
-                throw Exception(_controller!.value.errorDescription ??
-                    'Unknown camera error');
+                throw Exception(
+                  _controller!.value.errorDescription ?? 'Unknown camera error',
+                );
               }
               var resolvedMaxZoom = AppConstants.maxZoom;
               try {
                 final deviceMaxZoom = await _controller!.getMaxZoomLevel();
-                resolvedMaxZoom =
-                    deviceMaxZoom.clamp(AppConstants.minZoom, 100.0);
+                resolvedMaxZoom = deviceMaxZoom.clamp(
+                  AppConstants.minZoom,
+                  100.0,
+                );
               } catch (_) {}
+              const digitalMaxZoom = 5.0;
+              var useDigitalPreview = false;
+              if (kIsWeb) {
+                resolvedMaxZoom = digitalMaxZoom;
+                useDigitalPreview = true;
+              } else if (resolvedMaxZoom <= 1.02) {
+                resolvedMaxZoom = digitalMaxZoom;
+                useDigitalPreview = true;
+              }
               if (!mounted) return;
               setState(() {
                 _isInitialized = true;
                 _cameraInitError = null;
                 _maxSupportedZoom = resolvedMaxZoom;
+                _useDigitalPreviewZoom = useDigitalPreview;
                 _settings = _settings.copyWith(
-                  zoom: AppConstants.minZoom.clamp(AppConstants.minZoom, resolvedMaxZoom),
+                  zoom: AppConstants.minZoom.clamp(
+                    AppConstants.minZoom,
+                    resolvedMaxZoom,
+                  ),
                 );
               });
+              _attachCameraListener();
               break;
             } catch (e) {
               logDebug(
-                  'Attempt $attempt: failed ${camera.name} @ $resolution: $e');
+                'Attempt $attempt: failed ${camera.name} @ $resolution: $e',
+              );
+              _detachCameraListener();
               await _controller?.dispose();
               _controller = null;
               final msg = e.toString().toLowerCase();
               if (msg.contains('cameranotreadable') ||
                   msg.contains('not readable')) {
-                await Future.delayed(
-                    Duration(milliseconds: 1200 * attempt));
+                await Future.delayed(Duration(milliseconds: 1200 * attempt));
               }
               continue;
             }
@@ -383,6 +428,7 @@ class _CameraPageState extends State<CameraPage>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _manualOverrideController.dispose();
+    _detachCameraListener();
     _controller?.dispose();
     super.dispose();
   }
@@ -393,6 +439,7 @@ class _CameraPageState extends State<CameraPage>
     if (controller == null) return;
     if (state == AppLifecycleState.inactive ||
         state == AppLifecycleState.paused) {
+      _detachCameraListener();
       controller.dispose();
       _controller = null;
       if (mounted) setState(() => _isInitialized = false);
@@ -513,7 +560,7 @@ class _CameraPageState extends State<CameraPage>
 
   Widget _buildBackButton(bool isTablet) {
     return GestureDetector(
-      onTap: () => context.pop(),
+      onTap: () => Get.back<void>(),
       child: Container(
         width: isTablet ? 48 : 38,
         height: isTablet ? 48 : 38,
@@ -545,8 +592,11 @@ class _CameraPageState extends State<CameraPage>
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.videocam_off_rounded,
-                    color: Colors.white70, size: 34),
+                const Icon(
+                  Icons.videocam_off_rounded,
+                  color: Colors.white70,
+                  size: 34,
+                ),
                 const SizedBox(height: 10),
                 Text(
                   _cameraInitError!,
@@ -570,8 +620,11 @@ class _CameraPageState extends State<CameraPage>
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.videocam_off_rounded,
-                  color: Colors.white70, size: 34),
+              const Icon(
+                Icons.videocam_off_rounded,
+                color: Colors.white70,
+                size: 34,
+              ),
               const SizedBox(height: 10),
               const Text(
                 'Camera is not ready yet.',
@@ -606,7 +659,8 @@ class _CameraPageState extends State<CameraPage>
         borderRadius: BorderRadius.circular(18),
         child: LayoutBuilder(
           builder: (context, constraints) {
-            final frame = Offset.zero & Size(constraints.maxWidth, constraints.maxHeight);
+            final frame =
+                Offset.zero & Size(constraints.maxWidth, constraints.maxHeight);
             final padding = Responsive.cameraPreviewPadding(context);
             final innerFrame = Rect.fromLTWH(
               padding.left,
@@ -614,7 +668,11 @@ class _CameraPageState extends State<CameraPage>
               (frame.width - padding.horizontal).clamp(1.0, double.infinity),
               (frame.height - padding.vertical).clamp(1.0, double.infinity),
             );
-            final viewport = Responsive.cameraPreviewViewport(context, innerFrame);
+            final viewport = Responsive.cameraPreviewViewport(
+              context,
+              innerFrame,
+            );
+            final uiTextScale = _annotationUiTextScale(context);
             return Stack(
               fit: StackFit.expand,
               children: [
@@ -622,9 +680,7 @@ class _CameraPageState extends State<CameraPage>
                   child: DecoratedBox(
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(18),
-                      border: Border.all(
-                        color: const Color(0x334C68FF),
-                      ),
+                      border: Border.all(color: const Color(0x334C68FF)),
                     ),
                   ),
                 ),
@@ -632,64 +688,68 @@ class _CameraPageState extends State<CameraPage>
                   child: SizedBox(
                     width: viewport.width,
                     height: viewport.height,
-                    child: Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        // Camera preview is still drawn in source coordinates and fitted into the viewport.
-                        AspectRatio(
-                          aspectRatio: _controller!.value.aspectRatio,
-                          child: FittedBox(
-                            fit: BoxFit.contain,
-                            child: SizedBox(
-                              width: sourceSize.width,
-                              height: sourceSize.height,
-                              child: Transform(
-                                alignment: Alignment.center,
-                                transform: Matrix4.identity()
-                                  ..rotateZ(_rotation * math.pi / 180)
-                                  ..scaleByDouble(
-                                    (_flipH || _mirror) ? -1.0 : 1.0,
-                                    _flipV ? -1.0 : 1.0,
-                                    1,
-                                    1,
+                    child: ClipRect(
+                      child: Transform.scale(
+                        scale: _previewDigitalZoomScale,
+                        alignment: Alignment.center,
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            // Camera preview is still drawn in source coordinates and fitted into the viewport.
+                            AspectRatio(
+                              aspectRatio: _controller!.value.aspectRatio,
+                              child: FittedBox(
+                                fit: BoxFit.contain,
+                                child: SizedBox(
+                                  width: sourceSize.width,
+                                  height: sourceSize.height,
+                                  child: Transform(
+                                    alignment: Alignment.center,
+                                    transform: Matrix4.identity()
+                                      ..rotateZ(_rotation * math.pi / 180)
+                                      ..scaleByDouble(
+                                        (_flipH || _mirror) ? -1.0 : 1.0,
+                                        _flipV ? -1.0 : 1.0,
+                                        1,
+                                        1,
+                                      ),
+                                    child: Stack(
+                                      fit: StackFit.expand,
+                                      children: [
+                                        _buildCameraPreviewWithOptionalFilter(),
+                                        if (uiStateController.measurementMode)
+                                          IgnorePointer(
+                                            child: CustomPaint(
+                                              painter:
+                                                  CameraMeasurementGridPainter(),
+                                            ),
+                                          ),
+                                        // Keep gesture capture in source coordinates (so existing transforms stay correct).
+                                        Positioned.fill(
+                                          child: GestureDetector(
+                                            behavior:
+                                                HitTestBehavior.translucent,
+                                            onTapDown: _onTapDown,
+                                            onPanStart: _onPanStart,
+                                            onPanUpdate: _onPanUpdate,
+                                            onPanEnd: _onPanEnd,
+                                            child: const SizedBox.expand(),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
                                   ),
-                                child: Stack(
-                                  fit: StackFit.expand,
-                                  children: [
-                                    ColorFiltered(
-                                      colorFilter:
-                                          ColorFilter.matrix(_buildColorMatrix()),
-                                      child: cam.CameraPreview(_controller!),
-                                    ),
-                                    if (uiStateController.measurementMode)
-                                      IgnorePointer(
-                                        child: CustomPaint(painter: _GridPainter()),
-                                      ),
-                                    // Keep gesture capture in source coordinates (so existing transforms stay correct).
-                                    Positioned.fill(
-                                      child: GestureDetector(
-                                        behavior: HitTestBehavior.translucent,
-                                        onTapDown: _onTapDown,
-                                        onPanStart: _onPanStart,
-                                        onPanUpdate: _onPanUpdate,
-                                        onPanEnd: _onPanEnd,
-                                        child: const SizedBox.expand(),
-                                      ),
-                                    ),
-                                  ],
                                 ),
                               ),
                             ),
-                          ),
-                        ),
 
-                        // Draw annotations at viewport resolution (prevents pixelated text/labels).
-                        IgnorePointer(
-                          child: CustomPaint(
-                            painter: AnnotationPainter(
-                              annotations: _displayAnnotations(),
-                              currentDrawing:
-                                  _isDrawing && _selectedTool != null
+                            // Draw annotations at viewport resolution (prevents pixelated text/labels).
+                            IgnorePointer(
+                              child: CustomPaint(
+                                painter: AnnotationPainter(
+                                  annotations: _displayAnnotations(),
+                                  currentDrawing:
+                                      _isDrawing && _selectedTool != null
                                       ? Annotation(
                                           id: 'current',
                                           type: _selectedTool!,
@@ -698,17 +758,26 @@ class _CameraPageState extends State<CameraPage>
                                           timestamp: '',
                                         )
                                       : null,
-                              displaySize: Size(viewport.width, viewport.height),
-                              sourceSize: sourceSize,
-                              fit: BoxFit.contain,
-                              mirrorX: _flipH || _mirror,
-                              mirrorY: _flipV,
-                              zoom: 1,
-                              rotation: _rotation,
+                                  displaySize: Size(
+                                    viewport.width,
+                                    viewport.height,
+                                  ),
+                                  sourceSize: sourceSize,
+                                  fit: BoxFit.contain,
+                                  mirrorX: _flipH || _mirror,
+                                  mirrorY: _flipV,
+                                  zoom: 1,
+                                  rotation: _rotation,
+                                  lineWidthScale: MediaQuery.devicePixelRatioOf(
+                                    context,
+                                  ).clamp(1.0, 2.5),
+                                  uiTextScale: uiTextScale,
+                                ),
+                              ),
                             ),
-                          ),
+                          ],
                         ),
-                      ],
+                      ),
                     ),
                   ),
                 ),
@@ -719,7 +788,9 @@ class _CameraPageState extends State<CameraPage>
                     child: IgnorePointer(
                       child: Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 4),
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
                         decoration: BoxDecoration(
                           color: const Color(0xCC10162E),
                           borderRadius: BorderRadius.circular(8),
@@ -810,8 +881,7 @@ class _CameraPageState extends State<CameraPage>
                       colors: [Color(0xFF5F69FF), Color(0xFF8D57FF)],
                     )
                   : null,
-              color:
-                  measurementEnabled ? null : const Color(0xFF232651),
+              color: measurementEnabled ? null : const Color(0xFF232651),
               border: Border.all(
                 color: measurementEnabled
                     ? const Color(0xFF9EA0FF)
@@ -1078,98 +1148,133 @@ class _CameraPageState extends State<CameraPage>
                   mainAxisSpacing: 8,
                   children: [
                     _buildPanelToolButton(
-                        isTablet,
-                        Icons.pause_circle_outline_rounded,
-                        'Pause',
-                        _isPaused,
-                        () => _togglePauseMode()),
+                      isTablet,
+                      Icons.pause_circle_outline_rounded,
+                      'Pause',
+                      _isPaused,
+                      () => _togglePauseMode(),
+                    ),
                     _buildPanelToolButton(
-                        isTablet,
-                        _isLocked
-                            ? Icons.lock_rounded
-                            : Icons.lock_open_rounded,
-                        'Lock',
-                        _isLocked,
-                        _toggleLockMode),
-                    _buildPanelToolButton(isTablet, Icons.open_with_rounded,
-                        'Move', _moveMode, _activateMoveMode),
+                      isTablet,
+                      _isLocked ? Icons.lock_rounded : Icons.lock_open_rounded,
+                      'Lock',
+                      _isLocked,
+                      _toggleLockMode,
+                    ),
                     _buildPanelToolButton(
-                        isTablet,
-                        Icons.brush_rounded,
-                        'Draw',
-                        _selectedTool == AnnotationType.draw,
-                        () => _selectDrawingTool(AnnotationType.draw)),
+                      isTablet,
+                      Icons.open_with_rounded,
+                      'Move',
+                      _moveMode,
+                      _activateMoveMode,
+                    ),
                     _buildPanelToolButton(
-                        isTablet,
-                        Icons.text_fields_rounded,
-                        'Text',
-                        _selectedTool == AnnotationType.text,
-                        () => _selectDrawingTool(AnnotationType.text)),
+                      isTablet,
+                      Icons.brush_rounded,
+                      'Draw',
+                      _selectedTool == AnnotationType.draw,
+                      () => _selectDrawingTool(AnnotationType.draw),
+                    ),
                     _buildPanelToolButton(
-                        isTablet,
-                        Icons.straighten_rounded,
-                        'Distance',
-                        _selectedTool == AnnotationType.twoPointer,
-                        () => _selectDrawingTool(AnnotationType.twoPointer)),
+                      isTablet,
+                      Icons.text_fields_rounded,
+                      'Text',
+                      _selectedTool == AnnotationType.text,
+                      () => _selectDrawingTool(AnnotationType.text),
+                    ),
                     _buildPanelToolButton(
-                        isTablet,
-                        Icons.my_location_rounded,
-                        'Point',
-                        _selectedTool == AnnotationType.singlePointer,
-                        () => _selectDrawingTool(AnnotationType.singlePointer)),
+                      isTablet,
+                      Icons.straighten_rounded,
+                      'Distance',
+                      _selectedTool == AnnotationType.twoPointer,
+                      () => _selectDrawingTool(AnnotationType.twoPointer),
+                    ),
                     _buildPanelToolButton(
-                        isTablet,
-                        Icons.crop_square_rounded,
-                        'Square',
-                        _selectedTool == AnnotationType.square,
-                        () => _selectDrawingTool(AnnotationType.square)),
+                      isTablet,
+                      Icons.my_location_rounded,
+                      'Point',
+                      _selectedTool == AnnotationType.singlePointer,
+                      () => _selectDrawingTool(AnnotationType.singlePointer),
+                    ),
                     _buildPanelToolButton(
-                        isTablet,
-                        Icons.trip_origin_rounded,
-                        'Circle',
-                        _selectedTool == AnnotationType.circle,
-                        () => _selectDrawingTool(AnnotationType.circle)),
+                      isTablet,
+                      Icons.crop_square_rounded,
+                      'Square',
+                      _selectedTool == AnnotationType.square,
+                      () => _selectDrawingTool(AnnotationType.square),
+                    ),
                     _buildPanelToolButton(
-                        isTablet,
-                        Icons.trending_flat_rounded,
-                        'Arrow',
-                        _selectedTool == AnnotationType.arrowOneWay,
-                        () => _selectDrawingTool(AnnotationType.arrowOneWay)),
+                      isTablet,
+                      Icons.trip_origin_rounded,
+                      'Circle',
+                      _selectedTool == AnnotationType.circle,
+                      () => _selectDrawingTool(AnnotationType.circle),
+                    ),
                     _buildPanelToolButton(
-                        isTablet,
-                        Icons.palette_outlined,
-                        'Color',
-                        _showColorPickerSection,
-                        () => setState(() => _showColorPickerSection =
-                            !_showColorPickerSection)),
+                      isTablet,
+                      Icons.trending_flat_rounded,
+                      'Arrow',
+                      _selectedTool == AnnotationType.arrowOneWay,
+                      () => _selectDrawingTool(AnnotationType.arrowOneWay),
+                    ),
                     _buildPanelToolButton(
-                        isTablet,
-                        Icons.straighten_rounded,
-                        'Calibrate',
-                        _showCalibrationSection,
-                        () => setState(() => _showCalibrationSection =
-                            !_showCalibrationSection)),
+                      isTablet,
+                      Icons.palette_outlined,
+                      'Color',
+                      _showColorPickerSection,
+                      () => setState(
+                        () =>
+                            _showColorPickerSection = !_showColorPickerSection,
+                      ),
+                    ),
                     _buildPanelToolButton(
-                        isTablet,
-                        Icons.bookmark_border_rounded,
-                        _buildStampLabel(),
-                        _stampEnabled,
-                        () => setState(() => _stampEnabled = !_stampEnabled)),
-                    _buildPanelToolButton(isTablet, Icons.undo_rounded, 'Undo',
-                        _annotations.isNotEmpty, _undoAnnotation),
-                    _buildPanelToolButton(isTablet, Icons.redo_rounded, 'Redo',
-                        _redoStack.isNotEmpty, _redoAnnotation),
-                    _buildPanelToolButton(isTablet, Icons.auto_fix_off_rounded,
-                        'Eraser', _eraserMode, _toggleEraserMode),
+                      isTablet,
+                      Icons.straighten_rounded,
+                      'Calibrate',
+                      _showCalibrationSection,
+                      () => setState(
+                        () =>
+                            _showCalibrationSection = !_showCalibrationSection,
+                      ),
+                    ),
                     _buildPanelToolButton(
-                        isTablet,
-                        Icons.delete_outline_rounded,
-                        'Delete',
-                        false,
-                        () => setState(() {
-                              _annotations.clear();
-                              _redoStack.clear();
-                            })),
+                      isTablet,
+                      Icons.bookmark_border_rounded,
+                      _buildStampLabel(),
+                      _stampEnabled,
+                      () => setState(() => _stampEnabled = !_stampEnabled),
+                    ),
+                    _buildPanelToolButton(
+                      isTablet,
+                      Icons.undo_rounded,
+                      'Undo',
+                      _annotations.isNotEmpty,
+                      _undoAnnotation,
+                    ),
+                    _buildPanelToolButton(
+                      isTablet,
+                      Icons.redo_rounded,
+                      'Redo',
+                      _redoStack.isNotEmpty,
+                      _redoAnnotation,
+                    ),
+                    _buildPanelToolButton(
+                      isTablet,
+                      Icons.auto_fix_off_rounded,
+                      'Eraser',
+                      _eraserMode,
+                      _toggleEraserMode,
+                    ),
+                    _buildPanelToolButton(
+                      isTablet,
+                      Icons.delete_outline_rounded,
+                      'Delete',
+                      false,
+                      () => setState(() {
+                        _annotations.clear();
+                        _redoStack.clear();
+                      }),
+                    ),
                   ],
                 ),
                 if (_showColorPickerSection) ...[
@@ -1283,8 +1388,10 @@ class _CameraPageState extends State<CameraPage>
                 ),
                 Container(
                   width: double.infinity,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
                   decoration: BoxDecoration(
                     color: const Color(0xFF1E1C48),
                     borderRadius: BorderRadius.circular(12),
@@ -1329,9 +1436,13 @@ class _CameraPageState extends State<CameraPage>
       children: [
         SizedBox(
           width: 18,
-          child: Text(label,
-              style: const TextStyle(
-                  color: Colors.white70, fontWeight: FontWeight.w700)),
+          child: Text(
+            label,
+            style: const TextStyle(
+              color: Colors.white70,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
         ),
         Expanded(
           child: Slider(
@@ -1356,8 +1467,9 @@ class _CameraPageState extends State<CameraPage>
   Widget _buildCalibrationSection(bool isTablet) {
     final stored = calibrationController.calibrations[_selectedLens];
     final microCalibration = microscopeCalibrationController;
-    final microEntry =
-        microCalibration.getCalibrationForMagnification(_selectedLens);
+    final microEntry = microCalibration.getCalibrationForMagnification(
+      _selectedLens,
+    );
     final effectiveCalibration = microEntry != null
         ? StoredCalibration(
             lens: microEntry.magnification,
@@ -1498,8 +1610,9 @@ class _CameraPageState extends State<CameraPage>
                 Expanded(
                   child: TextField(
                     controller: _manualOverrideController,
-                    keyboardType:
-                        const TextInputType.numberWithOptions(decimal: true),
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
                     style: TextStyle(
                       color: Colors.white,
                       fontSize: isTablet ? 18 : 16,
@@ -1568,8 +1681,9 @@ class _CameraPageState extends State<CameraPage>
         color: highlighted ? null : const Color(0xFF1E1C48),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color:
-              highlighted ? const Color(0xFFAB9CFF) : const Color(0xFF3B427C),
+          color: highlighted
+              ? const Color(0xFFAB9CFF)
+              : const Color(0xFF3B427C),
         ),
       ),
       child: Column(
@@ -1628,8 +1742,10 @@ class _CameraPageState extends State<CameraPage>
                 style: TextButton.styleFrom(
                   backgroundColor: Colors.white.withValues(alpha: 0.08),
                   foregroundColor: Colors.white,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 8,
+                  ),
                 ),
                 icon: const Icon(Icons.refresh_rounded, size: 16),
                 label: const Text('Reset'),
@@ -1673,7 +1789,8 @@ class _CameraPageState extends State<CameraPage>
             max: 9000,
             value: _settings.temperature,
             onChanged: (value) => setState(
-                () => _settings = _settings.copyWith(temperature: value)),
+              () => _settings = _settings.copyWith(temperature: value),
+            ),
           ),
           _buildSettingSlider(
             icon: Icons.invert_colors_on_outlined,
@@ -1707,13 +1824,21 @@ class _CameraPageState extends State<CameraPage>
             children: [
               Icon(icon, color: const Color(0xFFC9D0F2), size: 18),
               const SizedBox(width: 8),
-              Text(label,
-                  style: const TextStyle(
-                      color: Color(0xFFDDE3FF), fontWeight: FontWeight.w500)),
+              Text(
+                label,
+                style: const TextStyle(
+                  color: Color(0xFFDDE3FF),
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
               const Spacer(),
-              Text(valueLabel,
-                  style: const TextStyle(
-                      color: Colors.white, fontWeight: FontWeight.w700)),
+              Text(
+                valueLabel,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
             ],
           ),
           SliderTheme(
@@ -1760,7 +1885,10 @@ class _CameraPageState extends State<CameraPage>
 
   void _toggleToolsPanel() {
     if (_isLocked) {
-      _showMessage('Unlock to open drawing tools', backgroundColor: AppTheme.danger);
+      _showMessage(
+        'Unlock to open drawing tools',
+        backgroundColor: AppTheme.danger,
+      );
       return;
     }
     setState(() {
@@ -1802,57 +1930,84 @@ class _CameraPageState extends State<CameraPage>
         break;
       case CameraSideAction.sparkle:
         if (!_isCameraReady) {
-          _showMessage('Camera is not ready yet.', backgroundColor: AppTheme.danger);
+          _showMessage(
+            'Camera is not ready yet.',
+            backgroundColor: AppTheme.danger,
+          );
           return;
         }
         setState(() => _showCameraSettings = !_showCameraSettings);
         break;
       case CameraSideAction.zoomIn:
         if (!_isCameraReady) {
-          _showMessage('Camera is not ready yet.', backgroundColor: AppTheme.danger);
+          _showMessage(
+            'Camera is not ready yet.',
+            backgroundColor: AppTheme.danger,
+          );
           return;
         }
         _adjustZoom(1.0);
         break;
       case CameraSideAction.zoomOut:
         if (!_isCameraReady) {
-          _showMessage('Camera is not ready yet.', backgroundColor: AppTheme.danger);
+          _showMessage(
+            'Camera is not ready yet.',
+            backgroundColor: AppTheme.danger,
+          );
           return;
         }
         _adjustZoom(-1.0);
         break;
       case CameraSideAction.record:
         if (!_isCameraReady) {
-          _showMessage('Camera is not ready yet.', backgroundColor: AppTheme.danger);
+          _showMessage(
+            'Camera is not ready yet.',
+            backgroundColor: AppTheme.danger,
+          );
           return;
         }
         if (_isPaused || _isLocked) {
-          _showMessage('Disable Pause/Lock to record', backgroundColor: AppTheme.danger);
+          _showMessage(
+            'Disable Pause/Lock to record',
+            backgroundColor: AppTheme.danger,
+          );
           return;
         }
         _toggleRecording();
         break;
       case CameraSideAction.capture:
         if (!_isCameraReady) {
-          _showMessage('Camera is not ready yet.', backgroundColor: AppTheme.danger);
+          _showMessage(
+            'Camera is not ready yet.',
+            backgroundColor: AppTheme.danger,
+          );
           return;
         }
         if (_isPaused || _isLocked) {
-          _showMessage('Disable Pause/Lock to capture', backgroundColor: AppTheme.danger);
+          _showMessage(
+            'Disable Pause/Lock to capture',
+            backgroundColor: AppTheme.danger,
+          );
           return;
         }
         _handleCapture();
         break;
       case CameraSideAction.inspect:
         if (!_isCameraReady) {
-          _showMessage('Camera is not ready yet.', backgroundColor: AppTheme.danger);
+          _showMessage(
+            'Camera is not ready yet.',
+            backgroundColor: AppTheme.danger,
+          );
           return;
         }
         setState(() => _mirror = !_mirror);
         break;
       case CameraSideAction.pen:
         if (!_isCameraReady) {
-          _showMessage('Camera is not ready yet.', backgroundColor: AppTheme.danger);
+          _showMessage(
+            'Camera is not ready yet.',
+            backgroundColor: AppTheme.danger,
+          );
           return;
         }
         _toggleToolsPanel();
@@ -1861,8 +2016,10 @@ class _CameraPageState extends State<CameraPage>
   }
 
   void _adjustZoom(double delta) {
-    final nextZoom = (_settings.zoom + delta)
-        .clamp(AppConstants.minZoom, _maxSupportedZoom);
+    final nextZoom = (_settings.zoom + delta).clamp(
+      AppConstants.minZoom,
+      _maxSupportedZoom,
+    );
     _setZoom(nextZoom);
   }
 
@@ -1975,51 +2132,23 @@ class _CameraPageState extends State<CameraPage>
     );
   }
 
-  List<double> _buildColorMatrix() {
-    // Exposure: 50..200 -> 0.5..2.0
-    final exposure = (_settings.exposure / 100).clamp(0.5, 2.0);
+  /// When every slider matches app defaults, show the platform preview without a color matrix
+  /// so the feed matches the device camera (no extra grading until the user adjusts settings).
+  bool get _previewUsesDeviceColorPassthrough =>
+      (_settings.exposure - AppConstants.defaultExposure).abs() < 0.01 &&
+      (_settings.iso - AppConstants.defaultIso).abs() < 0.01 &&
+      (_settings.temperature - AppConstants.defaultTemperature).abs() < 0.5 &&
+      (_settings.tint - AppConstants.defaultTint).abs() < 0.01;
 
-    // ISO slider is used as saturation simulation: 100..3200 -> ~0.25..2.0
-    final saturation = (_settings.iso / 1600).clamp(0.25, 2.0);
-    final invSat = 1 - saturation;
-    const lumR = 0.2126;
-    const lumG = 0.7152;
-    const lumB = 0.0722;
-
-    // Temperature: cool to warm bias.
-    // 2000..10000 mapped around neutral 6500.
-    final temperatureNorm =
-        ((_settings.temperature - 6500.0) / 3500.0).clamp(-1.0, 1.0);
-    final tempRed = temperatureNorm * 18.0;
-    final tempBlue = -temperatureNorm * 18.0;
-
-    // Tint: green-magenta axis (-100..100).
-    final tintNorm = (_settings.tint / 100.0).clamp(-1.0, 1.0);
-    final tintGreen = -tintNorm * 14.0;
-    final tintMagentaRB = tintNorm * 8.0;
-
-    return [
-      exposure * (invSat * lumR + saturation),
-      exposure * (invSat * lumG),
-      exposure * (invSat * lumB),
-      0,
-      tempRed + tintMagentaRB,
-      exposure * (invSat * lumR),
-      exposure * (invSat * lumG + saturation),
-      exposure * (invSat * lumB),
-      0,
-      tintGreen,
-      exposure * (invSat * lumR),
-      exposure * (invSat * lumG),
-      exposure * (invSat * lumB + saturation),
-      0,
-      tempBlue + tintMagentaRB,
-      0,
-      0,
-      0,
-      1,
-      0,
-    ];
+  Widget _buildCameraPreviewWithOptionalFilter() {
+    final preview = cam.CameraPreview(_controller!);
+    if (_previewUsesDeviceColorPassthrough) {
+      return preview;
+    }
+    return ColorFiltered(
+      colorFilter: ColorFilter.matrix(cameraPreviewColorMatrix(_settings)),
+      child: preview,
+    );
   }
 
   void _onPanStart(DragStartDetails details) {
@@ -2089,8 +2218,9 @@ class _CameraPageState extends State<CameraPage>
       final dx = point.x - startCursor.x;
       final dy = point.y - startCursor.y;
       final sourceW = _lastSourceSize.width <= 0 ? 1.0 : _lastSourceSize.width;
-      final sourceH =
-          _lastSourceSize.height <= 0 ? 1.0 : _lastSourceSize.height;
+      final sourceH = _lastSourceSize.height <= 0
+          ? 1.0
+          : _lastSourceSize.height;
       setState(() {
         final movedPoints = startPoints
             .map(
@@ -2143,21 +2273,24 @@ class _CameraPageState extends State<CameraPage>
         timestamp: DateTime.now().toIso8601String(),
         measurement: measurement,
       );
-      _annotations.add(Annotation(
-        id: createdAnnotation.id,
-        type: createdAnnotation.type,
-        points: createdAnnotation.points,
-        color: createdAnnotation.color,
-        timestamp: createdAnnotation.timestamp,
-        measurement: createdAnnotation.measurement,
-      ));
+      _annotations.add(
+        Annotation(
+          id: createdAnnotation.id,
+          type: createdAnnotation.type,
+          points: createdAnnotation.points,
+          color: createdAnnotation.color,
+          timestamp: createdAnnotation.timestamp,
+          measurement: createdAnnotation.measurement,
+        ),
+      );
       _redoStack.clear();
       _currentPoints = [];
       _isDrawing = false;
       _viewMode = CameraViewMode.defaultOpen;
     });
 
-    final shouldPromptCalibration = _awaitingCalibrationLine &&
+    final shouldPromptCalibration =
+        _awaitingCalibrationLine &&
         createdAnnotation.type == AnnotationType.twoPointer &&
         createdAnnotation.points.length >= 2;
     if (shouldPromptCalibration) {
@@ -2178,8 +2311,10 @@ class _CameraPageState extends State<CameraPage>
     }
 
     if (_controller == null || !_controller!.value.isInitialized) {
-      _showMessage('Camera not ready. Please retry initialization.',
-          backgroundColor: AppTheme.danger);
+      _showMessage(
+        'Camera not ready. Please retry initialization.',
+        backgroundColor: AppTheme.danger,
+      );
       return;
     }
     if (_controller!.value.isTakingPicture) return;
@@ -2187,10 +2322,7 @@ class _CameraPageState extends State<CameraPage>
     try {
       final file = await _controller!.takePicture();
       if (!mounted) return;
-      await _showCaptureReview(
-        filePath: file.path,
-        isVideo: false,
-      );
+      await _showCaptureReview(filePath: file.path, isVideo: false);
     } catch (error) {
       logDebug('Capture error: $error');
       _showMessage('Unable to capture image', backgroundColor: AppTheme.danger);
@@ -2199,20 +2331,29 @@ class _CameraPageState extends State<CameraPage>
 
   Future<void> _startVideoRecording() async {
     if (_controller == null || !_controller!.value.isInitialized) {
-      _showMessage('Camera not ready. Please retry initialization.',
-          backgroundColor: AppTheme.danger);
+      _showMessage(
+        'Camera not ready. Please retry initialization.',
+        backgroundColor: AppTheme.danger,
+      );
       return;
     }
     if (_controller!.value.isRecordingVideo) return;
     try {
+      if (!kIsWeb && Platform.isIOS) {
+        try {
+          await _controller!.prepareForVideoRecording();
+        } catch (_) {}
+      }
       await _controller!.startVideoRecording();
       if (!mounted) return;
       setState(() => _isRecording = true);
       _showMessage('Recording started');
     } catch (error) {
       logDebug('Video start error: $error');
-      _showMessage('Unable to start recording',
-          backgroundColor: AppTheme.danger);
+      _showMessage(
+        'Unable to start recording',
+        backgroundColor: AppTheme.danger,
+      );
     }
   }
 
@@ -2226,16 +2367,15 @@ class _CameraPageState extends State<CameraPage>
       final file = await _controller!.stopVideoRecording();
       if (!mounted) return;
       setState(() => _isRecording = false);
-      await _showCaptureReview(
-        filePath: file.path,
-        isVideo: true,
-      );
+      await _showCaptureReview(filePath: file.path, isVideo: true);
     } catch (error) {
       logDebug('Video stop error: $error');
       if (!mounted) return;
       setState(() => _isRecording = false);
-      _showMessage('Unable to save recording',
-          backgroundColor: AppTheme.danger);
+      _showMessage(
+        'Unable to save recording',
+        backgroundColor: AppTheme.danger,
+      );
     }
   }
 
@@ -2256,12 +2396,22 @@ class _CameraPageState extends State<CameraPage>
             'hexa_cam_${DateTime.now().millisecondsSinceEpoch}$extension';
         return SafeArea(
           top: false,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(18, 18, 18, 22),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final mq = MediaQuery.of(context);
+              final bottomInset = mq.viewInsets.bottom + mq.padding.bottom;
+              final compactHeight = constraints.maxHeight < 740;
+              final previewHeight = compactHeight
+                  ? (constraints.maxHeight * 0.32).clamp(150.0, 220.0)
+                  : 220.0;
+              final stackButtons = constraints.maxWidth < 520;
+
+              return SingleChildScrollView(
+                padding: EdgeInsets.fromLTRB(18, 18, 18, 16 + bottomInset),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
                 Text(
                   isVideo ? 'Recording Captured' : 'Image Captured',
                   style: const TextStyle(
@@ -2274,7 +2424,7 @@ class _CameraPageState extends State<CameraPage>
                 ClipRRect(
                   borderRadius: BorderRadius.circular(18),
                   child: Container(
-                    height: 220,
+                    height: previewHeight,
                     width: double.infinity,
                     color: AppTheme.bgTertiary,
                     child: isVideo
@@ -2285,112 +2435,222 @@ class _CameraPageState extends State<CameraPage>
                               color: Colors.white,
                             ),
                           )
-                        : FutureBuilder<ImageData>(
-                            future: _buildPreviewMediaForReport(
-                              filePath: filePath,
-                              isVideo: false,
-                              defaultName: defaultName,
-                            ),
-                            builder: (context, snapshot) {
-                              final preview = snapshot.data;
-                              if (snapshot.connectionState ==
-                                  ConnectionState.waiting) {
-                                return const Center(
-                                  child: CircularProgressIndicator(
-                                      strokeWidth: 2),
-                                );
-                              }
-                              if (preview == null) {
-                                return const Center(
-                                  child: Icon(
-                                    Icons.broken_image_outlined,
-                                    color: AppTheme.textMuted,
-                                    size: 36,
+                        : kIsWeb
+                        ? LayoutBuilder(
+                            builder: (context, constraints) {
+                              final size = Size(
+                                constraints.maxWidth,
+                                constraints.maxHeight,
+                              );
+                              final source = _lastSourceSize == Size.zero
+                                  ? size
+                                  : _lastSourceSize;
+                              return FutureBuilder<Uint8List>(
+                                future: cam.XFile(filePath).readAsBytes(),
+                                builder: (context, snapshot) {
+                                  if (snapshot.connectionState ==
+                                      ConnectionState.waiting) {
+                                    return const Center(
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    );
+                                  }
+                                  final bytes = snapshot.data;
+                                  if (bytes == null || bytes.isEmpty) {
+                                    return const Center(
+                                      child: Icon(
+                                        Icons.broken_image_outlined,
+                                        color: AppTheme.textMuted,
+                                        size: 36,
+                                      ),
+                                    );
+                                  }
+                                  return Stack(
+                                    fit: StackFit.expand,
+                                    children: [
+                                      Transform(
+                                        alignment: Alignment.center,
+                                        transform: Matrix4.identity()
+                                          ..rotateZ(_rotation * math.pi / 180)
+                                          ..scaleByDouble(
+                                            (_mirror || _flipH) ? -1.0 : 1.0,
+                                            _flipV ? -1.0 : 1.0,
+                                            1.0,
+                                            1.0,
+                                          ),
+                                        child: Image.memory(
+                                          bytes,
+                                          fit: BoxFit.cover,
+                                        ),
+                                      ),
+                                      CustomPaint(
+                                        painter: AnnotationPainter(
+                                          annotations: _annotationsForSave(),
+                                          displaySize: size,
+                                          sourceSize: source,
+                                          fit: BoxFit.cover,
+                                          mirrorX: _mirror || _flipH,
+                                          mirrorY: _flipV,
+                                          rotation: _rotation,
+                                          uiTextScale:
+                                              _annotationUiTextScale(context),
+                                        ),
+                                      ),
+                                    ],
+                                  );
+                                },
+                              );
+                            },
+                          )
+                        : LayoutBuilder(
+                            builder: (context, constraints) {
+                              final size = Size(
+                                constraints.maxWidth,
+                                constraints.maxHeight,
+                              );
+                              final source = _lastSourceSize == Size.zero
+                                  ? size
+                                  : _lastSourceSize;
+                              return Stack(
+                                fit: StackFit.expand,
+                                children: [
+                                  Transform(
+                                    alignment: Alignment.center,
+                                    transform: Matrix4.identity()
+                                      ..rotateZ(_rotation * math.pi / 180)
+                                      ..scaleByDouble(
+                                        (_mirror || _flipH) ? -1.0 : 1.0,
+                                        _flipV ? -1.0 : 1.0,
+                                        1.0,
+                                        1.0,
+                                      ),
+                                    child: Image.file(
+                                      File(filePath),
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (c, e, s) => const Center(
+                                        child: Icon(
+                                          Icons.broken_image_outlined,
+                                          color: AppTheme.textMuted,
+                                          size: 36,
+                                        ),
+                                      ),
+                                    ),
                                   ),
-                                );
-                              }
-                              return MediaImage(
-                                source: preview.imageUrl,
-                                mediaId: preview.mediaId,
-                                mirrorX: preview.mirrored ?? false,
-                                rotation: preview.rotation ?? 0,
-                                fit: BoxFit.cover,
-                                errorWidget: const Center(
-                                  child: Icon(
-                                    Icons.broken_image_outlined,
-                                    color: AppTheme.textMuted,
-                                    size: 36,
+                                  CustomPaint(
+                                    painter: AnnotationPainter(
+                                      annotations: _annotationsForSave(),
+                                      displaySize: size,
+                                      sourceSize: source,
+                                      fit: BoxFit.cover,
+                                      mirrorX: _mirror || _flipH,
+                                      mirrorY: _flipV,
+                                      rotation: _rotation,
+                                      uiTextScale:
+                                          _annotationUiTextScale(context),
+                                    ),
                                   ),
-                                ),
+                                ],
                               );
                             },
                           ),
                   ),
                 ),
                 const SizedBox(height: 18),
-                Row(
+                Flex(
+                  direction: stackButtons ? Axis.vertical : Axis.horizontal,
                   children: [
                     Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: () async {
-                          Navigator.pop(sheetContext);
-                          if (!mounted) return;
-                          final previewMedia = await _buildPreviewMediaForReport(
-                            filePath: filePath,
-                            isVideo: isVideo,
-                            defaultName: defaultName,
-                          );
-                          if (!mounted) return;
-                          context.push('/report/${widget.folderId}', extra: {
-                            'images': [previewMedia.toJson()],
-                          });
-                        },
-                        icon: const Icon(Icons.file_download_outlined),
-                        label: const Text('Download'),
+                      flex: stackButtons ? 0 : 1,
+                      child: SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: () async {
+                            Navigator.pop(sheetContext);
+                            if (!mounted) return;
+                            await _persistMedia(
+                              sourcePath: filePath,
+                              preferredName: defaultName,
+                              isVideo: isVideo,
+                              exportToDevice: true,
+                            );
+                          },
+                          icon: const Icon(Icons.download_outlined),
+                          label: const Text('Download'),
+                        ),
                       ),
                     ),
-                    const SizedBox(width: 12),
+                    SizedBox(width: stackButtons ? 0 : 12, height: stackButtons ? 10 : 0),
                     Expanded(
-                      child: ElevatedButton.icon(
-                        onPressed: () async {
-                          Navigator.pop(sheetContext);
-                          final previewMedia = isVideo
-                              ? null
-                              : await _buildPreviewMediaForReport(
-                                  filePath: filePath,
-                                  isVideo: false,
-                                  defaultName: defaultName,
+                      flex: stackButtons ? 0 : 1,
+                      child: SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          onPressed: () async {
+                            Navigator.pop(sheetContext);
+                            if (!mounted) return;
+                            await SaveDialog.show(
+                              context,
+                              imageUrl: isVideo
+                                  ? null
+                                  : (kIsWeb ? filePath : 'file://$filePath'),
+                              mediaId: null,
+                              annotations: _annotationsForSave(),
+                              isVideo: isVideo,
+                              onSave: (filename, description) async {
+                                await _persistMedia(
+                                  sourcePath: filePath,
+                                  preferredName: filename.trim().isEmpty
+                                      ? defaultName
+                                      : filename.trim(),
+                                  description: description,
+                                  isVideo: isVideo,
+                                  exportToDevice: false,
                                 );
-                          if (!mounted) return;
-                          await SaveDialog.show(
-                            context,
-                            imageUrl: isVideo
-                                ? null
-                                : previewMedia?.imageUrl ?? (kIsWeb ? filePath : 'file://$filePath'),
-                            mediaId: previewMedia?.mediaId,
-                            annotations: previewMedia?.annotations ?? const [],
-                            isVideo: isVideo,
-                            onSave: (filename, description) async {
-                              await _persistMedia(
-                                sourcePath: filePath,
-                                preferredName: filename.trim().isEmpty
-                                    ? defaultName
-                                    : filename.trim(),
-                                description: description,
-                                isVideo: isVideo,
-                                exportToDevice: true,
-                              );
-                            },
-                          );
-                        },
-                        icon: const Icon(Icons.save_outlined),
-                        label: const Text('Save'),
+                              },
+                            );
+                          },
+                          icon: const Icon(Icons.save_outlined),
+                          label: const Text('Save'),
+                        ),
                       ),
                     ),
                   ],
                 ),
-              ],
-            ),
+                const SizedBox(height: 10),
+                Center(
+                  child: TextButton.icon(
+                    onPressed: () async {
+                      Navigator.pop(sheetContext);
+                      if (!mounted) return;
+                      final previewMedia = await _buildPreviewMediaForReport(
+                        filePath: filePath,
+                        isVideo: isVideo,
+                        defaultName: defaultName,
+                      );
+                      if (!mounted) return;
+                      Get.toNamed<void>(
+                        '/report/${widget.folderId}',
+                        arguments: {
+                          'images': [previewMedia.toJson()],
+                        },
+                      );
+                    },
+                    icon: const Icon(
+                      Icons.picture_as_pdf_outlined,
+                      color: Colors.white70,
+                      size: 20,
+                    ),
+                    label: const Text(
+                      'Create report from this capture',
+                      style: TextStyle(color: Colors.white70),
+                    ),
+                  ),
+                ),
+                  ],
+                ),
+              );
+            },
           ),
         );
       },
@@ -2433,6 +2693,9 @@ class _CameraPageState extends State<CameraPage>
           mirrorY: _flipV,
           rotation: _rotation,
         );
+        finalBytes = kIsWeb
+            ? compressMarkedStillForStore(finalBytes)
+            : await compute(compressMarkedStillForStore, finalBytes);
         if (!kIsWeb) {
           await File(mediaSourcePath).writeAsBytes(finalBytes, flush: true);
         }
@@ -2444,7 +2707,9 @@ class _CameraPageState extends State<CameraPage>
           mirrorY: _flipV,
           rotation: _rotation,
           sourceWidth: _lastSourceSize.width > 0 ? _lastSourceSize.width : 1280,
-          sourceHeight: _lastSourceSize.height > 0 ? _lastSourceSize.height : 720,
+          sourceHeight: _lastSourceSize.height > 0
+              ? _lastSourceSize.height
+              : 720,
           outputFilename: preferredName,
         );
         if (exported != null) {
@@ -2455,9 +2720,14 @@ class _CameraPageState extends State<CameraPage>
       }
 
       await MediaDatabase.saveAsset(mediaId, finalBytes);
-      final thumbnailId = !isVideo ? FileService.generateAssetId('thumb') : null;
+      final thumbnailId = !isVideo
+          ? FileService.generateAssetId('thumb')
+          : null;
       if (thumbnailId != null) {
-        await MediaDatabase.saveAsset(thumbnailId, finalBytes);
+        final thumbBytes = kIsWeb
+            ? thumbnailOrCompressed(finalBytes)
+            : await compute(thumbnailOrCompressed, finalBytes);
+        await MediaDatabase.saveAsset(thumbnailId, thumbBytes);
       }
 
       if (exportToDevice) {
@@ -2486,7 +2756,9 @@ class _CameraPageState extends State<CameraPage>
         showCalibrationStamp: _stampEnabled,
         type: isVideo ? MediaType.video : MediaType.image,
         sourceWidth: _lastSourceSize.width > 0 ? _lastSourceSize.width : null,
-        sourceHeight: _lastSourceSize.height > 0 ? _lastSourceSize.height : null,
+        sourceHeight: _lastSourceSize.height > 0
+            ? _lastSourceSize.height
+            : null,
         isMarkingsBaked: !isVideo && annotations.isNotEmpty,
       );
 
@@ -2529,7 +2801,8 @@ class _CameraPageState extends State<CameraPage>
   ) {
     if (!uiStateController.measurementMode) return null;
     final effectiveCalibration = _effectiveCalibrationForLens(_selectedLens);
-    final needsCalibrationLabel = effectiveCalibration == null &&
+    final needsCalibrationLabel =
+        effectiveCalibration == null &&
         type != AnnotationType.text &&
         type != AnnotationType.singlePointer;
     if (needsCalibrationLabel) {
@@ -2548,18 +2821,20 @@ class _CameraPageState extends State<CameraPage>
     );
   }
 
+  /// Maps a gesture [point] to source (sensor) coordinates.
+  ///
+  /// Touches are handled inside the same [Transform] as the preview (rotate /
+  /// mirror). Flutter hit-testing already inverse-maps into this child's
+  /// coordinate system, which matches raw preview buffer space — do **not** apply
+  /// [CoordinateTransformer.screenToImage] here (that would double-invert and
+  /// break strokes, arrows, and erase hit targets when rotated or flipped).
   HexaPoint _displayToSource(Offset point) {
-    final transformed = CoordinateTransformer.screenToImage(
-      point,
-      imageSize: Size(
-        _lastSourceSize.width <= 0 ? 1.0 : _lastSourceSize.width,
-        _lastSourceSize.height <= 0 ? 1.0 : _lastSourceSize.height,
-      ),
-      mirrorX: _flipH || _mirror,
-      mirrorY: _flipV,
-      rotation: _rotation,
+    final sw = _lastSourceSize.width <= 0 ? 1.0 : _lastSourceSize.width;
+    final sh = _lastSourceSize.height <= 0 ? 1.0 : _lastSourceSize.height;
+    return HexaPoint(
+      x: point.dx.clamp(0.0, sw),
+      y: point.dy.clamp(0.0, sh),
     );
-    return HexaPoint(x: transformed.dx, y: transformed.dy);
   }
 
   Future<ImageData> _buildPreviewMediaForReport({
@@ -2580,6 +2855,10 @@ class _CameraPageState extends State<CameraPage>
         mirrorY: _flipV,
         rotation: _rotation,
       );
+      // PNG from renderer → high-quality JPEG; unmarked previews keep camera JPEG as-is.
+      previewBytes = kIsWeb
+          ? compressMarkedStillForStore(previewBytes)
+          : await compute(compressMarkedStillForStore, previewBytes);
     }
 
     final previewAssetId = FileService.generateAssetId('preview');
@@ -2608,9 +2887,20 @@ class _CameraPageState extends State<CameraPage>
     final controller = _controller;
     if (controller == null || !controller.value.isInitialized) return;
     final zoom = value.clamp(AppConstants.minZoom, _maxSupportedZoom);
-    try {
-      await controller.setZoomLevel(zoom);
-    } catch (_) {}
+    if (!_useDigitalPreviewZoom) {
+      try {
+        await controller.setZoomLevel(zoom);
+      } catch (_) {
+        if (mounted) {
+          setState(() {
+            _useDigitalPreviewZoom = true;
+            if (_maxSupportedZoom < 5.0) {
+              _maxSupportedZoom = 5.0;
+            }
+          });
+        }
+      }
+    }
     if (!mounted) return;
     setState(() {
       _settings = _settings.copyWith(zoom: zoom);
@@ -2619,7 +2909,10 @@ class _CameraPageState extends State<CameraPage>
 
   Future<void> _togglePauseMode() async {
     if (!_isCameraReady) {
-      _showMessage('Camera is not ready yet.', backgroundColor: AppTheme.danger);
+      _showMessage(
+        'Camera is not ready yet.',
+        backgroundColor: AppTheme.danger,
+      );
       return;
     }
     final nextPaused = !_isPaused;
@@ -2717,10 +3010,7 @@ class _CameraPageState extends State<CameraPage>
         : storedCalibration;
   }
 
-  void _showMessage(
-    String text, {
-    Color backgroundColor = AppTheme.success,
-  }) {
+  void _showMessage(String text, {Color backgroundColor = AppTheme.success}) {
     if (!mounted) return;
     final type = backgroundColor == AppTheme.danger
         ? HexaToastType.error
@@ -2761,8 +3051,10 @@ class _CameraPageState extends State<CameraPage>
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child:
-                const Text('Cancel', style: TextStyle(color: Colors.white70)),
+            child: const Text(
+              'Cancel',
+              style: TextStyle(color: Colors.white70),
+            ),
           ),
           ElevatedButton(
             onPressed: () {
@@ -2783,9 +3075,7 @@ class _CameraPageState extends State<CameraPage>
               }
               Navigator.pop(context);
             },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppTheme.primary,
-            ),
+            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.primary),
             child: const Text('Add', style: TextStyle(color: Colors.white)),
           ),
         ],
@@ -2810,7 +3100,10 @@ class _CameraPageState extends State<CameraPage>
 
   void _activateMoveMode() {
     if (_isLocked) {
-      _showMessage('Unlock to move annotations', backgroundColor: AppTheme.danger);
+      _showMessage(
+        'Unlock to move annotations',
+        backgroundColor: AppTheme.danger,
+      );
       return;
     }
     setState(() {
@@ -2822,7 +3115,10 @@ class _CameraPageState extends State<CameraPage>
 
   void _toggleEraserMode() {
     if (_isLocked) {
-      _showMessage('Unlock to erase annotations', backgroundColor: AppTheme.danger);
+      _showMessage(
+        'Unlock to erase annotations',
+        backgroundColor: AppTheme.danger,
+      );
       return;
     }
     setState(() {
@@ -2883,17 +3179,15 @@ class _CameraPageState extends State<CameraPage>
                 const SizedBox(height: 10),
                 Text(
                   'Enter the real distance for this line ($_selectedLens).',
-                  style: const TextStyle(
-                    color: Color(0xFFD9DCF4),
-                    height: 1.4,
-                  ),
+                  style: const TextStyle(color: Color(0xFFD9DCF4), height: 1.4),
                 ),
                 const SizedBox(height: 14),
                 TextField(
                   controller: knownController,
                   autofocus: true,
-                  keyboardType:
-                      const TextInputType.numberWithOptions(decimal: true),
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
                   style: const TextStyle(color: Colors.white),
                   decoration: InputDecoration(
                     labelText:
@@ -2911,16 +3205,18 @@ class _CameraPageState extends State<CameraPage>
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(18),
-                      borderSide:
-                          const BorderSide(color: AppTheme.primaryLight),
+                      borderSide: const BorderSide(
+                        color: AppTheme.primaryLight,
+                      ),
                     ),
                   ),
                 ),
                 const SizedBox(height: 12),
                 TextField(
                   controller: manualController,
-                  keyboardType:
-                      const TextInputType.numberWithOptions(decimal: true),
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
                   style: const TextStyle(color: Colors.white),
                   decoration: InputDecoration(
                     labelText: 'Manual Override (unit/px) - optional',
@@ -2937,8 +3233,9 @@ class _CameraPageState extends State<CameraPage>
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(18),
-                      borderSide:
-                          const BorderSide(color: AppTheme.primaryLight),
+                      borderSide: const BorderSide(
+                        color: AppTheme.primaryLight,
+                      ),
                     ),
                   ),
                 ),
@@ -2956,8 +3253,10 @@ class _CameraPageState extends State<CameraPage>
                               borderRadius: BorderRadius.circular(18),
                             ),
                           ),
-                          child: const Text('Cancel',
-                              style: TextStyle(color: Colors.white)),
+                          child: const Text(
+                            'Cancel',
+                            style: TextStyle(color: Colors.white),
+                          ),
                         ),
                       ),
                     ),
@@ -2969,13 +3268,14 @@ class _CameraPageState extends State<CameraPage>
                           onPressed: () {
                             final knownDistance =
                                 double.tryParse(knownController.text.trim()) ??
-                                    0;
-                            final manualOverride =
-                                double.tryParse(manualController.text.trim());
+                                0;
+                            final manualOverride = double.tryParse(
+                              manualController.text.trim(),
+                            );
                             _manualOverrideController.text =
                                 manualController.text.trim().isEmpty
-                                    ? '0'
-                                    : manualController.text.trim();
+                                ? '0'
+                                : manualController.text.trim();
                             Navigator.pop(dialogContext);
                             _saveCalibrationFromAnnotation(
                               latestDistance,
@@ -3083,7 +3383,11 @@ class _CameraPageState extends State<CameraPage>
     }
 
     setState(() {
+      // Calibration reference line is temporary; remove it after saving calibration.
+      _annotations.removeWhere((a) => a.id == latestDistance.id);
+      _redoStack.clear();
       _selectedTool = null;
+      _awaitingCalibrationLine = false;
     });
     _refreshAnnotationMeasurements();
     _showMessage('Calibration saved for $_selectedLens');
@@ -3126,26 +3430,3 @@ class _CameraPageState extends State<CameraPage>
     return closestIndex;
   }
 }
-
-class _GridPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = const Color(0x126366F1)
-      ..strokeWidth = 1;
-
-    for (double x = 0; x <= size.width; x += 60) {
-      canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);
-    }
-
-    for (double y = 60; y <= size.height; y += 60) {
-      canvas.drawLine(Offset(0, y), Offset(size.width, y), paint);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}
-
-
-

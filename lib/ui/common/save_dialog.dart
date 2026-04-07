@@ -9,7 +9,7 @@ class SaveDialog extends StatefulWidget {
   final String? mediaId;
   final List<Annotation> annotations;
   final bool isVideo;
-  final Function(String filename, String description) onSave;
+  final Future<void> Function(String filename, String description) onSave;
   final VoidCallback onCancel;
 
   const SaveDialog({
@@ -28,7 +28,7 @@ class SaveDialog extends StatefulWidget {
     String? mediaId,
     List<Annotation> annotations = const [],
     bool isVideo = false,
-    required Function(String, String) onSave,
+    required Future<void> Function(String, String) onSave,
   }) async {
     await showDialog(
       context: context,
@@ -52,6 +52,7 @@ class _SaveDialogState extends State<SaveDialog> {
   final _filenameController = TextEditingController();
   final _descriptionController = TextEditingController();
   bool _dontAskAgain = false;
+  bool _saving = false;
 
   @override
   void dispose() {
@@ -107,7 +108,25 @@ class _SaveDialogState extends State<SaveDialog> {
                 ),
                 const SizedBox(width: 14),
                 Expanded(
-                  child: _actionButton(label: 'Save', gradient: true, onTap: () { widget.onSave(_filenameController.text, _descriptionController.text); Navigator.pop(context); }),
+                  child: _actionButton(
+                    label: _saving ? 'Saving…' : 'Save',
+                    gradient: true,
+                    busy: _saving,
+                    onTap: _saving
+                        ? null
+                        : () async {
+                            setState(() => _saving = true);
+                            try {
+                              await widget.onSave(
+                                _filenameController.text,
+                                _descriptionController.text,
+                              );
+                              if (context.mounted) Navigator.pop(context);
+                            } finally {
+                              if (mounted) setState(() => _saving = false);
+                            }
+                          },
+                  ),
                 ),
               ],
             ),
@@ -135,7 +154,12 @@ class _SaveDialogState extends State<SaveDialog> {
     );
   }
 
-  Widget _actionButton({required String label, required VoidCallback onTap, bool gradient = false}) {
+  Widget _actionButton({
+    required String label,
+    required VoidCallback? onTap,
+    bool gradient = false,
+    bool busy = false,
+  }) {
     return SizedBox(
       width: double.infinity,
       height: 48,
@@ -144,7 +168,22 @@ class _SaveDialogState extends State<SaveDialog> {
         style: ElevatedButton.styleFrom(backgroundColor: gradient ? Colors.transparent : const Color(0xFF1D284D), shadowColor: Colors.transparent, padding: EdgeInsets.zero, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18))),
         child: Ink(
           decoration: BoxDecoration(gradient: gradient ? AppTheme.buttonGradient : null, color: gradient ? null : const Color(0xFF1D284D), borderRadius: BorderRadius.circular(18)),
-          child: Center(child: Text(label, style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: Responsive.isTablet(context) ? 18 : 16))),
+          child: Center(
+            child: busy
+                ? const SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                  )
+                : Text(
+                    label,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                      fontSize: Responsive.isTablet(context) ? 18 : 16,
+                    ),
+                  ),
+          ),
         ),
       ),
     );

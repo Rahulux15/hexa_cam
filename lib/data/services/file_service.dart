@@ -9,8 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 
-import 'web_download_stub.dart'
-    if (dart.library.html) 'web_download_web.dart';
+import 'web_download_stub.dart' if (dart.library.html) 'web_download_web.dart';
 
 class FileService {
   static const _uuid = Uuid();
@@ -21,11 +20,13 @@ class FileService {
 
   static Future<void> saveToDevice(Uint8List bytes, String filename) async {
     if (kIsWeb) {
-      await downloadBytesWeb(bytes, _safeFilename(filename));
+      final name = _safeFilename(filename, fallbackExtension: '.jpg');
+      await downloadBytesWeb(bytes, name, mimeType: 'image/jpeg');
       return;
     }
-    final sanitized =
-        filename.replaceAll(RegExp(r'[<>:"/\\|?*\x00-\x1F]'), '-').trim();
+    final sanitized = filename
+        .replaceAll(RegExp(r'[<>:"/\\|?*\x00-\x1F]'), '-')
+        .trim();
     final name = sanitized.isEmpty
         ? 'hexacam-${DateTime.now().millisecondsSinceEpoch}'
         : sanitized;
@@ -34,7 +35,8 @@ class FileService {
 
   static Future<void> savePdfToDevice(Uint8List bytes, String filename) async {
     if (kIsWeb) {
-      await downloadBytesWeb(bytes, _safeFilename(filename));
+      final name = _safeFilename(filename, fallbackExtension: '.pdf');
+      await downloadBytesWeb(bytes, name, mimeType: 'application/pdf');
       return;
     }
     await saveToAppFolder(
@@ -45,7 +47,9 @@ class FileService {
   }
 
   static Future<void> saveVideoToDevice(
-      String videoPath, String filename) async {
+    String videoPath,
+    String filename,
+  ) async {
     await Gal.putVideo(videoPath);
   }
 
@@ -65,8 +69,10 @@ class FileService {
       await mediaDir.create(recursive: true);
     }
 
-    final safeName =
-        _safeFilename(filename, fallbackExtension: p.extension(sourcePath));
+    final safeName = _safeFilename(
+      filename,
+      fallbackExtension: p.extension(sourcePath),
+    );
     final destination = p.join(mediaDir.path, safeName);
     final file = await File(sourcePath).copy(destination);
     return _normalizePath(file.path);
@@ -80,8 +86,9 @@ class FileService {
     bool preferDownloads = true,
   }) async {
     if (kIsWeb) {
-      await downloadBytesWeb(bytes, _safeFilename(filename));
-      return _safeFilename(filename);
+      final name = _safeFilename(filename, fallbackExtension: '.pdf');
+      await downloadBytesWeb(bytes, name, mimeType: 'application/pdf');
+      return name;
     }
     final safeName = _safeFilename(filename);
     final mediaDir = await _resolveTargetDirectory(
@@ -224,21 +231,21 @@ class FileService {
   static String buildPublicDownloadPath({
     required String filename,
     required String downloadsRoot,
-  }) =>
-      _normalizePath(p.join(downloadsRoot, _safeFilename(filename)));
+  }) => _normalizePath(p.join(downloadsRoot, _safeFilename(filename)));
 
   static String buildFallbackDownloadPath({
     required String filename,
     required String downloadsRoot,
-  }) =>
-      _normalizePath(p.join(downloadsRoot, _safeFilename(filename)));
+  }) => _normalizePath(p.join(downloadsRoot, _safeFilename(filename)));
 
   static Future<Uint8List> readBytes(String path) async {
     return File(path).readAsBytes();
   }
 
   static String _safeFilename(String value, {String fallbackExtension = ''}) {
-    var cleaned = value.replaceAll(RegExp(r'[<>:"/\\|?*\x00-\x1F]'), '-').trim();
+    var cleaned = value
+        .replaceAll(RegExp(r'[<>:"/\\|?*\x00-\x1F]'), '-')
+        .trim();
     cleaned = cleaned.replaceAll(RegExp(r'-{2,}'), '-');
     if (cleaned.isEmpty) {
       final extension = fallbackExtension.isEmpty ? '' : fallbackExtension;
