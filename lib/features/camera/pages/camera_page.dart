@@ -2720,10 +2720,8 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
       }
 
       await MediaDatabase.saveAsset(mediaId, finalBytes);
-      final thumbnailId = !isVideo
-          ? FileService.generateAssetId('thumb')
-          : null;
-      if (thumbnailId != null) {
+      final thumbnailId = isVideo ? null : mediaId;
+      if (thumbnailId != null && thumbnailId != mediaId) {
         final thumbBytes = kIsWeb
             ? thumbnailOrCompressed(finalBytes)
             : await compute(thumbnailOrCompressed, finalBytes);

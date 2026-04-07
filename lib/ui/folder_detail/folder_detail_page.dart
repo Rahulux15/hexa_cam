@@ -604,7 +604,7 @@ class _FolderDetailPageState extends State<FolderDetailPage> {
   /// [layoutWidth]: logical width of the image area (decode uses DPR × this cap).
   Widget _buildMediaPreview(ImageData image, {required double layoutWidth}) {
     final dpr = MediaQuery.devicePixelRatioOf(context);
-    final decodeW = (layoutWidth * dpr * 1.25).round().clamp(384, 1536);
+    final decodeW = (layoutWidth * dpr * 1.5).round().clamp(512, 2300);
 
     final isVideo = image.type == MediaType.video;
     final hasThumb =
@@ -630,18 +630,16 @@ class _FolderDetailPageState extends State<FolderDetailPage> {
     }
 
     final baked = image.isMarkingsBaked == true;
-    final thumbId = image.thumbnailId;
-    final useThumb = thumbId != null && thumbId.isNotEmpty;
     return MediaImage(
-      source: useThumb ? '' : image.imageUrl,
-      mediaId: useThumb ? thumbId : image.mediaId,
-      annotations: useThumb || baked ? const [] : image.annotations,
-      burnAnnotationsIntoPreview: !useThumb && !baked,
+      source: '',
+      mediaId: image.mediaId,
+      annotations: baked ? const [] : image.annotations,
+      burnAnnotationsIntoPreview: !baked,
       mirrorX: image.mirrored ?? false,
       rotation: image.rotation ?? 0,
       fit: BoxFit.contain,
       cacheWidth: decodeW,
-      filterQuality: FilterQuality.low,
+      filterQuality: FilterQuality.high,
       errorWidget: _placeholder(),
     );
   } 

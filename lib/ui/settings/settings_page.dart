@@ -160,20 +160,22 @@ class _SettingsPageState extends State<SettingsPage> {
       ]),
       SizedBox(height: isTab ? 36 : 32),
       SizedBox(
-        width: isTab ? 100 : 80,
-        height: isTab ? 100 : 80,
-        // decoration: BoxDecoration(gradient: AppTheme.primaryGradient, borderRadius: BorderRadius.circular(isTab ? 24 : 20)),
+        width: isTab ? 260 : 220,
+        height: isTab ? 120 : 96,
         child: Image.asset(
-          'assets/images/app_new_logo.png',
-          // width: 150,
-          // height: 300,
-          // fit: BoxFit.contain,
+          'assets/images/report_logo.png',
+          fit: BoxFit.fitWidth,
+          alignment: Alignment.center,
+          filterQuality: FilterQuality.high,
+          errorBuilder: (context, error, stackTrace) => Image.asset(
+            'assets/images/about_logo.png',
+            fit: BoxFit.fitWidth,
+            alignment: Alignment.center,
+            filterQuality: FilterQuality.high,
+          ),
         ),
-
-        // Icon(Icons.biotech_outlined, color: Colors.white, size: isTab ? 48 : 40),
       ),
-      SizedBox(height: isTab ? 16 : 12),
-      const Text('Hexa-Cam', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: AppTheme.textPrimary)),
+      SizedBox(height: isTab ? 12 : 10),
       _buildAboutVersionLine(isTab),
       const Text('Scientific Imaging & Microscopy', style: TextStyle(fontSize: 12, color: AppTheme.textDisabled)),
       SizedBox(height: isTab ? 34 : 30),
@@ -672,9 +674,9 @@ class _SettingsPageState extends State<SettingsPage> {
           child: ClipRRect(
             borderRadius: BorderRadius.circular(isTab ? 22 : 20),
             child: Image.asset(
-              'assets/images/about_logo.png',
-              width: isTab ? 120 : 100,
-              height: isTab ? 120 : 100,
+              'assets/images/report_logo.png',
+              width: isTab ? 220 : 180,
+              height: isTab ? 130 : 106,
               fit: BoxFit.contain,
               filterQuality: FilterQuality.high,
               errorBuilder: (context, error, stackTrace) {
@@ -692,16 +694,6 @@ class _SettingsPageState extends State<SettingsPage> {
           ),
         ),
         SizedBox(height: isTab ? 18 : 16),
-        ShaderMask(
-          shaderCallback: (bounds) =>
-              const LinearGradient(colors: [Color(0xFFA78BFA), Color(0xFF818CF8), Color(0xFF22D3EE)]).createShader(bounds),
-          child: Text(
-            'Hexa-Cam',
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: isTab ? 32 : 28, fontWeight: FontWeight.bold, color: Colors.white),
-          ),
-        ),
-        SizedBox(height: isTab ? 6 : 4),
         Center(child: _buildAboutVersionLine(isTab)),
         SizedBox(height: isTab ? 18 : 16),
         Text(

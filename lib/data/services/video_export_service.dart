@@ -71,7 +71,7 @@ class VideoExportService {
       '-preset',
       'slow',
       '-crf',
-      '16',
+      '14',
       '-pix_fmt',
       'yuv420p',
     ];
@@ -93,7 +93,7 @@ class VideoExportService {
       '-c:a',
       'aac',
       '-b:a',
-      '128k',
+      '192k',
       outputPath,
     ];
     if (await _runFfmpeg(argsAacAudio)) return outputPath;
@@ -130,7 +130,7 @@ class VideoExportService {
       '-c:a',
       'aac',
       '-b:a',
-      '128k',
+      '192k',
       outputPath,
     ];
     if (await _runFfmpeg(mpeg4WithAudio)) return outputPath;
