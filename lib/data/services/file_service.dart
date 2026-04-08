@@ -84,6 +84,7 @@ class FileService {
     required String folderName,
     String subdirectory = 'reports',
     bool preferDownloads = true,
+    void Function(double progress)? onProgress,
   }) async {
     if (kIsWeb) {
       final name = _safeFilename(filename, fallbackExtension: '.pdf');
@@ -97,7 +98,11 @@ class FileService {
       preferDownloads: preferDownloads,
     );
     final destination = await _uniqueDestination(mediaDir, safeName);
-    final file = await _atomicWriteBytes(destination, bytes);
+    final file = await _atomicWriteBytes(
+      destination,
+      bytes,
+      onProgress: onProgress,
+    );
     return _normalizePath(file.path);
   }
 
@@ -106,6 +111,7 @@ class FileService {
     required String filename,
     required String folderName,
     String subdirectory = 'reports',
+    void Function(double progress)? onProgress,
   }) {
     return persistBytes(
       bytes: bytes,
@@ -113,6 +119,7 @@ class FileService {
       folderName: folderName,
       subdirectory: subdirectory,
       preferDownloads: false,
+      onProgress: onProgress,
     );
   }
 
@@ -121,6 +128,7 @@ class FileService {
     required String filename,
     required String folderName,
     String subdirectory = 'reports',
+    void Function(double progress)? onProgress,
   }) {
     return persistBytes(
       bytes: bytes,
@@ -128,6 +136,7 @@ class FileService {
       folderName: folderName,
       subdirectory: subdirectory,
       preferDownloads: true,
+      onProgress: onProgress,
     );
   }
 
@@ -197,10 +206,26 @@ class FileService {
   static Future<File> _atomicWriteBytes(
     String destination,
     Uint8List bytes,
+    {void Function(double progress)? onProgress}
   ) async {
     final target = File(destination);
     final temp = File('$destination.tmp');
-    await temp.writeAsBytes(bytes, flush: true);
+    final sink = temp.openWrite();
+    const chunkSize = 256 * 1024;
+    final total = bytes.length;
+    if (total == 0) {
+      onProgress?.call(1.0);
+    } else {
+      var offset = 0;
+      while (offset < total) {
+        final end = (offset + chunkSize).clamp(0, total);
+        sink.add(bytes.sublist(offset, end));
+        offset = end;
+        onProgress?.call(offset / total);
+      }
+    }
+    await sink.flush();
+    await sink.close();
     if (await target.exists()) {
       await target.delete();
     }

@@ -31,6 +31,7 @@ class MediaImage extends StatefulWidget {
     this.cacheWidth,
     this.cacheHeight,
     this.filterQuality = FilterQuality.high,
+    this.annotationSourceSize,
   });
 
   final String source;
@@ -45,6 +46,7 @@ class MediaImage extends StatefulWidget {
   final int? cacheWidth;
   final int? cacheHeight;
   final FilterQuality filterQuality;
+  final Size? annotationSourceSize;
 
   @override
   State<MediaImage> createState() => _MediaImageState();
@@ -73,6 +75,7 @@ class _MediaImageState extends State<MediaImage> {
         oldWidget.rotation != widget.rotation ||
         oldWidget.cacheWidth != widget.cacheWidth ||
         oldWidget.cacheHeight != widget.cacheHeight ||
+        oldWidget.annotationSourceSize != widget.annotationSourceSize ||
         !_sameAnnotationList(oldWidget.annotations, widget.annotations)) {
       _bytesFuture = _buildBytesFuture();
     }
@@ -110,6 +113,7 @@ class _MediaImageState extends State<MediaImage> {
         mirrorX: widget.mirrorX,
         mirrorY: widget.mirrorY,
         rotation: widget.rotation,
+        annotationSourceSize: widget.annotationSourceSize,
       );
     }
     if (!kIsWeb &&
@@ -124,6 +128,7 @@ class _MediaImageState extends State<MediaImage> {
         mirrorX: widget.mirrorX,
         mirrorY: widget.mirrorY,
         rotation: widget.rotation,
+        annotationSourceSize: widget.annotationSourceSize,
       );
     }
     return null;
@@ -180,6 +185,23 @@ class _MediaImageState extends State<MediaImage> {
     if (!kIsWeb && widget.source.startsWith('file://')) {
       return Image.file(
         File(widget.source.replaceFirst('file://', '')),
+        fit: widget.fit,
+        gaplessPlayback: true,
+        cacheWidth: widget.cacheWidth,
+        cacheHeight: widget.cacheHeight,
+        filterQuality: widget.filterQuality,
+        errorBuilder: (context, error, stackTrace) => _fallback(),
+      );
+    }
+
+    // Android/iOS app data paths can come without a file:// scheme.
+    if (!kIsWeb &&
+        widget.source.isNotEmpty &&
+        !widget.source.startsWith('http://') &&
+        !widget.source.startsWith('https://') &&
+        !widget.source.startsWith('data:')) {
+      return Image.file(
+        File(widget.source),
         fit: widget.fit,
         gaplessPlayback: true,
         cacheWidth: widget.cacheWidth,

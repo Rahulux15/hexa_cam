@@ -939,9 +939,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                                   mirrorY: _flipV,
                                   zoom: 1,
                                   rotation: _rotation,
-                                  lineWidthScale: MediaQuery.devicePixelRatioOf(
-                                    context,
-                                  ).clamp(1.0, 2.5),
+                                  lineWidthScale: 1.0,
                                   uiTextScale: uiTextScale,
                                 ),
                               ),
@@ -3105,6 +3103,10 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
           mirrorX: _mirror || _flipH,
           mirrorY: _flipV,
           rotation: _rotation,
+          annotationSourceSize: _lastSourceSize.width > 0 &&
+                  _lastSourceSize.height > 0
+              ? _lastSourceSize
+              : null,
         );
         finalBytes = kIsWeb
             ? compressMarkedStillForStore(finalBytes)
@@ -3155,6 +3157,10 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                     mirrorX: _mirror || _flipH,
                     mirrorY: _flipV,
                     rotation: _rotation,
+                    annotationSourceSize: _lastSourceSize.width > 0 &&
+                            _lastSourceSize.height > 0
+                        ? _lastSourceSize
+                        : null,
                   );
             thumbnailId = FileService.generateAssetId('thumb');
             await MediaDatabase.saveAsset(thumbnailId, thumbWithMarks);
@@ -3173,6 +3179,10 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                     mirrorX: _mirror || _flipH,
                     mirrorY: _flipV,
                     rotation: _rotation,
+                    annotationSourceSize: _lastSourceSize.width > 0 &&
+                            _lastSourceSize.height > 0
+                        ? _lastSourceSize
+                        : null,
                   );
             thumbnailId = FileService.generateAssetId('thumb');
             await MediaDatabase.saveAsset(thumbnailId, thumbWithMarks);
@@ -3215,8 +3225,12 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
       await foldersController.addImage(widget.folderId, image);
       _showMessage(
         exportToDevice
-            ? 'Downloaded to Gallery'
-            : 'Saved successfully to "${widget.folderId}" in app',
+            ? (isVideo
+                ? 'Video downloaded to Gallery'
+                : 'Image downloaded to Gallery')
+            : (isVideo
+                ? 'Saved video to ${_folderLabel(_displayFolderName())}'
+                : 'Saved image to ${_folderLabel(_displayFolderName())}'),
       );
       return image;
     } catch (error) {
@@ -3321,6 +3335,10 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                   mirrorX: _mirror || _flipH,
                   mirrorY: _flipV,
                   rotation: _rotation,
+                  annotationSourceSize: _lastSourceSize.width > 0 &&
+                          _lastSourceSize.height > 0
+                      ? _lastSourceSize
+                      : null,
                 );
           thumbnailId = FileService.generateAssetId('thumb');
           await MediaDatabase.saveAsset(thumbnailId, thumbWithMarks);
@@ -3339,6 +3357,10 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                   mirrorX: _mirror || _flipH,
                   mirrorY: _flipV,
                   rotation: _rotation,
+                  annotationSourceSize: _lastSourceSize.width > 0 &&
+                          _lastSourceSize.height > 0
+                      ? _lastSourceSize
+                      : null,
                 );
           thumbnailId = FileService.generateAssetId('thumb');
           await MediaDatabase.saveAsset(thumbnailId, thumbWithMarks);
@@ -3498,6 +3520,23 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
         ? HexaToastType.error
         : HexaToastType.success;
     HexaToast.show(context, text, type: type);
+  }
+
+  String _folderLabel(String raw) {
+    final trimmed = raw.trim();
+    if (trimmed.isEmpty) return 'App Folder';
+    return trimmed[0].toUpperCase() + trimmed.substring(1);
+  }
+
+  String _displayFolderName() {
+    try {
+      final folder =
+          foldersController.folders.firstWhere((f) => f.id == widget.folderId);
+      final name = folder.name.trim();
+      return name.isEmpty ? widget.folderId : name;
+    } catch (_) {
+      return widget.folderId;
+    }
   }
 
   void _showTextDialog(HexaPoint tapPoint) {

@@ -630,6 +630,12 @@ class _FolderDetailPageState extends State<FolderDetailPage> {
         burnAnnotationsIntoPreview: true,
         mirrorX: image.mirrored ?? false,
         rotation: image.rotation ?? 0,
+        annotationSourceSize: (image.sourceWidth != null &&
+                image.sourceHeight != null &&
+                image.sourceWidth! > 0 &&
+                image.sourceHeight! > 0)
+            ? Size(image.sourceWidth!, image.sourceHeight!)
+            : null,
         fit: BoxFit.contain,
         cacheWidth: decodeW,
         errorWidget: _placeholder(),
@@ -650,6 +656,12 @@ class _FolderDetailPageState extends State<FolderDetailPage> {
       burnAnnotationsIntoPreview: !baked,
       mirrorX: image.mirrored ?? false,
       rotation: image.rotation ?? 0,
+      annotationSourceSize: (image.sourceWidth != null &&
+              image.sourceHeight != null &&
+              image.sourceWidth! > 0 &&
+              image.sourceHeight! > 0)
+          ? Size(image.sourceWidth!, image.sourceHeight!)
+          : null,
       fit: BoxFit.contain,
       cacheWidth: decodeW,
       filterQuality: FilterQuality.high,

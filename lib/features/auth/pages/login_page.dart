@@ -19,6 +19,9 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
   final AuthController authController = Get.find<AuthController>();
 
   late AnimationController _glowController;
+  late AnimationController _entryController;
+  late Animation<double> _entryOpacity;
+  late Animation<Offset> _entryOffset;
   late List<_Particle> _particles;
   final _random = Random();
   bool _acceptTerms = true;
@@ -32,12 +35,27 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
       duration: const Duration(seconds: 2),
       vsync: this,
     )..repeat(reverse: true);
+    _entryController = AnimationController(
+      duration: const Duration(milliseconds: 850),
+      vsync: this,
+    )..forward();
+    _entryOpacity = CurvedAnimation(
+      parent: _entryController,
+      curve: Curves.easeOutCubic,
+    );
+    _entryOffset = Tween<Offset>(
+      begin: const Offset(0, 0.06),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(parent: _entryController, curve: Curves.easeOutCubic));
 
     _particles = List.generate(
-      8,
+      12,
           (_) => _Particle(
         x: _random.nextDouble(),
         y: _random.nextDouble(),
+        driftX: (_random.nextDouble() - 0.5) * 22,
+        driftY: (_random.nextDouble() - 0.5) * 28,
+        size: 2.0 + _random.nextDouble() * 4.0,
         controller: AnimationController(
           duration: Duration(milliseconds: 4000 + _random.nextInt(2000)),
           vsync: this,
@@ -62,6 +80,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
   @override
   void dispose() {
     _glowController.dispose();
+    _entryController.dispose();
     for (final p in _particles) {
       p.controller.dispose();
     }
@@ -122,13 +141,15 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
             ..._particles.map((p) => AnimatedBuilder(
               animation: p.controller,
             builder: (context, _) => Positioned(
-                left: MediaQuery.sizeOf(context).width * p.x,
-                top: MediaQuery.sizeOf(context).height * p.y,
+                left: (MediaQuery.sizeOf(context).width * p.x) +
+                    ((p.controller.value - 0.5) * p.driftX),
+                top: (MediaQuery.sizeOf(context).height * p.y) +
+                    ((p.controller.value - 0.5) * p.driftY),
                 child: Opacity(
-                  opacity: 0.2 + p.controller.value * 0.3,
+                  opacity: 0.16 + p.controller.value * 0.34,
                   child: Container(
-                    width: isTab ? 6 : 4,
-                    height: isTab ? 6 : 4,
+                    width: (isTab ? 6 : 4) + p.size,
+                    height: (isTab ? 6 : 4) + p.size,
                     decoration: const BoxDecoration(
                       shape: BoxShape.circle,
                       color: AppTheme.primary,
@@ -139,7 +160,11 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
             )),
 
             Center(
-              child: SingleChildScrollView(
+              child: FadeTransition(
+                opacity: _entryOpacity,
+                child: SlideTransition(
+                  position: _entryOffset,
+                  child: SingleChildScrollView(
                 child: ConstrainedBox(
                   constraints: BoxConstraints(
                     minHeight: MediaQuery.sizeOf(context).height,
@@ -157,14 +182,34 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                           children: [
                             // Logo
                             Center(
-                              child: Column(
+                              child: AnimatedBuilder(
+                                animation: _glowController,
+                                builder: (context, _) => Column(
                                 children: [
-                                  SizedBox(
-                                    width: logoSize,
-                                    height: logoSize,
-                                    child: Image.asset(
-                                      'assets/images/app_logo.png',
-                                      fit: BoxFit.contain,
+                                  Container(
+                                    width: logoSize + 14,
+                                    height: logoSize + 14,
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: const Color(0xFF8F5CFF).withValues(
+                                            alpha: 0.15 + (_glowController.value * 0.23),
+                                          ),
+                                          blurRadius: 28,
+                                          spreadRadius: 1,
+                                        ),
+                                      ],
+                                    ),
+                                    child: Center(
+                                      child: SizedBox(
+                                        width: logoSize,
+                                        height: logoSize,
+                                        child: Image.asset(
+                                          'assets/images/app_logo.png',
+                                          fit: BoxFit.contain,
+                                        ),
+                                      ),
                                     ),
                                   ),
                                   const SizedBox(height: 10),
@@ -186,6 +231,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                                     ),
                                   ),
                                 ],
+                              ),
                               ),
                             ),
 
@@ -259,12 +305,47 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                                     child: Padding(
                                       padding: EdgeInsets.only(top: 10),
                                       child: Text(
-                                        'I accept the Terms and Conditions.',
+                                        'I have read and agree to the Terms & Conditions and Privacy Policy.',
                                         style: TextStyle(
                                           color: AppTheme.textSecondary,
                                           fontSize: 12,
                                           height: 1.35,
                                         ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Container(
+                              width: double.infinity,
+                              margin: const EdgeInsets.symmetric(horizontal: 6),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 10,
+                              ),
+                              decoration: BoxDecoration(
+                                color: const Color(0x1A6C8EFF),
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(color: const Color(0x3F7C96FF)),
+                              ),
+                              child: const Row(
+                                children: [
+                                  Icon(
+                                    Icons.support_agent_rounded,
+                                    color: Color(0xFFC7D7FF),
+                                    size: 16,
+                                  ),
+                                  SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      'For Login ID and Password, contact Quality Scientific and Mechanical Works.',
+                                      style: TextStyle(
+                                        color: Color(0xFFD6E0FF),
+                                        fontSize: 11.5,
+                                        fontWeight: FontWeight.w500,
+                                        height: 1.3,
                                       ),
                                     ),
                                   ),
@@ -369,6 +450,8 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                     ),
                   ),
                 ),
+                ),
+              ),
               ),
             ),
           ],
@@ -446,7 +529,17 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
 class _Particle {
   final double x;
   final double y;
+  final double driftX;
+  final double driftY;
+  final double size;
   final AnimationController controller;
-  _Particle({required this.x, required this.y, required this.controller});
+  _Particle({
+    required this.x,
+    required this.y,
+    required this.driftX,
+    required this.driftY,
+    required this.size,
+    required this.controller,
+  });
 }
 

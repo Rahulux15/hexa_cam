@@ -2,10 +2,22 @@
 
 ## Document revision & changelog
 
-**App version (pubspec):** `1.0.0+1`  
-**Documentation last updated:** 2026-04-07  
+**App version (pubspec):** `2.0.0+2`  
+**Documentation last updated:** 2026-04-08  
 
-Use the same **version** line in release notes or tags as `pubspec.yaml` (`version:` field). Use **2026-04-07** (or the ship date) for the doc/changelog date when you publish.
+Use the same **version** line in release notes or tags as `pubspec.yaml` (`version:` field). Use **2026-04-08** (or the ship date) for the doc/changelog date when you publish.
+
+### 2026-04-08 — Cross-platform stabilization, report accuracy, UX polish
+
+| Area | What changed |
+|------|----------------|
+| **Annotation accuracy** (`lib/utils/marked_media_renderer.dart`) | Mapping selection now evaluates multiple placement candidates (raw/direct/swapped) using in-bounds + spatial spread scoring to avoid tiny/shifted overlays in exports and reports. |
+| **Report media consistency** (`lib/ui/image_viewer/image_viewer_page.dart`, `lib/ui/report/report_page.dart`) | Report flow now captures deterministic flattened marked media from viewer and uses baked media paths safely to prevent missing markings in report preview/PDF. |
+| **Viewer clear action** (`lib/ui/viewer/viewer_screen.dart`, `lib/ui/image_viewer/image_viewer_page.dart`) | Clear markings now clears both live viewer state and persisted annotation state immediately. |
+| **Messaging and progress UX** (`lib/ui/common/hexa_toast.dart`, `lib/controllers/report_controller.dart`, `lib/data/services/file_service.dart`) | New toast card style with progress bar and percent indicator; report save/download flows emit progress states and clearer destination-specific messages. |
+| **Report download path** (`lib/controllers/report_controller.dart`) | Device report downloads are consolidated into `Downloads/Hexa Cam Reports` (single destination folder). |
+| **Auth/splash UX** (`lib/features/auth/pages/splash_page.dart`, `lib/features/auth/pages/login_page.dart`, `lib/app.dart`) | Added visible splash/login animations and kept splash behavior cold-start only (no splash on app resume). |
+| **Platform parity (iOS)** (`ios/Runner/Info.plist`) | iOS orientation and media permission declarations remain aligned with current camera/media flows; shared Flutter fixes apply on iOS and Android. |
 
 ### 2026-04-07 — Media viewer, export, folder sync, and model updates
 

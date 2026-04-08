@@ -137,11 +137,18 @@ class ViewerScreenState extends State<ViewerScreen> {
   @override
   void didUpdateWidget(covariant ViewerScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.image.id != widget.image.id) {
+    final imageChanged = oldWidget.image.id != widget.image.id;
+    final incomingAnnotationsChanged =
+        !listEquals(oldWidget.initialAnnotations, widget.initialAnnotations);
+    final hiddenIdsChanged =
+        !setEquals(oldWidget.hiddenAnnotationIds, widget.hiddenAnnotationIds);
+    if (imageChanged || incomingAnnotationsChanged || hiddenIdsChanged) {
       _annotations = widget.initialAnnotations
           .where((a) => !widget.hiddenAnnotationIds.contains(a.id))
           .toList();
-      _history.clear();
+      if (imageChanged) {
+        _history.clear();
+      }
       _filters = ViewerFilters.fromCameraSettings(widget.image.cameraSettings);
       _stampEnabled = widget.image.showCalibrationStamp ?? false;
       final lens = widget.image.lens;
@@ -199,6 +206,20 @@ class ViewerScreenState extends State<ViewerScreen> {
 
   void _notify() {
     widget.onAnnotationsChanged(List<Annotation>.from(_annotations));
+  }
+
+  void clearAllMarkings() {
+    if (_annotations.isEmpty) return;
+    setState(() {
+      _annotations.clear();
+      _currentPoints = [];
+      _isDrawing = false;
+      _moveId = null;
+      _moveBefore = null;
+      _eraserRemoved.clear();
+    });
+    _history.clear();
+    _notify();
   }
 
   void _pushAdd(Annotation a) {

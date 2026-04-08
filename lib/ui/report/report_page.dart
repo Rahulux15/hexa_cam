@@ -19,6 +19,7 @@ import '../../state/app_registry.dart';
 import '../../utils/responsive.dart';
 import '../common/media_image.dart';
 import '../common/responsive_action.dart';
+import '../common/hexa_toast.dart';
 import '../../controllers/async_action_controller.dart';
 
 class ReportPage extends StatefulWidget {
@@ -483,14 +484,25 @@ class _ReportPageState extends State<ReportPage> {
   }
 
   Widget _buildPreviewImage(ImageData image) {
-    final previewMediaId = (image.thumbnailId?.isNotEmpty == true)
-        ? image.thumbnailId
+    final previewMediaId = image.type == MediaType.video
+        ? ((image.thumbnailId?.isNotEmpty == true)
+              ? image.thumbnailId
+              : image.mediaId)
         : image.mediaId;
     return MediaImage(
       source: image.imageUrl,
       mediaId: previewMediaId,
       annotations: image.annotations,
-      burnAnnotationsIntoPreview: image.annotations.isNotEmpty,
+      burnAnnotationsIntoPreview:
+          image.annotations.isNotEmpty && image.isMarkingsBaked != true,
+      mirrorX: image.mirrored ?? false,
+      rotation: image.rotation ?? 0,
+      annotationSourceSize: (image.sourceWidth != null &&
+              image.sourceHeight != null &&
+              image.sourceWidth! > 0 &&
+              image.sourceHeight! > 0)
+          ? Size(image.sourceWidth!, image.sourceHeight!)
+          : null,
       fit: BoxFit.contain,
       filterQuality: FilterQuality.high,
       errorWidget: const Center(
@@ -765,7 +777,9 @@ class _ReportPageState extends State<ReportPage> {
         bytes: bytes,
         filename: filename,
         folderName: widget.folderId,
+        folderLabel: _folderLabel(),
         showMessage: _showMessage,
+        onProgress: _showProgress,
       );
       if (!ok) return;
 
@@ -799,7 +813,7 @@ class _ReportPageState extends State<ReportPage> {
         Navigator.of(context).pop();
       });
     } catch (_) {
-      _showMessage('Unable to generate/download report', AppTheme.danger);
+      _showMessage('Failed to generate or download report', AppTheme.danger);
     }
   }
 
@@ -821,6 +835,9 @@ class _ReportPageState extends State<ReportPage> {
       for (final assetId in assetCandidates) {
         final bytes = await MediaDatabase.getAsset(assetId);
         if (bytes == null || bytes.isEmpty) continue;
+        if (image.isMarkingsBaked == true) {
+          return _optimizePdfImageBytes(bytes);
+        }
         final prepared = await _reportController.prepareMediaBytes(
           image: image,
           baseBytes: bytes,
@@ -866,6 +883,18 @@ class _ReportPageState extends State<ReportPage> {
         );
         return _optimizePdfImageBytes(prepared);
       }
+      if (!kIsWeb &&
+          source.isNotEmpty &&
+          !source.startsWith('http://') &&
+          !source.startsWith('https://') &&
+          !source.startsWith('data:')) {
+        final bytes = await FileService.readBytes(source);
+        final prepared = await _reportController.prepareMediaBytes(
+          image: image,
+          baseBytes: bytes,
+        );
+        return _optimizePdfImageBytes(prepared);
+      }
       return null;
     } catch (_) {
       return null;
@@ -904,7 +933,9 @@ class _ReportPageState extends State<ReportPage> {
         bytes: bytes,
         filename: filename,
         folderName: widget.folderId,
+        folderLabel: _folderLabel(),
         showMessage: _showMessage,
+        onProgress: _showProgress,
       );
       if (!ok) return;
       final assetId = FileService.generateAssetId('report');
@@ -937,15 +968,38 @@ class _ReportPageState extends State<ReportPage> {
         Navigator.of(context).pop();
       });
     } catch (_) {
-      _showMessage('Unable to generate/save report', AppTheme.danger);
+      _showMessage('Failed to generate or save report', AppTheme.danger);
     }
   }
 
   void _showMessage(String text, Color backgroundColor) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(text), backgroundColor: backgroundColor),
+    final type = backgroundColor == AppTheme.danger
+        ? HexaToastType.error
+        : HexaToastType.success;
+    HexaToast.show(context, text, type: type);
+  }
+
+  void _showProgress(String text, double progress) {
+    if (!mounted) return;
+    HexaToast.show(
+      context,
+      text,
+      type: HexaToastType.info,
+      progress: progress.clamp(0.0, 1.0),
+      duration: const Duration(milliseconds: 900),
     );
+  }
+
+  String _folderLabel() {
+    try {
+      final folder =
+          foldersController.folders.firstWhere((f) => f.id == widget.folderId);
+      final name = folder.name.trim();
+      return name.isEmpty ? widget.folderId : name;
+    } catch (_) {
+      return widget.folderId;
+    }
   }
 
   void _goBackSafely() {

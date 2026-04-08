@@ -30,26 +30,33 @@ class ReportController extends GetxController {
     required Uint8List bytes,
     required String filename,
     required String folderName,
+    String? folderLabel,
     required void Function(String message, Color color) showMessage,
+    void Function(String message, double progress)? onProgress,
   }) async {
     if (isSaving.value) return false;
     isSaving.value = true;
     try {
       if (kIsWeb) {
         // In-browser storage is [MediaDatabase] + folder list (see report page).
-        showMessage('Report saved to app library', Colors.green);
+        showMessage('Saved report to ${_label(folderLabel ?? folderName)}', Colors.green);
         return true;
       }
+      onProgress?.call('Saving report to ${_label(folderLabel ?? folderName)}', 0.2);
       await _saveToAppFolderOnly(
         bytes,
         filename: filename,
         folderName: folderName,
+        onProgress: (p) => onProgress?.call(
+          'Saving report to ${_label(folderLabel ?? folderName)}',
+          0.2 + (p * 0.8),
+        ),
       );
-      showMessage('Saved to "$folderName" in app', Colors.green);
+      showMessage('Saved report to ${_label(folderLabel ?? folderName)}', Colors.green);
       return true;
     } catch (e) {
       logDebug('Save report failed: $e');
-      showMessage('Unable to save report', Colors.red);
+      showMessage('Failed to save report to ${_label(folderLabel ?? folderName)}', Colors.red);
       return false;
     } finally {
       isSaving.value = false;
@@ -69,6 +76,12 @@ class ReportController extends GetxController {
       mirrorX: image.mirrored ?? false,
       mirrorY: false,
       rotation: image.rotation ?? 0,
+      annotationSourceSize: (image.sourceWidth != null &&
+              image.sourceHeight != null &&
+              image.sourceWidth! > 0 &&
+              image.sourceHeight! > 0)
+          ? Size(image.sourceWidth!, image.sourceHeight!)
+          : null,
     );
   }
 
@@ -76,47 +89,52 @@ class ReportController extends GetxController {
     required Uint8List bytes,
     required String filename,
     required String folderName,
+    String? folderLabel,
     required void Function(String message, Color color) showMessage,
+    void Function(String message, double progress)? onProgress,
   }) async {
     if (isDownloading.value) return false;
     isDownloading.value = true;
     try {
       if (kIsWeb) {
+        onProgress?.call('Downloading report...', 0.4);
         await FileService.savePdfToDevice(bytes, filename);
-        showMessage('Downloaded to Gallery', Colors.green);
+        onProgress?.call('Downloading report...', 1.0);
+        showMessage('Report downloaded to Downloads', Colors.green);
         return true;
       }
-      final appOk = await FileService.saveToAppFolder(
-        bytes: bytes,
-        filename: filename,
-        folderName: folderName,
-      );
-      var downloadOk = false;
+      onProgress?.call('Preparing report download...', 0.2);
       final permissionController = _permissionController;
       final permissionOk = permissionController == null
           ? true
           : await permissionController.requestStoragePermissionIfNeeded();
+      if (!permissionOk) {
+        showMessage('Failed to download report: storage permission denied', Colors.red);
+        return false;
+      }
+      const reportFolder = 'Hexa Cam Reports';
+      onProgress?.call('Downloading report to Downloads/$reportFolder', 0.35);
+      String downloadPath = '';
       if (permissionOk) {
-        final downloadPath = await FileService.saveToDownloads(
+        downloadPath = await FileService.saveToDownloads(
           bytes: bytes,
           filename: filename,
-          folderName: folderName,
+          folderName: reportFolder,
+          onProgress: (p) => onProgress?.call(
+            'Downloading report to Downloads/$reportFolder',
+            0.35 + (p * 0.65),
+          ),
         );
-        downloadOk = downloadPath.isNotEmpty;
       }
-      if (appOk.isNotEmpty && downloadOk) {
-        showMessage('Saved to "$folderName" and Downloaded to Gallery', Colors.green);
-        return true;
+      if (downloadPath.isEmpty) {
+        showMessage('Failed to download report to Downloads/Hexa Cam Reports', Colors.red);
+        return false;
       }
-      if (appOk.isNotEmpty) {
-        showMessage('Saved to "$folderName" in app', Colors.orange);
-        return true;
-      }
-      showMessage('Unable to download report', Colors.red);
-      return false;
+      showMessage('Report downloaded to Downloads/Hexa Cam Reports', Colors.green);
+      return true;
     } catch (e) {
       logDebug('Download report failed: $e');
-      showMessage('Unable to download report', Colors.red);
+      showMessage('Failed to download report', Colors.red);
       return false;
     } finally {
       isDownloading.value = false;
@@ -127,6 +145,7 @@ class ReportController extends GetxController {
     Uint8List bytes, {
     String? filename,
     required String folderName,
+    void Function(double progress)? onProgress,
   }) async {
     final dir = await _appDocumentsDirectory();
     final name = filename ?? 'report_${DateTime.now().millisecondsSinceEpoch}.pdf';
@@ -135,8 +154,15 @@ class ReportController extends GetxController {
     await reportsDir.create(recursive: true);
     final temp = File(p.join(reportsDir.path, '.$safeName.tmp'));
     await temp.writeAsBytes(bytes, flush: true);
+    onProgress?.call(1.0);
     final dest = await _uniqueAppDestination(reportsDir, safeName);
     return temp.rename(dest.path).then((file) => file.path);
+  }
+
+  String _label(String raw) {
+    final trimmed = raw.trim();
+    if (trimmed.isEmpty) return 'App Folder';
+    return trimmed[0].toUpperCase() + trimmed.substring(1);
   }
 
   Future<File> _uniqueAppDestination(Directory dir, String safeName) async {

@@ -57,7 +57,7 @@ class AnnotationPainter extends CustomPainter {
 
   void _drawAnnotation(Canvas canvas, Annotation ann, Size canvasSize) {
     final strokeWidth =
-        (ann.strokeWidth * lineWidthScale).clamp(2.6, 16.0).toDouble();
+        (ann.strokeWidth * lineWidthScale).clamp(2.0, 16.0).toDouble();
     final paint = Paint()
       ..color = ann.color
       ..strokeWidth = strokeWidth

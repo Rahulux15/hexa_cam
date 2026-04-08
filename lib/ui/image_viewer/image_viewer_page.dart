@@ -395,7 +395,7 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
                   subtitle: 'Download image or video to your device',
                   onTap: () {
                     Navigator.pop(sheetCtx);
-                    _showMessage('Download started...', AppTheme.success);
+                    _showMessage('Downloading media...', AppTheme.success);
                     unawaited(_saveToGalleryWithMarks());
                   },
                 ),
@@ -404,7 +404,7 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
                   icon: Icons.picture_as_pdf_outlined,
                   iconBg: const Color(0xFF8F5CFF),
                   title: 'Generate Report',
-                  subtitle: 'Create a PDF report (saved in app + Downloads)',
+                  subtitle: 'Create a PDF report (Download or Save from report page)',
                   onTap: () {
                     Navigator.pop(sheetCtx);
                     _openGenerateReportFlow();
@@ -570,10 +570,15 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
         );
       }
       if (!mounted) return;
-      _showMessage('Downloaded to Gallery', AppTheme.success);
+      _showMessage(
+        image.type == MediaType.video
+            ? 'Video downloaded to Gallery'
+            : 'Image downloaded to Gallery',
+        AppTheme.success,
+      );
     } catch (_) {
       if (!mounted) return;
-      _showMessage('Unable to download media', AppTheme.danger);
+      _showMessage('Failed to download media', AppTheme.danger);
     }
   }
 
@@ -590,14 +595,37 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
       return;
     }
 
+    final reportAnnotations = _annotations.map((annotation) {
+      if (annotation.type == AnnotationType.twoPointer) {
+        return annotation.copyWith(measurement: _measurementFor(annotation));
+      }
+      return annotation;
+    }).toList();
+
+    String? reportMediaId = image.mediaId;
+    String? reportThumbId = image.thumbnailId;
+    try {
+      final flattened = await _viewerKey.currentState?.captureFlattenedPng();
+      if (flattened != null && flattened.isNotEmpty) {
+        final bakedId = FileService.generateAssetId('report-preview');
+        await MediaDatabase.saveAsset(bakedId, flattened);
+        reportMediaId = bakedId;
+        reportThumbId = bakedId;
+      }
+    } catch (_) {
+      // Fallback to existing source/media path if flatten capture fails.
+    }
+
     final forReport = ImageData(
       id: image.id,
       imageUrl: image.imageUrl,
-      mediaId: image.mediaId,
-      thumbnailId: image.thumbnailId,
+      mediaId: reportMediaId,
+      thumbnailId: reportThumbId,
       timestamp: image.timestamp,
       cameraSettings: image.cameraSettings,
-      annotations: _syncedAnnotations(),
+      // Always send full visible markings to report flow; do not filter out
+      // baked ids here, otherwise report preview can lose overlays.
+      annotations: reportAnnotations,
       measurements: image.measurements,
       calibration: image.calibration,
       type: MediaType.image,
@@ -610,7 +638,8 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
       showCalibrationStamp: image.showCalibrationStamp,
       sourceWidth: image.sourceWidth,
       sourceHeight: image.sourceHeight,
-      isMarkingsBaked: image.isMarkingsBaked == true,
+      // Viewer-captured flattened image should be used as-is for report media.
+      isMarkingsBaked: true,
     );
 
     if (!mounted) return;
@@ -687,6 +716,13 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
     if (bytes == null || bytes.isEmpty) return null;
 
     if (_annotations.isEmpty) return bytes;
+    final annotationSourceSize =
+        (image.sourceWidth != null &&
+                image.sourceHeight != null &&
+                image.sourceWidth! > 0 &&
+                image.sourceHeight! > 0)
+            ? Size(image.sourceWidth!, image.sourceHeight!)
+            : null;
 
     final bakedIds = _bakedAnnotationIdsAtOpen;
     if (bakedIds != null) {
@@ -700,6 +736,7 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
         mirrorX: _flipH || _mirror,
         mirrorY: _flipV,
         rotation: _rotation,
+        annotationSourceSize: annotationSourceSize,
       );
       return kIsWeb
           ? compressMarkedStillForStore(rendered)
@@ -714,6 +751,7 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
       mirrorX: _flipH || _mirror,
       mirrorY: _flipV,
       rotation: _rotation,
+      annotationSourceSize: annotationSourceSize,
     );
     return kIsWeb
         ? compressMarkedStillForStore(rendered)
@@ -757,8 +795,12 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
     );
     if (!mounted || choice == null || choice == 'cancel') return;
     if (choice == 'clear') {
+      _viewerKey.currentState?.clearAllMarkings();
       setState(() => _annotations.clear());
-      _schedulePersistAnnotations();
+      await _flushPersistAnnotations();
+      if (mounted) {
+        _showMessage('All markings cleared', AppTheme.success);
+      }
       return;
     }
     if (choice == 'remove') {
