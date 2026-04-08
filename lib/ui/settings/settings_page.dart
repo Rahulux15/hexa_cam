@@ -64,6 +64,16 @@ class _SettingsPageState extends State<SettingsPage> {
     });
   }
 
+  void _goBackSafely() {
+    if (!mounted) return;
+    final navigator = Navigator.of(context);
+    if (navigator.canPop()) {
+      Get.back<void>();
+      return;
+    }
+    Get.offAllNamed<void>('/folders');
+  }
+
   @override
   Widget build(BuildContext context) {
     final isTab = Responsive.isTablet(context);
@@ -80,7 +90,7 @@ class _SettingsPageState extends State<SettingsPage> {
               child: Row(children: [
                 GestureDetector(
                   onTap: () => _currentView == SettingsView.main
-                      ? Get.back<void>()
+                      ? _goBackSafely()
                       : setState(() => _currentView = SettingsView.main),
                   child: Container(
                     width: isTab ? 44 : 40,
@@ -355,14 +365,14 @@ class _SettingsPageState extends State<SettingsPage> {
           heading: 'Owner',
           icon: Icons.business_outlined,
           body:
-              'Quasmo India Microscope Company\nAll Rights Reserved',
+              'Quality Scientific and Mechanical Works\nBrand - Quasmo\nAll Rights Reserved',
         ),
         SizedBox(height: isTab ? 12 : 10),
         policyCard(
           heading: 'Introduction',
           icon: Icons.info_outline_rounded,
           body:
-              'Hexa-Cam is a cross-platform microscopy imaging application developed and maintained by Quasmo India Microscope Company. This policy aligns with GDPR, the Indian Information Technology Act (2000), and other applicable frameworks. Hexa-Cam does not collect, store, or transmit personal data.',
+              'Hexa-Cam is a cross-platform microscopy imaging application developed and maintained by Quality Scientific and Mechanical Works (Brand - Quasmo). This policy aligns with GDPR, the Indian Information Technology Act (2000), and other applicable frameworks. Hexa-Cam does not collect, store, or transmit personal data.',
         ),
         SizedBox(height: isTab ? 12 : 10),
         policyCard(
@@ -462,7 +472,7 @@ class _SettingsPageState extends State<SettingsPage> {
           heading: 'Ownership and Rights',
           icon: Icons.copyright_outlined,
           body:
-              'Hexa-Cam is the intellectual property of Quasmo India Microscope Company. Unauthorized reproduction, distribution, or modification is prohibited.\n\n© 2026 Quasmo India Microscope Company. All rights reserved.',
+              'Hexa-Cam is the intellectual property of Quality Scientific and Mechanical Works (Brand - Quasmo). Unauthorized reproduction, distribution, or modification is prohibited.\n\n© 2026 Quality Scientific and Mechanical Works. All rights reserved.',
         ),
       ],
     );
@@ -559,7 +569,7 @@ class _SettingsPageState extends State<SettingsPage> {
         ),
         SizedBox(height: isTab ? 8 : 6),
         Text(
-          'Quasmo Indian Microscope',
+          'Quality Scientific and Mechanical Works\nBrand - Quasmo',
           textAlign: TextAlign.center,
           style: TextStyle(
             fontSize: isTab ? 14 : 13,
@@ -775,7 +785,7 @@ class _SettingsPageState extends State<SettingsPage> {
         ),
         SizedBox(height: isTab ? 8 : 6),
         Text(
-          'HEXA-CAM is developed and maintained by Quasmo India Microscope Company. All rights reserved.',
+          'HEXA-CAM is developed and maintained by Quality Scientific and Mechanical Works (Brand - Quasmo). All rights reserved.',
           style: bodyStyle.copyWith(
             color: AppTheme.textPrimary,
             fontWeight: FontWeight.w600,
@@ -813,7 +823,7 @@ class _SettingsPageState extends State<SettingsPage> {
         ),
         SizedBox(height: isTab ? 26 : 24),
         Text(
-          '© 2026 Quasmo India Microscope Company. All rights reserved.',
+          '© 2026 Quality Scientific and Mechanical Works. All rights reserved.',
           style: footStyle,
           textAlign: TextAlign.center,
         ),

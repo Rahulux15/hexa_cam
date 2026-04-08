@@ -12,6 +12,45 @@ import '../../data/models/annotation.dart';
 import '../../utils/marked_media_renderer.dart';
 
 class VideoExportService {
+  static Future<Uint8List?> extractVideoThumbnailBytes({
+    required String sourcePath,
+    int timeMs = 120,
+  }) async {
+    if (kIsWeb) return null;
+    final inputPath = sourcePath.startsWith('file://')
+        ? sourcePath.replaceFirst('file://', '')
+        : sourcePath;
+    final inputFile = File(inputPath);
+    if (!await inputFile.exists()) return null;
+
+    final tempDir = await getTemporaryDirectory();
+    final thumbPath = p.join(
+      tempDir.path,
+      'thumb-${DateTime.now().millisecondsSinceEpoch}.jpg',
+    );
+    final args = <String>[
+      '-y',
+      '-ss',
+      (timeMs / 1000.0).toStringAsFixed(2),
+      '-i',
+      inputPath,
+      '-frames:v',
+      '1',
+      '-q:v',
+      '2',
+      thumbPath,
+    ];
+    final ok = await _runFfmpeg(args);
+    if (!ok) return null;
+    final thumbFile = File(thumbPath);
+    if (!await thumbFile.exists()) return null;
+    final bytes = await thumbFile.readAsBytes();
+    try {
+      await thumbFile.delete();
+    } catch (_) {}
+    return bytes.isEmpty ? null : bytes;
+  }
+
   static Future<String?> burnAnnotationsIntoVideo({
     required String sourcePath,
     required List<Annotation> annotations,

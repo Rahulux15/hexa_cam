@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -188,27 +189,17 @@ class _MediaImageState extends State<MediaImage> {
       );
     }
 
-    if (widget.source.startsWith('file://')) {
-      return FutureBuilder<Uint8List?>(
-        future: _loadSourceBytes(),
-        builder: (context, snapshot) {
-          final bytes = snapshot.data;
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator(strokeWidth: 2));
-          }
-          if (bytes != null && bytes.isNotEmpty) {
-            return Image.memory(
-              bytes,
-              fit: widget.fit,
-              gaplessPlayback: true,
-              cacheWidth: widget.cacheWidth,
-              cacheHeight: widget.cacheHeight,
-              filterQuality: widget.filterQuality,
-              errorBuilder: (context, error, stackTrace) => _fallback(),
-            );
-          }
-          return _fallback();
-        },
+    if (widget.source.startsWith('data:image/')) {
+      final bytes = _decodeDataUrl(widget.source);
+      if (bytes == null || bytes.isEmpty) return _fallback();
+      return Image.memory(
+        bytes,
+        fit: widget.fit,
+        gaplessPlayback: true,
+        cacheWidth: widget.cacheWidth,
+        cacheHeight: widget.cacheHeight,
+        filterQuality: widget.filterQuality,
+        errorBuilder: (context, error, stackTrace) => _fallback(),
       );
     }
 
@@ -220,10 +211,12 @@ class _MediaImageState extends State<MediaImage> {
     );
   }
 
-  Future<Uint8List?> _loadSourceBytes() async {
-    if (!widget.source.startsWith('file://')) return null;
+  Uint8List? _decodeDataUrl(String source) {
+    if (!source.startsWith('data:image/')) return null;
     try {
-      return await MediaDatabase.getAsset(widget.source.replaceFirst('file://', ''));
+      final commaIndex = source.indexOf(',');
+      if (commaIndex <= 0 || commaIndex + 1 >= source.length) return null;
+      return Uint8List.fromList(base64Decode(source.substring(commaIndex + 1)));
     } catch (_) {
       return null;
     }

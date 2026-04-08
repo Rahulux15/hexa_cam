@@ -17,7 +17,6 @@ import '../../data/models/stored_calibration.dart';
 import '../../state/app_registry.dart';
 import '../../utils/annotation_painter.dart';
 import '../../utils/calibration_calculator.dart';
-import '../../utils/coordinate_transformer.dart';
 import '../../utils/measurement_calculator.dart';
 import '../../utils/responsive.dart';
 import 'draw_action.dart';
@@ -118,6 +117,7 @@ class ViewerScreenState extends State<ViewerScreen> {
 
   String? _moveId;
   List<HexaPoint>? _moveBefore;
+  HexaPoint? _lastDrawPoint;
 
   final List<DARemoveEntry> _eraserRemoved = [];
 
@@ -223,9 +223,7 @@ class ViewerScreenState extends State<ViewerScreen> {
   }
 
   List<Annotation> _annotationsForPaint() {
-    if (!widget.showMeasurements) {
-      return _annotations.map((a) => a.copyWith(measurement: null)).toList();
-    }
+    if (!widget.showMeasurements) return const <Annotation>[];
     final lens = widget.image.lens;
     final cal = lens == null ? null : calibrationController.calibrations[lens];
     return _annotations.map((a) {
@@ -412,17 +410,12 @@ class ViewerScreenState extends State<ViewerScreen> {
   }
 
   HexaPoint _displayToSource(Offset point) {
-    final transformed = CoordinateTransformer.screenToImage(
-      point,
-      imageSize: Size(
-        _lastSourceSize.width <= 0 ? 1.0 : _lastSourceSize.width,
-        _lastSourceSize.height <= 0 ? 1.0 : _lastSourceSize.height,
-      ),
-      mirrorX: widget.mirrorX,
-      mirrorY: widget.mirrorY,
-      rotation: widget.rotation,
+    final sw = _lastSourceSize.width <= 0 ? 1.0 : _lastSourceSize.width;
+    final sh = _lastSourceSize.height <= 0 ? 1.0 : _lastSourceSize.height;
+    return HexaPoint(
+      x: point.dx.clamp(0.0, sw),
+      y: point.dy.clamp(0.0, sh),
     );
-    return HexaPoint(x: transformed.dx, y: transformed.dy);
   }
 
   bool get _canMove =>
@@ -499,6 +492,7 @@ class ViewerScreenState extends State<ViewerScreen> {
     if (t == null) return;
     setState(() {
       _currentPoints = [_displayToSource(details.localPosition)];
+      _lastDrawPoint = _currentPoints.first;
       _isDrawing = true;
     });
   }
@@ -531,8 +525,15 @@ class ViewerScreenState extends State<ViewerScreen> {
       setState(() {
         final i = _annotations.indexWhere((a) => a.id == _moveId);
         if (i >= 0) {
+          final sw = _lastSourceSize.width <= 0 ? 1.0 : _lastSourceSize.width;
+          final sh = _lastSourceSize.height <= 0 ? 1.0 : _lastSourceSize.height;
           final pts = _annotations[i].points
-              .map((e) => HexaPoint(x: e.x + dx, y: e.y + dy))
+              .map(
+                (e) => HexaPoint(
+                  x: (e.x + dx).clamp(0.0, sw),
+                  y: (e.y + dy).clamp(0.0, sh),
+                ),
+              )
               .toList();
           _annotations[i] = _annotations[i].copyWith(points: pts);
         }
@@ -545,12 +546,21 @@ class ViewerScreenState extends State<ViewerScreen> {
     }
     if (!_isDrawing || _annotationType == null) return;
     final point = _displayToSource(details.localPosition);
+    final prev = _lastDrawPoint;
+    if (prev != null) {
+      final dx = point.x - prev.x;
+      final dy = point.y - prev.y;
+      if ((dx * dx + dy * dy) < 1.8) {
+        return;
+      }
+    }
     setState(() {
       if (_annotationType == AnnotationType.draw) {
         _currentPoints.add(point);
       } else {
         _currentPoints = [_currentPoints.first, point];
       }
+      _lastDrawPoint = point;
     });
   }
 
@@ -587,6 +597,7 @@ class ViewerScreenState extends State<ViewerScreen> {
       setState(() {
         _currentPoints = [];
         _isDrawing = false;
+        _lastDrawPoint = null;
       });
       return;
     }
@@ -612,6 +623,7 @@ class ViewerScreenState extends State<ViewerScreen> {
       _annotations.add(ann);
       _currentPoints = [];
       _isDrawing = false;
+      _lastDrawPoint = null;
     });
     _pushAdd(ann);
   }
@@ -733,7 +745,8 @@ class ViewerScreenState extends State<ViewerScreen> {
                                 child: CustomPaint(
                                   painter: AnnotationPainter(
                                     annotations: _annotationsForPaint(),
-                                    currentDrawing: _isDrawing &&
+                                    currentDrawing: widget.showMeasurements &&
+                                            _isDrawing &&
                                             _annotationType != null
                                         ? Annotation(
                                             id: 'current',

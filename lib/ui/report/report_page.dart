@@ -1,7 +1,10 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:camera/camera.dart' as cam;
 import 'package:get/get.dart';
+import 'package:image/image.dart' as img;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
@@ -100,7 +103,7 @@ class _ReportPageState extends State<ReportPage> {
                   children: [
                     _circleButton(
                         icon: Icons.arrow_back_rounded,
-                        onTap: () => Get.back<void>()),
+                        onTap: _goBackSafely),
                     const Spacer(),
                     Flexible(
                       child: LayoutBuilder(
@@ -109,16 +112,12 @@ class _ReportPageState extends State<ReportPage> {
                           final buttonWidth = compact
                               ? constraints.maxWidth
                               : (constraints.maxWidth - 12) / 2;
-                          return Wrap(
-                            alignment: WrapAlignment.end,
-                            spacing: 12,
-                            runSpacing: 8,
-                            children: [
-                              SizedBox(
-                                width: buttonWidth.clamp(120.0, 190.0),
-                                child: Tooltip(
-                                  message:
-                                      'Download to public Downloads + App Folder',
+                          if (compact) {
+                            return Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                SizedBox(
+                                  width: constraints.maxWidth,
                                   child: ResponsiveActionButton(
                                     actionKey: 'report_download',
                                     asyncController: _asyncActions,
@@ -132,11 +131,9 @@ class _ReportPageState extends State<ReportPage> {
                                       ),
                                     ),
                                     child: const Row(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.center,
+                                      mainAxisAlignment: MainAxisAlignment.center,
                                       children: [
-                                        Icon(Icons.download_outlined,
-                                            color: Colors.white),
+                                        Icon(Icons.download_outlined, color: Colors.white),
                                         SizedBox(width: 10),
                                         Text(
                                           'Download',
@@ -150,11 +147,9 @@ class _ReportPageState extends State<ReportPage> {
                                     ),
                                   ),
                                 ),
-                              ),
-                              SizedBox(
-                                width: buttonWidth.clamp(110.0, 160.0),
-                                child: Tooltip(
-                                  message: 'Save to App Folder only',
+                                const SizedBox(height: 8),
+                                SizedBox(
+                                  width: constraints.maxWidth,
                                   child: ResponsiveActionButton(
                                     actionKey: 'report_save',
                                     asyncController: _asyncActions,
@@ -168,11 +163,9 @@ class _ReportPageState extends State<ReportPage> {
                                       ),
                                     ),
                                     child: const Row(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.center,
+                                      mainAxisAlignment: MainAxisAlignment.center,
                                       children: [
-                                        Icon(Icons.save_alt_outlined,
-                                            color: Colors.white),
+                                        Icon(Icons.save_alt_outlined, color: Colors.white),
                                         SizedBox(width: 10),
                                         Text(
                                           'Save',
@@ -184,6 +177,79 @@ class _ReportPageState extends State<ReportPage> {
                                         ),
                                       ],
                                     ),
+                                  ),
+                                ),
+                              ],
+                            );
+                          }
+                          return Wrap(
+                            alignment: WrapAlignment.end,
+                            spacing: 12,
+                            runSpacing: 8,
+                            children: [
+                              SizedBox(
+                                width: buttonWidth.clamp(120.0, 190.0),
+                                child: ResponsiveActionButton(
+                                  actionKey: 'report_download',
+                                  asyncController: _asyncActions,
+                                  onPressed: _downloadReport,
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: const Color(0xFF232651),
+                                    shadowColor: Colors.transparent,
+                                    padding: EdgeInsets.zero,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(18),
+                                    ),
+                                  ),
+                                  child: const Row(
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.center,
+                                    children: [
+                                      Icon(Icons.download_outlined,
+                                          color: Colors.white),
+                                      SizedBox(width: 10),
+                                      Text(
+                                        'Download',
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              SizedBox(
+                                width: buttonWidth.clamp(110.0, 160.0),
+                                child: ResponsiveActionButton(
+                                  actionKey: 'report_save',
+                                  asyncController: _asyncActions,
+                                  onPressed: _saveReport,
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.transparent,
+                                    shadowColor: Colors.transparent,
+                                    padding: EdgeInsets.zero,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(18),
+                                    ),
+                                  ),
+                                  child: const Row(
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.center,
+                                    children: [
+                                      Icon(Icons.save_alt_outlined,
+                                          color: Colors.white),
+                                      SizedBox(width: 10),
+                                      Text(
+                                        'Save',
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
                               ),
@@ -423,8 +489,8 @@ class _ReportPageState extends State<ReportPage> {
     return MediaImage(
       source: image.imageUrl,
       mediaId: previewMediaId,
-      annotations: image.isMarkingsBaked == true ? const [] : image.annotations,
-      burnAnnotationsIntoPreview: image.isMarkingsBaked != true,
+      annotations: image.annotations,
+      burnAnnotationsIntoPreview: image.annotations.isNotEmpty,
       fit: BoxFit.contain,
       filterQuality: FilterQuality.high,
       errorWidget: const Center(
@@ -502,15 +568,21 @@ class _ReportPageState extends State<ReportPage> {
   }
 
   Widget _circleButton({required IconData icon, required VoidCallback onTap}) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 44,
-        height: 44,
-        decoration: BoxDecoration(
-            color: const Color(0xFF232651),
-            borderRadius: BorderRadius.circular(22)),
-        child: Icon(icon, color: Colors.white),
+    return Semantics(
+      button: true,
+      label: 'Back',
+      child: Material(
+        color: const Color(0xFF232651),
+        borderRadius: BorderRadius.circular(22),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(22),
+          onTap: onTap,
+          child: SizedBox(
+            width: 44,
+            height: 44,
+            child: Icon(icon, color: Colors.white),
+          ),
+        ),
       ),
     );
   }
@@ -648,11 +720,15 @@ class _ReportPageState extends State<ReportPage> {
         return {
           'title': reportImages.length > 1 ? 'Media ${index + 1}' : 'Marked Image',
           'imageBytes': imageBytes[index],
+          'imageAspect': _imageAspectFromBytes(imageBytes[index]),
           'annotations': image.annotations
               .asMap()
               .entries
-              .map((entry) => '${entry.key + 1}. ${_annotationTitle(entry.value.type)}'
-                  '${(entry.value.measurement ?? '').isNotEmpty ? ' - ${entry.value.measurement}' : ''}')
+              .map(
+                (entry) =>
+                    '${entry.key + 1}. ${_annotationTitle(entry.value.type)}'
+                    '${(entry.value.measurement ?? '').isNotEmpty ? ' - ${_pdfSafeText(entry.value.measurement!)}' : ''}',
+              )
               .toList(),
         };
       }),
@@ -745,25 +821,78 @@ class _ReportPageState extends State<ReportPage> {
       for (final assetId in assetCandidates) {
         final bytes = await MediaDatabase.getAsset(assetId);
         if (bytes == null || bytes.isEmpty) continue;
-        return _reportController.prepareMediaBytes(
+        final prepared = await _reportController.prepareMediaBytes(
           image: image,
           baseBytes: bytes,
         );
+        return _optimizePdfImageBytes(prepared);
       }
       final source = image.imageUrl;
+      if (kIsWeb && source.isNotEmpty) {
+        try {
+          final bytes = await cam.XFile(source).readAsBytes();
+          if (bytes.isNotEmpty) {
+            final prepared = await _reportController.prepareMediaBytes(
+              image: image,
+              baseBytes: bytes,
+            );
+            return _optimizePdfImageBytes(prepared);
+          }
+        } catch (_) {}
+        if (source.startsWith('data:image/')) {
+          final commaIndex = source.indexOf(',');
+          if (commaIndex > 0 && commaIndex + 1 < source.length) {
+            try {
+              final b64 = source.substring(commaIndex + 1);
+              final bytes = Uint8List.fromList(base64Decode(b64));
+              if (bytes.isNotEmpty) {
+                final prepared = await _reportController.prepareMediaBytes(
+                  image: image,
+                  baseBytes: bytes,
+                );
+                return _optimizePdfImageBytes(prepared);
+              }
+            } catch (_) {}
+          }
+        }
+      }
       if (!kIsWeb && source.startsWith('file://')) {
         final bytes = await FileService.readBytes(
           source.replaceFirst('file://', ''),
         );
-        return _reportController.prepareMediaBytes(
+        final prepared = await _reportController.prepareMediaBytes(
           image: image,
           baseBytes: bytes,
         );
+        return _optimizePdfImageBytes(prepared);
       }
       return null;
     } catch (_) {
       return null;
     }
+  }
+
+  Uint8List _optimizePdfImageBytes(Uint8List bytes) {
+    final decoded = img.decodeImage(bytes);
+    if (decoded == null) return bytes;
+    const maxEdge = 2200;
+    if (decoded.width <= maxEdge && decoded.height <= maxEdge) {
+      return bytes;
+    }
+    final resized = img.copyResize(
+      decoded,
+      width: decoded.width >= decoded.height ? maxEdge : null,
+      height: decoded.height > decoded.width ? maxEdge : null,
+      interpolation: img.Interpolation.average,
+    );
+    return Uint8List.fromList(img.encodeJpg(resized, quality: 92));
+  }
+
+  double? _imageAspectFromBytes(Uint8List? bytes) {
+    if (bytes == null || bytes.isEmpty) return null;
+    final decoded = img.decodeImage(bytes);
+    if (decoded == null || decoded.height <= 0) return null;
+    return decoded.width / decoded.height;
   }
 
   Future<void> _saveReport() async {
@@ -818,6 +947,16 @@ class _ReportPageState extends State<ReportPage> {
       SnackBar(content: Text(text), backgroundColor: backgroundColor),
     );
   }
+
+  void _goBackSafely() {
+    if (!mounted) return;
+    final navigator = Navigator.of(context);
+    if (navigator.canPop()) {
+      Get.back<void>();
+      return;
+    }
+    Get.offAllNamed<void>('/folders');
+  }
 }
 
 class _FieldData {
@@ -858,6 +997,15 @@ class _MetricCard extends StatelessWidget {
       ),
     );
   }
+}
+
+String _pdfSafeText(String text) {
+  // PDF default fonts often miss Greek mu (μ). Use micro sign (µ) for reliable rendering.
+  final normalized = text.replaceAll('umm', 'μm');
+  return normalized.replaceAllMapped(
+    RegExp(r'\b(um|µm|μm)\b', caseSensitive: false),
+    (_) => 'µm',
+  );
 }
 
 Future<Uint8List> _generateReportPdfInBackground(Map<String, dynamic> payload) async {
@@ -978,8 +1126,11 @@ Future<Uint8List> _generateReportPdfInBackground(Map<String, dynamic> payload) a
         ...entries.asMap().entries.expand((entry) {
           final section = entry.value;
           final bytes = section['imageBytes'] as Uint8List?;
+          final aspect = (section['imageAspect'] as num?)?.toDouble() ?? (4 / 3);
+          final safeAspect = aspect <= 0 ? (4 / 3) : aspect;
+          final imageHeight = (340.0 / (safeAspect / (4 / 3))).clamp(220.0, 420.0).toDouble();
           final annotations = (section['annotations'] as List<dynamic>? ?? const <dynamic>[])
-              .map((e) => e.toString())
+              .map((e) => _pdfSafeText(e.toString()))
               .toList();
           return [
             pw.Container(
@@ -999,7 +1150,7 @@ Future<Uint8List> _generateReportPdfInBackground(Map<String, dynamic> payload) a
                   pw.SizedBox(height: 12),
                   if (bytes != null && bytes.isNotEmpty)
                     pw.Container(
-                      height: 340,
+                      height: imageHeight,
                       width: double.infinity,
                       decoration: const pw.BoxDecoration(color: PdfColors.grey100),
                       child: pw.Image(pw.MemoryImage(bytes), fit: pw.BoxFit.contain),

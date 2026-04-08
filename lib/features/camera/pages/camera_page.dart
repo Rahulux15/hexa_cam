@@ -18,6 +18,7 @@ import '../../../data/models/stored_calibration.dart';
 import '../../../data/services/database_service.dart';
 import '../../../data/services/file_service.dart';
 import '../../../data/services/video_export_service.dart';
+import '../../../data/services/video_thumbnail_service.dart';
 import '../../../state/app_registry.dart';
 import '../camera_color_matrix.dart';
 import '../camera_types.dart';
@@ -30,7 +31,7 @@ import '../../../utils/marked_media_renderer.dart';
 import '../../../utils/measurement_calculator.dart';
 import '../../../utils/responsive.dart';
 import '../../../ui/common/hexa_toast.dart';
-import '../../../ui/common/save_dialog.dart';
+import '../../../ui/common/save_dialog.dart'; 
 
 class CameraPage extends StatefulWidget {
   final String folderId;
@@ -81,6 +82,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
   int? _activeAnnotationIndex;
   List<HexaPoint>? _moveStartPoints;
   HexaPoint? _moveStartCursor;
+  HexaPoint? _lastDrawPoint;
   final Uuid _uuid = const Uuid();
   Size _lastSourceSize = Size.zero;
   double _pinchStartZoom = 1.0;
@@ -575,7 +577,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
     final isTablet = Responsive.isTablet(context);
     final isLandscape = Responsive.isLandscape(context);
     final isPortrait = !isLandscape;
-    final isCompactHeight = Responsive.isCompactHeight(context);
+    final viewportHeight = MediaQuery.sizeOf(context).height;
     final safeTop = MediaQuery.paddingOf(context).top;
     final safeBottom = MediaQuery.paddingOf(context).bottom;
     final previewPadding = isTablet
@@ -586,8 +588,10 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
             isTablet ? 4 : (isLandscape ? 3 : 2),
             isTablet ? 4 : (isLandscape ? 3 : 2),
           );
-    final railTopPadding = safeTop + (isTablet ? 46 : (isCompactHeight ? 56 : 72));
-    final railBottomPadding = isTablet ? 72.0 : (isCompactHeight ? 84.0 : 112.0);
+    final sideRailInset = (viewportHeight * 0.14)
+        .clamp(isTablet ? 64.0 : 58.0, isTablet ? 124.0 : 112.0)
+        .toDouble();
+    final topRailTop = safeTop + (viewportHeight * 0.06).clamp(52.0, 78.0);
 
     return Scaffold(
       backgroundColor: CameraLayoutTokens.background,
@@ -602,20 +606,12 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
               child: _buildCameraViewport(),
             ),
           ),
-          const Align(
-            alignment: Alignment.centerLeft,
-            child: SizedBox.shrink(),
-          ),
-          const Align(
-            alignment: Alignment.centerRight,
-            child: SizedBox.shrink(),
-          ),
           if (isPortrait) ...[
             Positioned(
-              top: safeTop + (isTablet ? 66 : 60),
+              top: topRailTop,
               left: 12,
               right: 12,
-              child: _buildTopHorizontalRail(isTablet),
+              child: Center(child: _buildTopHorizontalRail(isTablet)),
             ),
             Positioned(
               left: 12,
@@ -632,23 +628,27 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
           ] else ...[
             Positioned(
               left: CameraLayoutTokens.edgePadding(isTablet),
-              top: railTopPadding,
-              bottom: railBottomPadding,
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [_buildLeftRail(isTablet)],
+              top: sideRailInset,
+              bottom: sideRailInset,
+              child: LayoutBuilder(
+                builder: (context, constraints) => SingleChildScrollView(
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                    child: Center(child: _buildLeftRail(isTablet)),
+                  ),
                 ),
               ),
             ),
             Positioned(
               right: CameraLayoutTokens.edgePadding(isTablet),
-              top: railTopPadding,
-              bottom: railBottomPadding,
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [_buildRightRail(isTablet)],
+              top: sideRailInset,
+              bottom: sideRailInset,
+              child: LayoutBuilder(
+                builder: (context, constraints) => SingleChildScrollView(
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                    child: Center(child: _buildRightRail(isTablet)),
+                  ),
                 ),
               ),
             ),
@@ -695,23 +695,42 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
   }
 
   Widget _buildBackButton(bool isTablet) {
-    return GestureDetector(
-      onTap: () => Get.back<void>(),
-      child: Container(
-        width: isTablet ? 48 : 38,
-        height: isTablet ? 48 : 38,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: Colors.transparent,
-          border: Border.all(color: Colors.white.withValues(alpha: 0.25)),
-        ),
-        child: Icon(
-          Icons.arrow_back_ios_new_rounded,
-          color: CameraLayoutTokens.railIcon,
-          size: isTablet ? 22 : 18,
+    return Semantics(
+      button: true,
+      label: 'Back',
+      child: Material(
+        color: Colors.transparent,
+        shape: const CircleBorder(),
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: _handleBackNavigation,
+          child: Container(
+            width: isTablet ? 48 : 38,
+            height: isTablet ? 48 : 38,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: Colors.transparent,
+              border: Border.all(color: Colors.white.withValues(alpha: 0.25)),
+            ),
+            child: Icon(
+              Icons.arrow_back_ios_new_rounded,
+              color: CameraLayoutTokens.railIcon,
+              size: isTablet ? 22 : 18,
+            ),
+          ),
         ),
       ),
     );
+  }
+
+  void _handleBackNavigation() {
+    if (!mounted) return;
+    final navigator = Navigator.of(context);
+    if (navigator.canPop()) {
+      Get.back<void>();
+      return;
+    }
+    Get.offAllNamed<void>('/folders');
   }
 
   Widget _buildCameraViewport() {
@@ -1246,24 +1265,33 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
 
   Widget _buildTextLensButton(bool isTablet) {
     final lensLabel = _selectedLens.toLowerCase();
-    return GestureDetector(
-      onTap: () => _handleSideAction(CameraSideAction.lens),
-      child: Container(
-        width: CameraLayoutTokens.railButtonSize(isTablet),
-        height: CameraLayoutTokens.railButtonSize(isTablet),
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: CameraLayoutTokens.railButtonBg,
-          border: Border.all(color: CameraLayoutTokens.railButtonBorder),
-        ),
-        child: Center(
-          child: Text(
-            lensLabel,
-            style: TextStyle(
-              color: CameraLayoutTokens.railIcon,
-              fontWeight: FontWeight.w700,
-              fontSize: isTablet ? 14 : 12,
-              letterSpacing: 0.2,
+    return Semantics(
+      button: true,
+      label: 'Select lens',
+      child: Material(
+        color: Colors.transparent,
+        shape: const CircleBorder(),
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: () => _handleSideAction(CameraSideAction.lens),
+          child: Container(
+            width: CameraLayoutTokens.railButtonSize(isTablet),
+            height: CameraLayoutTokens.railButtonSize(isTablet),
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: CameraLayoutTokens.railButtonBg,
+              border: Border.all(color: CameraLayoutTokens.railButtonBorder),
+            ),
+            child: Center(
+              child: Text(
+                lensLabel,
+                style: TextStyle(
+                  color: CameraLayoutTokens.railIcon,
+                  fontWeight: FontWeight.w700,
+                  fontSize: isTablet ? 14 : 12,
+                  letterSpacing: 0.2,
+                ),
+              ),
             ),
           ),
         ),
@@ -1273,23 +1301,32 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
 
   Widget _buildAspectRatioButton(bool isTablet) {
     final ratio = _useFourByThreeViewport ? '4:3' : '16:9';
-    return GestureDetector(
-      onTap: () => _handleSideAction(CameraSideAction.aspectRatio),
-      child: Container(
-        height: CameraLayoutTokens.railButtonSize(isTablet),
-        padding: EdgeInsets.symmetric(horizontal: isTablet ? 12 : 10),
-        decoration: BoxDecoration(
+    return Semantics(
+      button: true,
+      label: 'Toggle aspect ratio',
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(999),
+        child: InkWell(
           borderRadius: BorderRadius.circular(999),
-          color: Colors.white.withValues(alpha: 0.18),
-          border: Border.all(color: AppTheme.primaryLight.withValues(alpha: 0.88)),
-        ),
-        child: Center(
-          child: Text(
-            ratio,
-            style: TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.w800,
-              fontSize: isTablet ? 14 : 12,
+          onTap: () => _handleSideAction(CameraSideAction.aspectRatio),
+          child: Container(
+            height: CameraLayoutTokens.railButtonSize(isTablet),
+            padding: EdgeInsets.symmetric(horizontal: isTablet ? 12 : 10),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(999),
+              color: Colors.white.withValues(alpha: 0.18),
+              border: Border.all(color: AppTheme.primaryLight.withValues(alpha: 0.88)),
+            ),
+            child: Center(
+              child: Text(
+                ratio,
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w800,
+                  fontSize: isTablet ? 14 : 12,
+                ),
+              ),
             ),
           ),
         ),
@@ -1302,57 +1339,76 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
     required IconData icon,
     required VoidCallback onTap,
     bool active = false,
+    String? semanticLabel,
   }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: CameraLayoutTokens.railButtonSize(isTablet),
-        height: CameraLayoutTokens.railButtonSize(isTablet),
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: active
-              ? Colors.white.withValues(alpha: 0.22)
-              : CameraLayoutTokens.railButtonBg,
-          border: Border.all(
-            color: active
-                ? AppTheme.primaryLight.withValues(alpha: 0.88)
-                : CameraLayoutTokens.railButtonBorder,
+    return Semantics(
+      button: true,
+      label: semanticLabel ?? 'Camera action',
+      child: Material(
+        color: Colors.transparent,
+        shape: const CircleBorder(),
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: onTap,
+          child: Container(
+            width: CameraLayoutTokens.railButtonSize(isTablet),
+            height: CameraLayoutTokens.railButtonSize(isTablet),
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: active
+                  ? Colors.white.withValues(alpha: 0.22)
+                  : CameraLayoutTokens.railButtonBg,
+              border: Border.all(
+                color: active
+                    ? AppTheme.primaryLight.withValues(alpha: 0.88)
+                    : CameraLayoutTokens.railButtonBorder,
+              ),
+            ),
+            child: Icon(
+              icon,
+              size: CameraLayoutTokens.railIconSize(isTablet),
+              color: active ? Colors.white : CameraLayoutTokens.railSubtleIcon,
+            ),
           ),
-        ),
-        child: Icon(
-          icon,
-          size: CameraLayoutTokens.railIconSize(isTablet),
-          color: active ? Colors.white : CameraLayoutTokens.railSubtleIcon,
         ),
       ),
     );
   }
 
   Widget _buildRecordButton(bool isTablet) {
-    return GestureDetector(
-      onTap: () => _handleSideAction(CameraSideAction.record),
-      child: Container(
-        width: CameraLayoutTokens.recordButtonSize(isTablet),
-        height: CameraLayoutTokens.recordButtonSize(isTablet),
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: CameraLayoutTokens.recordRed,
-          border: Border.all(
-            color: Colors.white.withValues(alpha: 0.9),
-            width: 0.8,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: CameraLayoutTokens.recordRed.withValues(alpha: 0.35),
-              blurRadius: 12,
-              spreadRadius: 0.4,
+    return Semantics(
+      button: true,
+      label: _isRecording ? 'Stop recording' : 'Start recording',
+      child: Material(
+        color: Colors.transparent,
+        shape: const CircleBorder(),
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: () => _handleSideAction(CameraSideAction.record),
+          child: Container(
+            width: CameraLayoutTokens.recordButtonSize(isTablet),
+            height: CameraLayoutTokens.recordButtonSize(isTablet),
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: CameraLayoutTokens.recordRed,
+              border: Border.all(
+                color: Colors.white.withValues(alpha: 0.9),
+                width: 0.8,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: CameraLayoutTokens.recordRed.withValues(alpha: 0.35),
+                  blurRadius: 12,
+                  spreadRadius: 0.4,
+                ),
+              ],
             ),
-          ],
-        ),
-        child: Icon(
-          _isRecording ? Icons.stop_rounded : Icons.videocam_rounded,
-          color: Colors.white,
-          size: isTablet ? 18 : 16,
+            child: Icon(
+              _isRecording ? Icons.stop_rounded : Icons.videocam_rounded,
+              color: Colors.white,
+              size: isTablet ? 18 : 16,
+            ),
+          ),
         ),
       ),
     );
@@ -2346,15 +2402,25 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
     final isTab = Responsive.isTablet(context);
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
       backgroundColor: AppTheme.bgCard,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (_) => Padding(
-        padding: EdgeInsets.all(isTab ? 24 : 20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
+      builder: (sheetContext) {
+        final safeBottom = MediaQuery.paddingOf(sheetContext).bottom;
+        return SafeArea(
+          top: false,
+          child: SingleChildScrollView(
+            padding: EdgeInsets.fromLTRB(
+              isTab ? 24 : 20,
+              isTab ? 24 : 20,
+              isTab ? 24 : 20,
+              (isTab ? 24 : 20) + safeBottom,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
             Text(
               'Select Magnification',
               style: TextStyle(
@@ -2394,7 +2460,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                       }
                     });
                     _refreshAnnotationMeasurements();
-                    Navigator.pop(context);
+                    Navigator.pop(sheetContext);
                   },
                   child: Container(
                     padding: EdgeInsets.symmetric(
@@ -2421,9 +2487,11 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                 );
               }).toList(),
             ),
-          ],
-        ),
-      ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -2470,6 +2538,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
     if (_selectedTool == null) return;
     setState(() {
       _currentPoints = [point];
+      _lastDrawPoint = point;
       _isDrawing = true;
     });
   }
@@ -2531,6 +2600,14 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
     }
 
     if (!_isDrawing) return;
+    final prev = _lastDrawPoint;
+    if (prev != null) {
+      final dx = point.x - prev.x;
+      final dy = point.y - prev.y;
+      if ((dx * dx + dy * dy) < 1.8) {
+        return;
+      }
+    }
 
     setState(() {
       if (_selectedTool == AnnotationType.draw) {
@@ -2538,6 +2615,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
       } else {
         _currentPoints = [_currentPoints.first, point];
       }
+      _lastDrawPoint = point;
     });
   }
 
@@ -2581,6 +2659,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
       _redoStack.clear();
       _currentPoints = [];
       _isDrawing = false;
+      _lastDrawPoint = null;
       _viewMode = CameraViewMode.defaultOpen;
     });
 
@@ -2723,13 +2802,38 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                     width: double.infinity,
                     color: AppTheme.bgTertiary,
                     child: isVideo
-                        ? const Center(
-                            child: Icon(
-                              Icons.videocam_rounded,
-                              size: 56,
-                              color: Colors.white,
-                            ),
-                          )
+                        ? (kIsWeb
+                            ? const Center(
+                                child: Icon(
+                                  Icons.videocam_rounded,
+                                  size: 56,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : FutureBuilder<Uint8List?>(
+                                future: VideoExportService.extractVideoThumbnailBytes(
+                                  sourcePath: filePath,
+                                ),
+                                builder: (context, snapshot) {
+                                  if (snapshot.connectionState ==
+                                      ConnectionState.waiting) {
+                                    return const Center(
+                                      child: CircularProgressIndicator(strokeWidth: 2),
+                                    );
+                                  }
+                                  final bytes = snapshot.data;
+                                  if (bytes == null || bytes.isEmpty) {
+                                    return const Center(
+                                      child: Icon(
+                                        Icons.videocam_rounded,
+                                        size: 56,
+                                        color: Colors.white,
+                                      ),
+                                    );
+                                  }
+                                  return Image.memory(bytes, fit: BoxFit.contain);
+                                },
+                              ))
                         : kIsWeb
                         ? LayoutBuilder(
                             builder: (context, constraints) {
@@ -3036,7 +3140,45 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
       }
 
       await MediaDatabase.saveAsset(mediaId, finalBytes);
-      final thumbnailId = isVideo ? null : mediaId;
+      String? thumbnailId = isVideo ? null : mediaId;
+      if (isVideo && !kIsWeb) {
+        try {
+          final thumbBytes = await VideoExportService.extractVideoThumbnailBytes(
+            sourcePath: mediaSourcePath,
+          );
+          if (thumbBytes != null && thumbBytes.isNotEmpty) {
+            final thumbWithMarks = annotations.isEmpty
+                ? thumbBytes
+                : await MarkedMediaRenderer.renderPhotoWithAnnotations(
+                    baseImageBytes: thumbBytes,
+                    annotations: annotations,
+                    mirrorX: _mirror || _flipH,
+                    mirrorY: _flipV,
+                    rotation: _rotation,
+                  );
+            thumbnailId = FileService.generateAssetId('thumb');
+            await MediaDatabase.saveAsset(thumbnailId, thumbWithMarks);
+          }
+        } catch (_) {}
+      }
+      if (isVideo && kIsWeb) {
+        try {
+          final thumbBytes = await extractVideoThumbnailForSource(sourcePath);
+          if (thumbBytes != null && thumbBytes.isNotEmpty) {
+            final thumbWithMarks = annotations.isEmpty
+                ? thumbBytes
+                : await MarkedMediaRenderer.renderPhotoWithAnnotations(
+                    baseImageBytes: thumbBytes,
+                    annotations: annotations,
+                    mirrorX: _mirror || _flipH,
+                    mirrorY: _flipV,
+                    rotation: _rotation,
+                  );
+            thumbnailId = FileService.generateAssetId('thumb');
+            await MediaDatabase.saveAsset(thumbnailId, thumbWithMarks);
+          }
+        } catch (_) {}
+      }
 
       if (exportToDevice) {
         if (kIsWeb) {
@@ -3073,8 +3215,8 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
       await foldersController.addImage(widget.folderId, image);
       _showMessage(
         exportToDevice
-            ? '${isVideo ? 'Video' : 'Image'} downloaded and saved in app'
-            : '${isVideo ? 'Video' : 'Image'} saved in app folder',
+            ? 'Downloaded to Gallery'
+            : 'Saved successfully to "${widget.folderId}" in app',
       );
       return image;
     } catch (error) {
@@ -3151,11 +3293,63 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
     required String defaultName,
   }) async {
     final annotations = _annotationsForSave();
+    String? mediaId;
+    String? thumbnailId;
+    try {
+      final bytes = kIsWeb
+          ? await cam.XFile(filePath).readAsBytes()
+          : await FileService.readBytes(filePath);
+      if (bytes.isNotEmpty) {
+        mediaId = FileService.generateAssetId(isVideo ? 'video' : 'image');
+        await MediaDatabase.saveAsset(mediaId, bytes);
+        if (!isVideo) {
+          thumbnailId = mediaId;
+        }
+      }
+    } catch (_) {}
+    if (isVideo && !kIsWeb) {
+      try {
+        final thumbBytes = await VideoExportService.extractVideoThumbnailBytes(
+          sourcePath: filePath,
+        );
+        if (thumbBytes != null && thumbBytes.isNotEmpty) {
+          final thumbWithMarks = annotations.isEmpty
+              ? thumbBytes
+              : await MarkedMediaRenderer.renderPhotoWithAnnotations(
+                  baseImageBytes: thumbBytes,
+                  annotations: annotations,
+                  mirrorX: _mirror || _flipH,
+                  mirrorY: _flipV,
+                  rotation: _rotation,
+                );
+          thumbnailId = FileService.generateAssetId('thumb');
+          await MediaDatabase.saveAsset(thumbnailId, thumbWithMarks);
+        }
+      } catch (_) {}
+    }
+    if (isVideo && kIsWeb) {
+      try {
+        final thumbBytes = await extractVideoThumbnailForSource(filePath);
+        if (thumbBytes != null && thumbBytes.isNotEmpty) {
+          final thumbWithMarks = annotations.isEmpty
+              ? thumbBytes
+              : await MarkedMediaRenderer.renderPhotoWithAnnotations(
+                  baseImageBytes: thumbBytes,
+                  annotations: annotations,
+                  mirrorX: _mirror || _flipH,
+                  mirrorY: _flipV,
+                  rotation: _rotation,
+                );
+          thumbnailId = FileService.generateAssetId('thumb');
+          await MediaDatabase.saveAsset(thumbnailId, thumbWithMarks);
+        }
+      } catch (_) {}
+    }
     return ImageData(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
       imageUrl: kIsWeb ? filePath : 'file://$filePath',
-      mediaId: null,
-      thumbnailId: null,
+      mediaId: mediaId,
+      thumbnailId: thumbnailId,
       timestamp: DateTime.now().toIso8601String(),
       cameraSettings: _settings,
       annotations: annotations,

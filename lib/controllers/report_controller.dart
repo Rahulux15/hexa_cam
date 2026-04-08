@@ -45,7 +45,7 @@ class ReportController extends GetxController {
         filename: filename,
         folderName: folderName,
       );
-      showMessage('Report saved to App Folder', Colors.green);
+      showMessage('Saved to "$folderName" in app', Colors.green);
       return true;
     } catch (e) {
       logDebug('Save report failed: $e');
@@ -60,7 +60,7 @@ class ReportController extends GetxController {
     required ImageData image,
     required Uint8List baseBytes,
   }) async {
-    if (image.isMarkingsBaked == true || image.annotations.isEmpty) {
+    if (image.annotations.isEmpty || image.type == MediaType.video) {
       return baseBytes;
     }
     return MarkedMediaRenderer.renderPhotoWithAnnotations(
@@ -83,10 +83,7 @@ class ReportController extends GetxController {
     try {
       if (kIsWeb) {
         await FileService.savePdfToDevice(bytes, filename);
-        showMessage(
-          'Report downloaded; copy kept in app library',
-          Colors.green,
-        );
+        showMessage('Downloaded to Gallery', Colors.green);
         return true;
       }
       final appOk = await FileService.saveToAppFolder(
@@ -108,11 +105,11 @@ class ReportController extends GetxController {
         downloadOk = downloadPath.isNotEmpty;
       }
       if (appOk.isNotEmpty && downloadOk) {
-        showMessage('Report saved to Downloads and App Folder', Colors.green);
+        showMessage('Saved to "$folderName" and Downloaded to Gallery', Colors.green);
         return true;
       }
       if (appOk.isNotEmpty) {
-        showMessage('Downloads unavailable. Saved to App Folder only.', Colors.orange);
+        showMessage('Saved to "$folderName" in app', Colors.orange);
         return true;
       }
       showMessage('Unable to download report', Colors.red);

@@ -1,7 +1,9 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import '../../../controllers/auth_controller.dart';
+import '../../../config/app_version.dart';
 import '../../../config/theme.dart';
 import '../../../utils/responsive.dart';
 import '../../../ui/common/hexa_toast.dart';
@@ -19,6 +21,8 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
   late AnimationController _glowController;
   late List<_Particle> _particles;
   final _random = Random();
+  bool _acceptTerms = true;
+  String? _appVersionLabel;
 
   @override
   void initState() {
@@ -40,6 +44,19 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
         )..repeat(reverse: true),
       ),
     );
+
+    _loadVersionLabel();
+  }
+
+  Future<void> _loadVersionLabel() async {
+    try {
+      final info = await PackageInfo.fromPlatform();
+      if (!mounted) return;
+      setState(() => _appVersionLabel = AppVersion.formatLabel(info));
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _appVersionLabel = '');
+    }
   }
 
   @override
@@ -225,47 +242,126 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                               onToggleVisibility: authController.togglePasswordVisibility,
                             )),
                             const SizedBox(height: 24),
-
-                            // Sign In button
-                            Obx(() => SizedBox(
-                              width: double.infinity,
-                              height: btnHeight,
-                              child: ElevatedButton(
-                                onPressed: authController.isLoading.value ? null : _handleLogin,
-                                style: ElevatedButton.styleFrom(
-                                  padding: EdgeInsets.zero,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 4),
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Checkbox(
+                                    value: _acceptTerms,
+                                    activeColor: AppTheme.primary,
+                                    onChanged: (value) {
+                                      setState(() => _acceptTerms = value ?? false);
+                                    },
                                   ),
-                                  backgroundColor: Colors.transparent,
-                                ),
-                                child: Ink(
-                                  decoration: BoxDecoration(
-                                    gradient: AppTheme.primaryGradient,
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  child: Center(
-                                    child: authController.isLoading.value
-                                        ? const SizedBox(
-                                      width: 20,
-                                      height: 20,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        color: Colors.white,
-                                      ),
-                                    )
-                                        : Text(
-                                      'Sign In',
-                                      style: TextStyle(
-                                        fontSize: isTab ? 16 : 14,
-                                        fontWeight: FontWeight.w600,
-                                        color: Colors.white,
+                                  const SizedBox(width: 6),
+                                  const Expanded(
+                                    child: Padding(
+                                      padding: EdgeInsets.only(top: 10),
+                                      child: Text(
+                                        'I accept the Terms and Conditions.',
+                                        style: TextStyle(
+                                          color: AppTheme.textSecondary,
+                                          fontSize: 12,
+                                          height: 1.35,
+                                        ),
                                       ),
                                     ),
                                   ),
-                                ),
+                                ],
                               ),
-                            )),
+                            ),
+                            const SizedBox(height: 12),
+
+                            // Sign In button
+                            ObxValue<RxBool>(
+                              (isLoading) {
+                                final enabled = !isLoading.value && _acceptTerms;
+                                return SizedBox(
+                                  width: double.infinity,
+                                  height: btnHeight,
+                                  child: ElevatedButton(
+                                    onPressed: enabled ? _handleLogin : null,
+                                    style: ElevatedButton.styleFrom(
+                                      padding: EdgeInsets.zero,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      backgroundColor: Colors.transparent,
+                                      disabledBackgroundColor: Colors.transparent,
+                                      shadowColor: Colors.transparent,
+                                    ),
+                                    child: Ink(
+                                      decoration: BoxDecoration(
+                                        gradient: enabled
+                                            ? AppTheme.primaryGradient
+                                            : const LinearGradient(
+                                                colors: [
+                                                  Color(0xFF3A426B),
+                                                  Color(0xFF2D335A),
+                                                ],
+                                              ),
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      child: Center(
+                                        child: isLoading.value
+                                            ? const SizedBox(
+                                                width: 20,
+                                                height: 20,
+                                                child: CircularProgressIndicator(
+                                                  strokeWidth: 2,
+                                                  color: Colors.white,
+                                                ),
+                                              )
+                                            : Text(
+                                                'Sign In',
+                                                style: TextStyle(
+                                                  fontSize: isTab ? 16 : 14,
+                                                  fontWeight: FontWeight.w600,
+                                                  color: enabled
+                                                      ? Colors.white
+                                                      : Colors.white70,
+                                                ),
+                                              ),
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              },
+                              authController.isLoading,
+                            ),
+                            const SizedBox(height: 20),
+                            const Text(
+                              'Developed & Maintained By Quality Scientific and Mechanical Works',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: Colors.white70,
+                                fontSize: 11,
+                                height: 1.35,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            const Text(
+                              'Brand - Quasmo  All Rights Reserved 2026',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: Colors.white60,
+                                fontSize: 11,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              _appVersionLabel == null
+                                  ? 'Version loading...'
+                                  : (_appVersionLabel!.isEmpty
+                                      ? 'Version unavailable'
+                                      : 'Version $_appVersionLabel'),
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                color: Colors.white54,
+                                fontSize: 10.5,
+                              ),
+                            ),
 
                           ],
                         ),

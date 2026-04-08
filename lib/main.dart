@@ -7,6 +7,7 @@ import 'controllers/auth_controller.dart';
 import 'controllers/permission_controller.dart';
 import 'state/app_registry.dart';
 import 'app.dart';
+import 'dart:async';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -32,6 +33,14 @@ void main() async {
     ));
   }
 
-  await Get.find<PermissionController>().requestStartupPermissions();
   runApp(const HexaCamApp());
+  unawaited(
+    Future<void>(() async {
+      try {
+        await Get.find<PermissionController>().requestStartupPermissions();
+      } catch (_) {
+        // Keep startup resilient in release even if OS permission API fails.
+      }
+    }),
+  );
 }

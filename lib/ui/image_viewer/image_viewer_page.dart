@@ -103,6 +103,8 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
       }
       await controller.initialize();
       controller.setLooping(true);
+      await controller.setVolume(0);
+      unawaited(controller.play());
       if (!mounted) {
         controller.dispose();
         return;
@@ -178,7 +180,7 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
               left: isTab ? 18 : 14,
               child: _sideCircleButton(
                 icon: Icons.arrow_back_rounded,
-                onTap: () => Get.back<void>(),
+                onTap: _goBackSafely,
               ),
             ),
             Positioned(
@@ -280,19 +282,27 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
     required VoidCallback onTap,
     bool active = false,
   }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 48,
-        height: 48,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: active
-              ? const Color(0xFF232651)
-              : Colors.black.withValues(alpha: 0.25),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
+    return Semantics(
+      button: true,
+      label: 'Action',
+      child: Material(
+        color: active
+            ? const Color(0xFF232651)
+            : Colors.black.withValues(alpha: 0.25),
+        shape: const CircleBorder(),
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: onTap,
+          child: Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
+            ),
+            child: Icon(icon, color: Colors.white),
+          ),
         ),
-        child: Icon(icon, color: Colors.white),
       ),
     );
   }
@@ -560,7 +570,7 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
         );
       }
       if (!mounted) return;
-      _showMessage('Download completed', AppTheme.success);
+      _showMessage('Downloaded to Gallery', AppTheme.success);
     } catch (_) {
       if (!mounted) return;
       _showMessage('Unable to download media', AppTheme.danger);
@@ -830,6 +840,16 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
         ],
       ),
     );
+  }
+
+  void _goBackSafely() {
+    if (!mounted) return;
+    final navigator = Navigator.of(context);
+    if (navigator.canPop()) {
+      Get.back<void>();
+      return;
+    }
+    Get.offAllNamed<void>('/folders');
   }
 
   Widget _buildVideoSource() {

@@ -85,7 +85,7 @@ class _FolderDetailPageState extends State<FolderDetailPage> {
                   child: Row(children: [
                     _roundButton(
                         icon: Icons.arrow_back_rounded,
-                        onTap: () => Get.back<void>(),
+                        onTap: _goBackSafely,
                         isTab: isTab),
                     SizedBox(width: isTab ? 20 : 14),
                     Expanded(
@@ -356,17 +356,23 @@ class _FolderDetailPageState extends State<FolderDetailPage> {
       required VoidCallback onTap,
       required bool isTab,
       bool active = false}) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: isTab ? 50 : 44,
-        height: isTab ? 50 : 44,
-        decoration: BoxDecoration(
-            color: active ? const Color(0xFF2D2C68) : const Color(0xFF232651),
-            borderRadius: BorderRadius.circular(25)),
-        child: Icon(icon,
-            color: active ? Colors.white : AppTheme.textSecondary,
-            size: isTab ? 24 : 21),
+    return Semantics(
+      button: true,
+      label: 'Action',
+      child: Material(
+        color: active ? const Color(0xFF2D2C68) : const Color(0xFF232651),
+        borderRadius: BorderRadius.circular(25),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(25),
+          onTap: onTap,
+          child: SizedBox(
+            width: isTab ? 50 : 44,
+            height: isTab ? 50 : 44,
+            child: Icon(icon,
+                color: active ? Colors.white : AppTheme.textSecondary,
+                size: isTab ? 24 : 21),
+          ),
+        ),
       ),
     );
   }
@@ -797,6 +803,16 @@ class _FolderDetailPageState extends State<FolderDetailPage> {
         );
       },
     );
+  }
+
+  void _goBackSafely() {
+    if (!mounted) return;
+    final navigator = Navigator.of(context);
+    if (navigator.canPop()) {
+      Get.back<void>();
+      return;
+    }
+    Get.offAllNamed<void>('/folders');
   }
 }
 
