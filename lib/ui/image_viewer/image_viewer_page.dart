@@ -36,7 +36,7 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
   ImageData? _image;
   VideoPlayerController? _videoController;
   List<Annotation> _annotations = [];
-  bool _showMeasurements = false;
+  final bool _showMeasurements = false;
   bool _showMarkings = true;
   int _rotation = 0;
   bool _flipH = false;
