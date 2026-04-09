@@ -89,6 +89,9 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
   Size _lastSourceSize = Size.zero;
   double _pinchStartZoom = 1.0;
   int _activePreviewPointers = 0;
+  HexaPoint? _focusIndicatorPoint;
+  bool _focusIndicatorSuccess = true;
+  Timer? _focusIndicatorTimer;
 
   /// Last [CameraValue.previewSize] seen by [_onCameraPreviewValueChanged] (stream/orientation).
   Size? _previewListenerSize;
@@ -558,6 +561,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _focusIndicatorTimer?.cancel();
     _manualOverrideController.dispose();
     _detachCameraListener();
     _controller?.dispose();
@@ -862,11 +866,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
       onPointerDown: _onPreviewPointerDown,
       onPointerUp: _onPreviewPointerEnd,
       onPointerCancel: _onPreviewPointerEnd,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onScaleStart: (_) => _pinchStartZoom = _settings.zoom,
-        onScaleUpdate: (details) => _setZoom(_pinchStartZoom * details.scale),
-        child: ClipRRect(
+      child: ClipRRect(
         borderRadius: BorderRadius.circular(18),
         child: LayoutBuilder(
           builder: (context, constraints) {
@@ -945,25 +945,47 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                                       Positioned.fill(
                                         child: GestureDetector(
                                           behavior: HitTestBehavior.translucent,
+                                          // Pinch must live on the same detector as pan (not a parent):
+                                          // nested scale+pan recognizers fight the arena on Android/iOS.
+                                          onScaleStart: (_) =>
+                                              _pinchStartZoom = _settings.zoom,
+                                          onScaleUpdate: (details) {
+                                            if (details.pointerCount < 2) return;
+                                            _setZoom(
+                                              _pinchStartZoom * details.scale,
+                                            );
+                                          },
                                           onTapDown: (details) {
-                                            if (_activePreviewPointers > 1) return;
+                                            if (_activePreviewPointers > 1) {
+                                              return;
+                                            }
                                             _onTapDown(details);
                                           },
                                           onPanStart: (details) {
-                                            if (_activePreviewPointers > 1) return;
+                                            if (_activePreviewPointers > 1) {
+                                              return;
+                                            }
                                             _onPanStart(details);
                                           },
                                           onPanUpdate: (details) {
-                                            if (_activePreviewPointers > 1) return;
+                                            if (_activePreviewPointers > 1) {
+                                              return;
+                                            }
                                             _onPanUpdate(details);
                                           },
                                           onPanEnd: (details) {
-                                            if (_activePreviewPointers > 1) return;
+                                            if (_activePreviewPointers > 1) {
+                                              return;
+                                            }
                                             _onPanEnd(details);
                                           },
                                           child: const SizedBox.expand(),
                                         ),
                                       ),
+                                      if (_focusIndicatorPoint != null)
+                                        IgnorePointer(
+                                          child: _buildFocusIndicator(renderSize),
+                                        ),
                                     ],
                                   ),
                                 ),
@@ -1056,7 +1078,6 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
           },
         ),
       ),
-    ),
     );
   }
 
@@ -2671,6 +2692,11 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
     if (_isPaused || _isLocked) return;
     final point = _displayToSource(details.localPosition);
 
+    if (!_moveMode && !_eraserMode && _selectedTool == null) {
+      unawaited(_setFocusAndExposureAt(point));
+      return;
+    }
+
     if (_eraserMode) {
       _eraseAtPoint(point);
       return;
@@ -3454,6 +3480,81 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
       x: point.dx.clamp(0.0, sw),
       y: point.dy.clamp(0.0, sh),
     );
+  }
+
+  Widget _buildFocusIndicator(Size sourceSize) {
+    final point = _focusIndicatorPoint;
+    if (point == null) return const SizedBox.shrink();
+    const ringSize = 44.0;
+    final maxX = math.max(0.0, sourceSize.width - ringSize);
+    final maxY = math.max(0.0, sourceSize.height - ringSize);
+    final left = (point.x - (ringSize / 2)).clamp(0.0, maxX).toDouble();
+    final top = (point.y - (ringSize / 2)).clamp(0.0, maxY).toDouble();
+    final ringColor = _focusIndicatorSuccess
+        ? const Color(0xCC8DFF8D)
+        : const Color(0xCCFF7C7C);
+
+    return Stack(
+      children: [
+        Positioned(
+          left: left,
+          top: top,
+          child: AnimatedContainer(
+            duration: AppTheme.transitionFast,
+            width: ringSize,
+            height: ringSize,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(color: ringColor, width: 2),
+              boxShadow: [
+                BoxShadow(
+                  color: ringColor.withValues(alpha: 0.28),
+                  blurRadius: 10,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _setFocusAndExposureAt(HexaPoint point) async {
+    final controller = _controller;
+    if (controller == null || !controller.value.isInitialized) return;
+    final sw = _lastSourceSize.width <= 0 ? 1.0 : _lastSourceSize.width;
+    final sh = _lastSourceSize.height <= 0 ? 1.0 : _lastSourceSize.height;
+    final normalized = Offset(
+      (point.x / sw).clamp(0.0, 1.0).toDouble(),
+      (point.y / sh).clamp(0.0, 1.0).toDouble(),
+    );
+
+    var success = false;
+    try {
+      await controller.setFocusMode(cam.FocusMode.auto);
+    } catch (_) {}
+    try {
+      await controller.setExposureMode(cam.ExposureMode.auto);
+    } catch (_) {}
+    try {
+      await controller.setFocusPoint(normalized);
+      success = true;
+    } catch (_) {}
+    try {
+      await controller.setExposurePoint(normalized);
+      success = true;
+    } catch (_) {}
+
+    if (!mounted) return;
+    setState(() {
+      _focusIndicatorPoint = point;
+      _focusIndicatorSuccess = success;
+    });
+    _focusIndicatorTimer?.cancel();
+    _focusIndicatorTimer = Timer(const Duration(milliseconds: 900), () {
+      if (!mounted) return;
+      setState(() => _focusIndicatorPoint = null);
+    });
   }
 
   Future<ImageData> _buildPreviewMediaForReport({

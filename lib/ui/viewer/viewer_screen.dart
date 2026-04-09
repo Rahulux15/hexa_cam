@@ -475,6 +475,13 @@ class ViewerScreenState extends State<ViewerScreen> {
       _tool != ViewerDrawTool.eraser &&
       _tool != ViewerDrawTool.text;
 
+  /// When no draw tool is active, allow pinch/pan on the still image or video frame.
+  bool get _viewerPinchZoomEnabled =>
+      !_locked &&
+      !_editingPaused &&
+      _tool == null &&
+      !_showToolsPanel;
+
   Future<void> _promptText(Offset local) async {
     final source = _displayToSource(local);
     final controller = TextEditingController();
@@ -757,27 +764,33 @@ class ViewerScreenState extends State<ViewerScreen> {
                     child: SizedBox(
                       width: fitted.width,
                       height: fitted.height,
-                      child: RepaintBoundary(
-                        key: repaintBoundaryKey,
-                        child: Stack(
-                          children: [
-                            Positioned.fill(
-                              child: Transform(
-                                alignment: Alignment.center,
-                                transform: Matrix4.identity()
-                                  ..rotateZ(widget.rotation * pi / 180)
-                                  ..scaleByDouble(
-                                    widget.mirrorX ? -1.0 : 1.0,
-                                    widget.mirrorY ? -1.0 : 1.0,
-                                    1.0,
-                                    1.0,
+                      child: InteractiveViewer(
+                        panEnabled: _viewerPinchZoomEnabled,
+                        scaleEnabled: _viewerPinchZoomEnabled,
+                        clipBehavior: Clip.hardEdge,
+                        minScale: 0.75,
+                        maxScale: 4,
+                        child: RepaintBoundary(
+                          key: repaintBoundaryKey,
+                          child: Stack(
+                            children: [
+                              Positioned.fill(
+                                child: Transform(
+                                  alignment: Alignment.center,
+                                  transform: Matrix4.identity()
+                                    ..rotateZ(widget.rotation * pi / 180)
+                                    ..scaleByDouble(
+                                      widget.mirrorX ? -1.0 : 1.0,
+                                      widget.mirrorY ? -1.0 : 1.0,
+                                      1.0,
+                                      1.0,
+                                    ),
+                                  child: ViewerFilterMatrix.wrap(
+                                    widget.buildMedia(context),
+                                    _filters,
                                   ),
-                                child: ViewerFilterMatrix.wrap(
-                                  widget.buildMedia(context),
-                                  _filters,
                                 ),
                               ),
-                            ),
                             if (_stampEnabled)
                               Positioned(
                                 top: 18,
@@ -862,11 +875,12 @@ class ViewerScreenState extends State<ViewerScreen> {
                         ),
                       ),
                     ),
-                  );
-                },
-              ),
+                  ),
+                );
+              },
             ),
           ),
+        ),
         ),
         if (_showToolsPanel) _buildToolsOverlay(context),
         if (_showColorRow && _showToolsPanel)
