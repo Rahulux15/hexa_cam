@@ -1,18 +1,23 @@
 import 'dart:io';
 
+import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:get/get.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../ui/common/permission_required_dialog.dart';
+import '../utils/app_logger.dart';
 
 class PermissionController extends GetxController {
   PermissionController(this._prefs);
 
   final SharedPreferences _prefs;
   static const _requestedKey = 'startup_permissions_requested';
+  static const _retryCountKey = 'permission_retry_count';
   final RxBool isStorageGranted = false.obs;
+  bool _permissionDialogScheduled = false;
+  int _retryCount = 0;
 
   /// Runs once on first install (full permission batch), then if anything is
   /// still missing shows [showPermissionRequiredDialog]. On later launches,
@@ -20,6 +25,7 @@ class PermissionController extends GetxController {
   Future<void> runStartupPermissionFlow() async {
     if (kIsWeb) return;
 
+    _retryCount = _prefs.getInt(_retryCountKey) ?? 0;
     final isFirstStartup = _prefs.getBool(_requestedKey) != true;
     if (isFirstStartup) {
       await _requestAllPermissions();
@@ -44,13 +50,20 @@ class PermissionController extends GetxController {
   }
 
   Future<void> _androidStartupPermissions() async {
+    final sdkInt = (await DeviceInfoPlugin().androidInfo).version.sdkInt;
     await Permission.camera.request();
     await Permission.microphone.request();
-    final manage = await Permission.manageExternalStorage.request();
-    final storage = await Permission.storage.request();
+    // Android 11+ (API 30): scoped storage; avoid relying on deprecated [Permission.storage].
+    final manage = sdkInt >= 30
+        ? await Permission.manageExternalStorage.request()
+        : PermissionStatus.denied;
+    final storage = sdkInt < 30
+        ? await Permission.storage.request()
+        : PermissionStatus.denied;
     isStorageGranted.value = manage.isGranted || storage.isGranted;
-    await Permission.photos.request();
-    await Permission.videos.request();
+    logDebug(
+      'PermissionController android startup sdk=$sdkInt manage=${manage.name} storage=${storage.name}',
+    );
   }
 
   Future<void> _iosStartupPermissions() async {
@@ -58,11 +71,20 @@ class PermissionController extends GetxController {
     await Permission.microphone.request();
     await Permission.photos.request();
     await Permission.photosAddOnly.request();
+    final photos = await Permission.photos.status;
+    final addOnly = await Permission.photosAddOnly.status;
+    // Treat library access like Android “storage ready” for saves/Gal.
+    isStorageGranted.value = _statusOk(photos) || _statusOk(addOnly);
   }
 
   Future<void> _showPermissionDialogIfNeeded() async {
     if (await hasAllRequiredPermissions()) return;
     if (Get.isDialogOpen == true) return;
+    if (_permissionDialogScheduled) return;
+    _permissionDialogScheduled = true;
+    await Future<void>.delayed(const Duration(milliseconds: 180));
+    _permissionDialogScheduled = false;
+    if (Get.isDialogOpen == true || await hasAllRequiredPermissions()) return;
     showPermissionRequiredDialog(onTryAgain: _onPermissionTryAgain);
   }
 
@@ -70,7 +92,10 @@ class PermissionController extends GetxController {
     if (Get.isDialogOpen == true) {
       Get.back<void>();
     }
-    await Future<void>.delayed(const Duration(milliseconds: 120));
+    _retryCount++;
+    await _prefs.setInt(_retryCountKey, _retryCount);
+    final backoffMs = (120 * (1 << (_retryCount.clamp(0, 4)))).clamp(120, 2000);
+    await Future<void>.delayed(Duration(milliseconds: backoffMs));
     await _requestAllPermissions();
 
     if (await hasAllRequiredPermissions()) {
@@ -94,18 +119,13 @@ class PermissionController extends GetxController {
   Future<bool> hasAllRequiredPermissions() async {
     if (kIsWeb) return true;
     if (Platform.isAndroid) {
+      final sdkInt = (await DeviceInfoPlugin().androidInfo).version.sdkInt;
       final cam = await Permission.camera.status;
       final mic = await Permission.microphone.status;
-      final photos = await Permission.photos.status;
-      final videos = await Permission.videos.status;
       final manage = await Permission.manageExternalStorage.status;
       final storage = await Permission.storage.status;
-      final storageOk = _statusOk(manage) || _statusOk(storage);
-      return _statusOk(cam) &&
-          _statusOk(mic) &&
-          _statusOk(photos) &&
-          _statusOk(videos) &&
-          storageOk;
+      final storageOk = sdkInt >= 30 ? _statusOk(manage) : _statusOk(storage);
+      return _statusOk(cam) && _statusOk(mic) && storageOk;
     }
     if (Platform.isIOS) {
       final cam = await Permission.camera.status;
@@ -126,13 +146,12 @@ class PermissionController extends GetxController {
 
   Future<List<PermissionStatus>> _collectPermissionStatuses() async {
     if (Platform.isAndroid) {
+      final sdkInt = (await DeviceInfoPlugin().androidInfo).version.sdkInt;
       return [
         await Permission.camera.status,
         await Permission.microphone.status,
-        await Permission.photos.status,
-        await Permission.videos.status,
-        await Permission.manageExternalStorage.status,
-        await Permission.storage.status,
+        if (sdkInt >= 30) await Permission.manageExternalStorage.status,
+        if (sdkInt < 30) await Permission.storage.status,
       ];
     }
     if (Platform.isIOS) {
@@ -148,13 +167,24 @@ class PermissionController extends GetxController {
 
   Future<bool> requestStoragePermissionIfNeeded() async {
     if (kIsWeb || !Platform.isAndroid) {
-      isStorageGranted.value = true;
       return true;
     }
     if (isStorageGranted.value) return true;
-    final manage = await Permission.manageExternalStorage.request();
-    final storage = await Permission.storage.request();
+    final sdkInt = (await DeviceInfoPlugin().androidInfo).version.sdkInt;
+    final manage = sdkInt >= 30
+        ? await Permission.manageExternalStorage.request()
+        : PermissionStatus.denied;
+    final storage = sdkInt < 30
+        ? await Permission.storage.request()
+        : PermissionStatus.denied;
     isStorageGranted.value = manage.isGranted || storage.isGranted;
     return isStorageGranted.value;
+  }
+
+  Future<void> clearPermissionState() async {
+    await _prefs.remove(_requestedKey);
+    await _prefs.remove(_retryCountKey);
+    _retryCount = 0;
+    isStorageGranted.value = false;
   }
 }

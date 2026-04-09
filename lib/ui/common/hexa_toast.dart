@@ -14,18 +14,23 @@ class HexaToast {
     HexaToastType type = HexaToastType.success,
     Duration duration = const Duration(seconds: 2),
     double? progress,
-    /// Extra space above the safe-area bottom (e.g. camera chrome) so the toast
-    /// does not cover primary controls.
-    double bottomExtraInset = 0,
+    /// Extra offset below the status bar / safe-area top (e.g. dense top chrome).
+    double topExtraInset = 0,
   }) {
-    final overlay = Overlay.of(context);
+    // Use root overlay so toasts sit at the top of the screen, not inside a
+    // modal/bottom sheet's small overlay (which made them look "stuck" at the bottom).
+    late final OverlayState overlay;
+    try {
+      overlay = Overlay.of(context, rootOverlay: true);
+    } catch (_) {
+      overlay = Overlay.of(context);
+    }
 
     _activeTimer?.cancel();
     _activeEntry?.remove();
     _activeEntry = null;
 
     final safeTop = MediaQuery.paddingOf(context).top;
-    final safeBottom = MediaQuery.paddingOf(context).bottom;
     final Color bgColor = switch (type) {
       HexaToastType.success => const Color(0xEE1E8E5A),
       HexaToastType.error => const Color(0xEEC63D56),
@@ -41,15 +46,14 @@ class HexaToast {
 
     final entry = OverlayEntry(
       builder: (_) => Positioned(
-        top: safeTop + 14,
-        bottom: safeBottom + 14 + bottomExtraInset,
+        top: safeTop + 14 + topExtraInset,
         left: 12,
         right: 12,
         child: IgnorePointer(
           child: Material(
             color: Colors.transparent,
             child: Align(
-              alignment: Alignment.bottomCenter,
+              alignment: Alignment.topCenter,
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 420),
                 child: Container(

@@ -6,6 +6,7 @@ class MediaDatabase {
   static Database? _db;
   static const String _dbName = 'hexacam-media.db';
   static const String _tableName = 'media_assets';
+  static const int _schemaVersion = 2;
   static final Map<String, Uint8List> _webStore = {};
 
   static Future<Database> get database async {
@@ -13,9 +14,18 @@ class MediaDatabase {
       throw UnsupportedError('MediaDatabase uses an in-memory web store on web');
     }
     if (_db != null) return _db!;
-    _db = await openDatabase(join(await getDatabasesPath(), _dbName), version: 1,
+    _db = await openDatabase(
+      join(await getDatabasesPath(), _dbName),
+      version: _schemaVersion,
       onCreate: (db, version) async {
-        await db.execute('CREATE TABLE $_tableName (id TEXT PRIMARY KEY, data BLOB NOT NULL, created_at INTEGER NOT NULL)');
+        await db.execute(
+          'CREATE TABLE $_tableName (id TEXT PRIMARY KEY, data BLOB NOT NULL, created_at INTEGER NOT NULL)',
+        );
+      },
+      onUpgrade: (db, oldVersion, newVersion) async {
+        if (oldVersion < 2) {
+          // No schema change from v1 → v2; hook for future migrations.
+        }
       },
     );
     return _db!;

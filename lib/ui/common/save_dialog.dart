@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../config/theme.dart';
 import '../../data/models/annotation.dart';
 import '../../utils/responsive.dart';
 import 'media_image.dart';
 
 class SaveDialog extends StatefulWidget {
+  static const String dontAskAgainKey = 'save_dialog_dont_ask_again';
   final String? imageUrl;
   final String? mediaId;
   final List<Annotation> annotations;
@@ -30,6 +32,12 @@ class SaveDialog extends StatefulWidget {
     bool isVideo = false,
     required Future<void> Function(String, String) onSave,
   }) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!context.mounted) return;
+    if (prefs.getBool(dontAskAgainKey) == true) {
+      await onSave('', '');
+      return;
+    }
     await showDialog(
       context: context,
       barrierDismissible: false,
@@ -39,7 +47,7 @@ class SaveDialog extends StatefulWidget {
         annotations: annotations,
         isVideo: isVideo,
         onSave: onSave,
-        onCancel: () => Navigator.pop(ctx),
+        onCancel: () => Navigator.pop(context),
       ),
     );
   }
@@ -49,6 +57,18 @@ class SaveDialog extends StatefulWidget {
 }
 
 class _SaveDialogState extends State<SaveDialog> {
+  @override
+  void initState() {
+    super.initState();
+    _loadDontAskAgainState();
+  }
+
+  Future<void> _loadDontAskAgainState() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    setState(() => _dontAskAgain = prefs.getBool(SaveDialog.dontAskAgainKey) == true);
+  }
+
   final _filenameController = TextEditingController();
   final _descriptionController = TextEditingController();
   bool _dontAskAgain = false;
@@ -122,6 +142,12 @@ class _SaveDialogState extends State<SaveDialog> {
                         : () async {
                             setState(() => _saving = true);
                             try {
+                              final prefs = await SharedPreferences.getInstance();
+                              if (_dontAskAgain) {
+                                await prefs.setBool(SaveDialog.dontAskAgainKey, true);
+                              } else {
+                                await prefs.remove(SaveDialog.dontAskAgainKey);
+                              }
                               await widget.onSave(
                                 _filenameController.text,
                                 _descriptionController.text,

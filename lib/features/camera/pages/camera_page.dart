@@ -341,6 +341,14 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
             const Duration(seconds: 10),
             onTimeout: () => PermissionStatus.denied,
           );
+          await Permission.photos.request().timeout(
+            const Duration(seconds: 10),
+            onTimeout: () => PermissionStatus.denied,
+          );
+          await Permission.photosAddOnly.request().timeout(
+            const Duration(seconds: 10),
+            onTimeout: () => PermissionStatus.denied,
+          );
           if (!status.isGranted) {
             shouldInitCamera = false;
             if (mounted) {
@@ -3085,17 +3093,11 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                           onPressed: () async {
                             Navigator.pop(sheetContext);
                             if (!mounted) return;
-                            _showMessage(
-                              'Download started in background',
-                              backgroundColor: const Color(0xFF2563EB),
-                            );
-                            unawaited(
-                              _persistMedia(
-                                sourcePath: filePath,
-                                preferredName: defaultName,
-                                isVideo: isVideo,
-                                exportToDevice: true,
-                              ),
+                            await _persistMedia(
+                              sourcePath: filePath,
+                              preferredName: defaultName,
+                              isVideo: isVideo,
+                              exportToDevice: true,
                             );
                           },
                           icon: const Icon(Icons.download_outlined),
@@ -3121,20 +3123,14 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                               annotations: _annotationsForSave(),
                               isVideo: isVideo,
                               onSave: (filename, description) async {
-                                _showMessage(
-                                  'Saving started in background',
-                                  backgroundColor: const Color(0xFF2563EB),
-                                );
-                                unawaited(
-                                  _persistMedia(
-                                    sourcePath: filePath,
-                                    preferredName: filename.trim().isEmpty
-                                        ? defaultName
-                                        : filename.trim(),
-                                    description: description,
-                                    isVideo: isVideo,
-                                    exportToDevice: false,
-                                  ),
+                                await _persistMedia(
+                                  sourcePath: filePath,
+                                  preferredName: filename.trim().isEmpty
+                                      ? defaultName
+                                      : filename.trim(),
+                                  description: description,
+                                  isVideo: isVideo,
+                                  exportToDevice: false,
                                 );
                               },
                             );
@@ -3315,28 +3311,6 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
         } catch (_) {}
       }
 
-      if (exportToDevice) {
-        if (kIsWeb) {
-          await FileService.saveToDevice(
-            finalBytes,
-            preferredName,
-            sharePositionOrigin: _sharePositionOrigin(),
-          );
-        } else if (isVideo) {
-          await FileService.saveVideoToDevice(
-            mediaSourcePath,
-            preferredName,
-            sharePositionOrigin: _sharePositionOrigin(),
-          );
-        } else {
-          await FileService.saveToDevice(
-            finalBytes,
-            preferredName,
-            sharePositionOrigin: _sharePositionOrigin(),
-          );
-        }
-      }
-
       final image = ImageData(
         id: DateTime.now().millisecondsSinceEpoch.toString(),
         imageUrl: kIsWeb ? sourcePath : 'file://$mediaSourcePath',
@@ -3360,14 +3334,53 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
       );
 
       await foldersController.addImage(widget.folderId, image);
+
+      var exportedDirectToGallery = true;
+      if (exportToDevice) {
+        try {
+          if (kIsWeb) {
+            exportedDirectToGallery = await FileService.saveToDevice(
+              finalBytes,
+              preferredName,
+              sharePositionOrigin: _sharePositionOrigin(),
+            );
+          } else if (isVideo) {
+            exportedDirectToGallery = await FileService.saveVideoToDevice(
+              mediaSourcePath,
+              preferredName,
+              sharePositionOrigin: _sharePositionOrigin(),
+            );
+          } else {
+            exportedDirectToGallery = await FileService.saveToDevice(
+              finalBytes,
+              preferredName,
+              sharePositionOrigin: _sharePositionOrigin(),
+            );
+          }
+        } catch (exportError) {
+          logDebug('Export to device failed: $exportError');
+          if (mounted) {
+            _showMessage(
+              'Saved to ${_folderLabel(_displayFolderName())}. Export to gallery/files failed — check permissions.',
+              backgroundColor: AppTheme.warning,
+            );
+          }
+          return image;
+        }
+      }
+
       _showMessage(
         exportToDevice
             ? (isVideo
                 ? (Platform.isIOS
-                    ? 'Share opened. Save video to Photos or Files.'
+                    ? (exportedDirectToGallery
+                        ? 'Video saved to Photos'
+                        : 'Share opened — save video to Photos or Files')
                     : 'Video downloaded to Gallery')
                 : (Platform.isIOS
-                    ? 'Share opened. Save image to Photos or Files.'
+                    ? (exportedDirectToGallery
+                        ? 'Image saved to Photos'
+                        : 'Share opened — save image to Photos or Files')
                     : 'Image downloaded to Gallery'))
             : (isVideo
                 ? 'Saved video to ${_folderLabel(_displayFolderName())}'
@@ -3656,33 +3669,23 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
         : storedCalibration;
   }
 
-  double _cameraToastBottomExtra() {
-    if (!mounted) return 0;
-    if (!Responsive.isPortrait(context)) {
-      return 36;
-    }
-    final isTablet = Responsive.isTablet(context);
-    final safeBottom = MediaQuery.paddingOf(context).bottom;
-    final railHeight = CameraLayoutTokens.recordButtonSize(isTablet) +
-        CameraLayoutTokens.railButtonSize(isTablet) +
-        CameraLayoutTokens.railGap(isTablet) * 2;
-    return railHeight + safeBottom + 20;
-  }
-
   void _showMessage(
     String text, {
     Color backgroundColor = AppTheme.success,
-    bool liftAboveCameraChrome = true,
   }) {
     if (!mounted) return;
-    final type = backgroundColor == AppTheme.danger
-        ? HexaToastType.error
-        : HexaToastType.success;
+    final HexaToastType type;
+    if (backgroundColor == AppTheme.danger) {
+      type = HexaToastType.error;
+    } else if (backgroundColor == AppTheme.warning) {
+      type = HexaToastType.warning;
+    } else {
+      type = HexaToastType.success;
+    }
     HexaToast.show(
       context,
       text,
       type: type,
-      bottomExtraInset: liftAboveCameraChrome ? _cameraToastBottomExtra() : 0,
     );
   }
 
@@ -3699,7 +3702,6 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
           ? 'Camera is blocked. Open Settings to allow camera access for this app.'
           : 'Camera permission is required to capture photos.',
       backgroundColor: AppTheme.danger,
-      liftAboveCameraChrome: true,
     );
     if (!permanent) return;
     await showDialog<void>(

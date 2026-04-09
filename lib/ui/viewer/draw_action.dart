@@ -124,11 +124,17 @@ class DAMove extends DrawAction {
 
 /// Manages undo/redo for annotation lists.
 class DrawHistory {
+  /// Keeps memory stable during long drawing sessions (drops oldest history).
+  static const int maxUndoDepth = 50;
+
   final List<DrawAction> _undo = [];
   final List<DrawAction> _redo = [];
 
   bool get canUndo => _undo.isNotEmpty;
   bool get canRedo => _redo.isNotEmpty;
+
+  /// Current undo stack size (capped at [maxUndoDepth]).
+  int get undoStackLength => _undo.length;
 
   void clear() {
     _undo.clear();
@@ -137,6 +143,9 @@ class DrawHistory {
 
   void record(DrawAction action) {
     _undo.add(action);
+    while (_undo.length > maxUndoDepth) {
+      _undo.removeAt(0);
+    }
     _redo.clear();
   }
 

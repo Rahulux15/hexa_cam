@@ -2,12 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../controllers/permission_controller.dart';
 import '../../data/services/database_service.dart';
 import '../../config/app_version.dart';
 import '../../config/theme.dart';
 import '../../state/app_registry.dart';
 import '../../utils/responsive.dart';
 import '../common/hexa_toast.dart';
+import '../../ui/common/save_dialog.dart';
 
 enum SettingsView { main, profile, privacy, help, about }
 
@@ -163,6 +165,18 @@ class _SettingsPageState extends State<SettingsPage> {
       SizedBox(height: isTab ? 18 : 16),
       _buildSection('Application', [
         _buildTile(Icons.verified_user_outlined, 'Privacy', 'Data & security', () => setState(() => _currentView = SettingsView.privacy)),
+        _buildTile(
+          Icons.shield_outlined,
+          'Reset Permission State',
+          'Re-run startup permission flow next launch',
+          _clearPermissionState,
+        ),
+        _buildTile(
+          Icons.tune_outlined,
+          'Reset Save Dialog Preference',
+          'Show Save dialog again even if hidden',
+          _clearSaveDialogPreference,
+        ),
       ]),
       SizedBox(height: isTab ? 18 : 16),
       _buildSection('Support', [
@@ -930,6 +944,51 @@ class _SettingsPageState extends State<SettingsPage> {
       setState(() => _isClearingData = false);
       HexaToast.show(context, 'Unable to clear app data',
           type: HexaToastType.error);
+    }
+  }
+
+  Future<void> _clearPermissionState() async {
+    try {
+      if (Get.isRegistered<PermissionController>()) {
+        await Get.find<PermissionController>().clearPermissionState();
+      } else {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.remove('startup_permissions_requested');
+        await prefs.remove('permission_retry_count');
+      }
+      if (!mounted) return;
+      HexaToast.show(
+        context,
+        'Permission state cleared. Restart app to re-run permission flow.',
+        type: HexaToastType.success,
+      );
+    } catch (_) {
+      if (!mounted) return;
+      HexaToast.show(
+        context,
+        'Unable to clear permission state',
+        type: HexaToastType.error,
+      );
+    }
+  }
+
+  Future<void> _clearSaveDialogPreference() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(SaveDialog.dontAskAgainKey);
+      if (!mounted) return;
+      HexaToast.show(
+        context,
+        'Save dialog preference reset.',
+        type: HexaToastType.success,
+      );
+    } catch (_) {
+      if (!mounted) return;
+      HexaToast.show(
+        context,
+        'Unable to reset save dialog preference',
+        type: HexaToastType.error,
+      );
     }
   }
 }

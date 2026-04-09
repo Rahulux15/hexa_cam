@@ -3,7 +3,10 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
+import '../utils/app_logger.dart';
+
 class CameraControllerX extends GetxController {
+  static const double _defaultAspectRatio = 16 / 9;
   final RxBool isInitializing = false.obs;
   final RxBool isReady = false.obs;
   final RxString errorMessage = ''.obs;
@@ -34,40 +37,60 @@ class CameraControllerX extends GetxController {
     isInitializing.value = true;
     errorMessage.value = '';
     try {
+      logDebug(
+        'CameraControllerX.initialize platform=${kIsWeb ? 'web' : defaultTargetPlatform.name} preset=$preset enableAudio=$enableAudio',
+      );
       final available = await cameraProvider();
       cameras.assignAll(available);
       final orderedResolutions = <cam.ResolutionPreset>{
         preset,
         ...safeResolutionOrder,
       }.toList();
-      cam.CameraController? lastController;
       for (final candidate in orderedResolutions) {
-        cam.CameraController? ctrl;
-        try {
-          ctrl = cam.CameraController(
-            camera,
-            candidate,
-            enableAudio: enableAudio,
-            imageFormatGroup: kIsWeb ? cam.ImageFormatGroup.yuv420 : null,
-          );
-          await ctrl.initialize();
-          await _disposeQuietly(lastController);
-          await _disposeQuietly(controller.value);
-          controller.value = ctrl;
-          aspectRatio.value = ctrl.value.aspectRatio;
-          isReady.value = true;
-          return;
-        } catch (error) {
-          await _disposeQuietly(ctrl);
-          await _disposeQuietly(lastController);
-          lastController = null;
-          errorMessage.value = error.toString();
+        final formatCandidates = kIsWeb
+            ? const <cam.ImageFormatGroup>[
+                cam.ImageFormatGroup.yuv420,
+                cam.ImageFormatGroup.bgra8888,
+              ]
+            : const <cam.ImageFormatGroup?>[null];
+        for (final format in formatCandidates) {
+          cam.CameraController? ctrl;
+          try {
+            logDebug(
+              'CameraControllerX.initialize trying preset=$candidate format=${format?.name ?? 'default'}',
+            );
+            ctrl = cam.CameraController(
+              camera,
+              candidate,
+              enableAudio: enableAudio,
+              imageFormatGroup: format,
+            );
+            await ctrl.initialize();
+            await _disposeQuietly(controller.value);
+            controller.value = ctrl;
+            aspectRatio.value = ctrl.value.aspectRatio > 0
+                ? ctrl.value.aspectRatio
+                : _defaultAspectRatio;
+            isReady.value = true;
+            logDebug(
+              'CameraControllerX.initialize success preset=$candidate format=${format?.name ?? 'default'} aspect=${aspectRatio.value}',
+            );
+            return;
+          } catch (error) {
+            await _disposeQuietly(ctrl);
+            errorMessage.value = error.toString();
+            logDebug(
+              'CameraControllerX.initialize failed preset=$candidate format=${format?.name ?? 'default'} error=$error',
+            );
+          }
         }
       }
       throw Exception('Unable to initialize camera at any supported resolution');
     } catch (error) {
       errorMessage.value = error.toString();
       isReady.value = false;
+      aspectRatio.value = _defaultAspectRatio;
+      logDebug('CameraControllerX.initialize fatal error=$error');
       // In unit tests there is no overlay/context, so avoid surfacing a snackbar.
       if (Get.key.currentState != null) {
         Get.snackbar(
@@ -78,7 +101,7 @@ class CameraControllerX extends GetxController {
           colorText: Colors.white,
         );
       }
-      rethrow;
+      if (kDebugMode) rethrow;
     } finally {
       isInitializing.value = false;
     }

@@ -18,10 +18,13 @@ class FileService {
   static const _uuid = Uuid();
   static const _startupPermissionKey = 'storage_permissions_requested';
 
+  /// UUID v4 from package:uuid — collision risk is negligible for app-scale IDs.
   static String generateAssetId([String prefix = 'media']) =>
       '$prefix-${_uuid.v4()}';
 
-  static Future<void> saveToDevice(
+  /// Returns true when the image was written directly (web download, Android/iOS
+  /// gallery/Photos). On iOS, false means the share sheet was used as fallback.
+  static Future<bool> saveToDevice(
     Uint8List bytes,
     String filename, {
     Rect? sharePositionOrigin,
@@ -32,17 +35,35 @@ class FileService {
       logDebug('FileService.saveToDevice web download name=$name');
       await downloadBytesWeb(bytes, name, mimeType: 'image/jpeg');
       logDebug('FileService.saveToDevice web download done');
-      return;
+      return true;
     }
     if (Platform.isIOS) {
-      logDebug('FileService.saveToDevice iOS share flow filename=$filename');
+      // Match Android: save into Photos when allowed; share sheet as fallback.
+      try {
+        if (!await Gal.hasAccess(toAlbum: true)) {
+          await Gal.requestAccess(toAlbum: true);
+        }
+        if (await Gal.hasAccess(toAlbum: true)) {
+          final name = _galAssetBaseName(filename);
+          await Gal.putImageBytes(
+            bytes,
+            album: 'Hexa Cam',
+            name: name,
+          );
+          logDebug('FileService.saveToDevice iOS Photos (Gal) name=$name');
+          return true;
+        }
+      } catch (e) {
+        logDebug('FileService.saveToDevice iOS Gal failed, using share: $e');
+      }
+      logDebug('FileService.saveToDevice iOS share fallback filename=$filename');
       await shareImageToDevice(
         bytes,
         filename,
         sharePositionOrigin: sharePositionOrigin,
       );
       logDebug('FileService.saveToDevice iOS share flow done');
-      return;
+      return false;
     }
     final sanitized = filename
         .replaceAll(RegExp(r'[<>:"/\\|?*\x00-\x1F]'), '-')
@@ -53,6 +74,7 @@ class FileService {
     logDebug('FileService.saveToDevice gallery write name=$name');
     await Gal.putImageBytes(bytes, name: name);
     logDebug('FileService.saveToDevice gallery write done');
+    return true;
   }
 
   static Future<void> savePdfToDevice(Uint8List bytes, String filename) async {
@@ -105,13 +127,31 @@ class FileService {
     }
   }
 
-  static Future<void> saveVideoToDevice(
+  /// Returns true when the video was saved straight into gallery/Photos; false
+  /// when iOS fell back to the share sheet.
+  static Future<bool> saveVideoToDevice(
     String videoPath,
     String filename, {
     Rect? sharePositionOrigin,
   }) async {
     logDebug('FileService.saveVideoToDevice start filename=$filename path=$videoPath');
-    if (!kIsWeb && Platform.isIOS) {
+    if (kIsWeb) {
+      logDebug('FileService.saveVideoToDevice skipped on web');
+      return false;
+    }
+    if (Platform.isIOS) {
+      try {
+        if (!await Gal.hasAccess(toAlbum: true)) {
+          await Gal.requestAccess(toAlbum: true);
+        }
+        if (await Gal.hasAccess(toAlbum: true)) {
+          await Gal.putVideo(videoPath, album: 'Hexa Cam');
+          logDebug('FileService.saveVideoToDevice iOS Photos (Gal) path=$videoPath');
+          return true;
+        }
+      } catch (e) {
+        logDebug('FileService.saveVideoToDevice iOS Gal failed, using share: $e');
+      }
       logDebug('FileService.saveVideoToDevice iOS share flow filename=$filename');
       await shareVideoToDevice(
         videoPath,
@@ -119,11 +159,12 @@ class FileService {
         sharePositionOrigin: sharePositionOrigin,
       );
       logDebug('FileService.saveVideoToDevice iOS share flow done');
-      return;
+      return false;
     }
     logDebug('FileService.saveVideoToDevice gallery write path=$videoPath');
     await Gal.putVideo(videoPath);
     logDebug('FileService.saveVideoToDevice gallery write done');
+    return true;
   }
 
   static Future<void> shareImageToDevice(
@@ -426,6 +467,17 @@ class FileService {
 
   static Future<Uint8List> readBytes(String path) async {
     return File(path).readAsBytes();
+  }
+
+  /// Base name for [Gal.putImageBytes] (no extension; plugin adds type).
+  static String _galAssetBaseName(String filename) {
+    final safe = _safeFilename(filename, fallbackExtension: '.jpg');
+    var base = p.basenameWithoutExtension(safe);
+    base = base.replaceAll(RegExp(r'[<>:"/\\|?*\x00-\x1F]'), '-').trim();
+    if (base.isEmpty) {
+      return 'hexacam-${DateTime.now().millisecondsSinceEpoch}';
+    }
+    return base.length > 200 ? base.substring(0, 200) : base;
   }
 
   static String _safeFilename(String value, {String fallbackExtension = ''}) {

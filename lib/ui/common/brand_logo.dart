@@ -44,7 +44,22 @@ class BrandLogo extends StatelessWidget {
         SizedBox(
           width: effectiveIconSize,
           height: effectiveIconSize,
-          child: SvgPicture.string(_svgMarkup),
+          child: SvgPicture.string(
+            _svgMarkup,
+            width: effectiveIconSize,
+            height: effectiveIconSize,
+            fit: BoxFit.contain,
+            placeholderBuilder: (_) => Icon(
+              Icons.hexagon_outlined,
+              size: effectiveIconSize * 0.88,
+              color: const Color(0xFF8B5CF6),
+            ),
+            errorBuilder: (_, __, ___) => Icon(
+              Icons.science_outlined,
+              size: effectiveIconSize * 0.88,
+              color: const Color(0xFF8B5CF6),
+            ),
+          ),
         ),
         if (showText) ...[
           SizedBox(width: isTab ? 14 : 12),

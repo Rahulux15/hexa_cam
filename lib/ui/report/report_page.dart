@@ -42,6 +42,7 @@ class _ReportPageState extends State<ReportPage> {
   final _phoneController = TextEditingController();
   final _locationController = TextEditingController();
   List<Map<String, dynamic>> _items = [];
+  bool _isGeneratingReport = false;
 
   @override
   void initState() {
@@ -88,7 +89,9 @@ class _ReportPageState extends State<ReportPage> {
     final annotations = image?.annotations ?? const <Annotation>[];
 
     return Scaffold(
-      body: Container(
+      body: Stack(
+        children: [
+          Container(
         color: AppTheme.bgPrimary,
         child: Column(
           children: [
@@ -480,6 +483,18 @@ class _ReportPageState extends State<ReportPage> {
             ),
           ],
         ),
+          ),
+          if (_isGeneratingReport)
+            Positioned.fill(
+              child: IgnorePointer(
+                child: Container(
+                  color: Colors.black.withValues(alpha: 0.35),
+                  alignment: Alignment.center,
+                  child: const CircularProgressIndicator(color: AppTheme.primary),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -706,6 +721,9 @@ class _ReportPageState extends State<ReportPage> {
       imageBytes.add(await _collectPdfImageBytes(image));
     }
     final logoBytes = await _loadReportLogoBytes();
+    final pdfFonts = await _loadReportPdfFonts();
+    final fonts = pdfFonts;
+    final asciiMeasurementFallback = fonts == null;
     final payload = <String, dynamic>{
       'organizationName': _orgController.text.trim().isEmpty
           ? 'Organization Name'
@@ -716,6 +734,9 @@ class _ReportPageState extends State<ReportPage> {
       'location': _locationController.text.isEmpty ? '-' : _locationController.text,
       'date': DateTime.now().toIso8601String(),
       'logoBytes': logoBytes,
+      if (fonts != null) 'fontRegular': fonts.regular,
+      if (fonts != null) 'fontBold': fonts.bold,
+      'pdfFontAsciiFallback': asciiMeasurementFallback,
       'primaryExposure': (reportImages.isEmpty
               ? 100
               : reportImages.first.cameraSettings.exposure)
@@ -740,7 +761,7 @@ class _ReportPageState extends State<ReportPage> {
               .map(
                 (entry) =>
                     '${entry.key + 1}. ${_annotationTitle(entry.value.type)}'
-                    '${(entry.value.measurement ?? '').isNotEmpty ? ' - ${_pdfSafeText(entry.value.measurement!)}' : ''}',
+                    '${(entry.value.measurement ?? '').isNotEmpty ? ' - ${_pdfSafeText(entry.value.measurement!, forceAsciiUnits: asciiMeasurementFallback)}' : ''}',
               )
               .toList(),
         };
@@ -752,6 +773,19 @@ class _ReportPageState extends State<ReportPage> {
       pdfBytes: pdfBytes,
       primaryPreviewBytes: imageBytes.isEmpty ? null : imageBytes.first,
     );
+  }
+
+  Future<({Uint8List regular, Uint8List bold})?> _loadReportPdfFonts() async {
+    try {
+      final regular = await rootBundle.load('assets/fonts/NotoSans-Regular.ttf');
+      final bold = await rootBundle.load('assets/fonts/NotoSans-Bold.ttf');
+      final r = regular.buffer.asUint8List();
+      final b = bold.buffer.asUint8List();
+      if (r.isEmpty || b.isEmpty) return null;
+      return (regular: r, bold: b);
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<Uint8List?> _loadReportLogoBytes() async {
@@ -775,6 +809,7 @@ class _ReportPageState extends State<ReportPage> {
 
   Future<void> _downloadReport() async {
     if (!_validateForm()) return;
+    if (mounted) setState(() => _isGeneratingReport = true);
     try {
       final artifacts = await _buildReportArtifacts();
       final bytes = artifacts.pdfBytes;
@@ -825,6 +860,8 @@ class _ReportPageState extends State<ReportPage> {
       });
     } catch (_) {
       _showMessage('Failed to generate or download report', AppTheme.danger);
+    } finally {
+      if (mounted) setState(() => _isGeneratingReport = false);
     }
   }
 
@@ -960,6 +997,7 @@ class _ReportPageState extends State<ReportPage> {
 
   Future<void> _saveReport() async {
     if (!_validateForm()) return;
+    if (mounted) setState(() => _isGeneratingReport = true);
     try {
       final artifacts = await _buildReportArtifacts();
       final bytes = artifacts.pdfBytes;
@@ -1008,6 +1046,8 @@ class _ReportPageState extends State<ReportPage> {
       });
     } catch (_) {
       _showMessage('Failed to generate or save report', AppTheme.danger);
+    } finally {
+      if (mounted) setState(() => _isGeneratingReport = false);
     }
   }
 
@@ -1126,17 +1166,37 @@ class _MetricCard extends StatelessWidget {
   }
 }
 
-String _pdfSafeText(String text) {
-  // PDF default fonts often miss Greek mu (μ). Use micro sign (µ) for reliable rendering.
-  final normalized = text.replaceAll('umm', 'μm');
-  return normalized.replaceAllMapped(
-    RegExp(r'\b(um|µm|μm)\b', caseSensitive: false),
-    (_) => 'µm',
-  );
+/// Measurement / annotation text for PDF. With embedded Noto Sans, keep real µ/nm.
+/// Without fonts (bundle missing), fall back to ASCII "um" so Helvetica never tofu.
+String _pdfSafeText(String text, {bool forceAsciiUnits = false}) {
+  if (forceAsciiUnits) {
+    return text
+        .replaceAll('\u03BC', 'u')
+        .replaceAll('\u03bc', 'u')
+        .replaceAll('\u00b5', 'u')
+        .replaceAll('\u00B5', 'u')
+        .replaceAll('umm', 'um');
+  }
+  return text.replaceAll('umm', '\u00b5m');
 }
 
 Future<Uint8List> _generateReportPdfInBackground(Map<String, dynamic> payload) async {
-  final pdf = pw.Document();
+  final regularBytes = payload['fontRegular'] as Uint8List?;
+  final boldBytes = payload['fontBold'] as Uint8List?;
+  final hasFonts = regularBytes != null &&
+      boldBytes != null &&
+      regularBytes.isNotEmpty &&
+      boldBytes.isNotEmpty;
+  final asciiFallback = payload['pdfFontAsciiFallback'] == true;
+
+  final pdf = pw.Document(
+    theme: hasFonts
+        ? pw.ThemeData.withFont(
+            base: pw.Font.ttf(ByteData.sublistView(regularBytes)),
+            bold: pw.Font.ttf(ByteData.sublistView(boldBytes)),
+          )
+        : null,
+  );
   final logoBytes = payload['logoBytes'] as Uint8List?;
   final logoProvider = logoBytes != null ? pw.MemoryImage(logoBytes) : null;
   final generatedAt = DateTime.tryParse(payload['date'] as String? ?? '') ?? DateTime.now();
@@ -1257,7 +1317,12 @@ Future<Uint8List> _generateReportPdfInBackground(Map<String, dynamic> payload) a
           final safeAspect = aspect <= 0 ? (4 / 3) : aspect;
           final imageHeight = (340.0 / (safeAspect / (4 / 3))).clamp(220.0, 420.0).toDouble();
           final annotations = (section['annotations'] as List<dynamic>? ?? const <dynamic>[])
-              .map((e) => _pdfSafeText(e.toString()))
+              .map(
+                (e) => _pdfSafeText(
+                  e.toString(),
+                  forceAsciiUnits: asciiFallback,
+                ),
+              )
               .toList();
           return [
             pw.Container(

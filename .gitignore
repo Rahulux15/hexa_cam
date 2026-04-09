@@ -1,3 +1,7 @@
+# Local junk / one-off exports (regenerate if needed)
+PROJECT_FULL_CODE_DUMP.txt
+/lib.zip
+
 # Miscellaneous
 *.class
 *.log

@@ -457,6 +457,7 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
     await _flushPersistAnnotations();
 
     try {
+      var exportDirectToGallery = true;
       if (image.type == MediaType.video) {
         if (kIsWeb) {
           _showMessage(
@@ -491,7 +492,7 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
             );
           }
         }
-        await FileService.saveVideoToDevice(
+        exportDirectToGallery = await FileService.saveVideoToDevice(
           pathToExport,
           image.filename ?? 'hexa-cam-video.mp4',
           sharePositionOrigin: _sharePositionOrigin(),
@@ -509,7 +510,7 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
           _showMessage('Unable to read image data', AppTheme.danger);
           return;
         }
-        await FileService.saveToDevice(
+        exportDirectToGallery = await FileService.saveToDevice(
           bytes,
           image.filename ?? 'hexa-cam-image.jpg',
           sharePositionOrigin: _sharePositionOrigin(),
@@ -519,10 +520,14 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
       _showMessage(
         image.type == MediaType.video
             ? (Platform.isIOS
-                ? 'Share opened. Save video to Photos or Files.'
+                ? (exportDirectToGallery
+                    ? 'Video saved to Photos'
+                    : 'Share opened — save video to Photos or Files')
                 : 'Video downloaded to Gallery')
             : (Platform.isIOS
-                ? 'Share opened. Save image to Photos or Files.'
+                ? (exportDirectToGallery
+                    ? 'Image saved to Photos'
+                    : 'Share opened — save image to Photos or Files')
                 : 'Image downloaded to Gallery'),
         AppTheme.success,
       );

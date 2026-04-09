@@ -122,27 +122,54 @@ class ReportController extends GetxController {
       );
       logDebug('ReportController.downloadReport native app-folder save done');
       if (Platform.isIOS) {
-        logDebug('ReportController.downloadReport iOS share start');
-        onProgress?.call('Opening share options...', 0.5);
+        // Mirror Android: persist a user-visible copy under app Documents/Downloads
+        // (Files → On My iPhone → Hexa Cam → Downloads/…), then offer share as fallback.
+        const reportFolder = 'Hexa Cam Reports';
         try {
+          logDebug('ReportController.downloadReport iOS saveToDownloads start');
+          onProgress?.call('Saving report to Downloads…', 0.35);
+          final downloadPath = await FileService.saveToDownloads(
+            bytes: bytes,
+            filename: filename,
+            folderName: reportFolder,
+            onProgress: (p) => onProgress?.call(
+              'Saving report to Downloads…',
+              0.35 + (p * 0.45),
+            ),
+          );
+          if (downloadPath.isNotEmpty) {
+            onProgress?.call('Report saved', 0.88);
+            showMessage(
+              'Report saved to Files → Downloads/$reportFolder',
+              Colors.green,
+            );
+          }
+        } catch (e) {
+          logDebug('ReportController.downloadReport iOS saveToDownloads failed: $e');
+          showMessage(
+            'Could not copy to Downloads folder; try Share below.',
+            Colors.orange,
+          );
+        }
+        try {
+          logDebug('ReportController.downloadReport iOS share start');
+          onProgress?.call('Opening share sheet…', 0.92);
           await FileService.sharePdfToDevice(
             bytes,
             filename,
             sharePositionOrigin: sharePositionOrigin,
           );
         } catch (_) {
-          // Second safe retry path when anchored popover share fails.
           logDebug('ReportController.downloadReport iOS share retry without anchor');
-          onProgress?.call('Retrying share...', 0.75);
+          onProgress?.call('Retrying share…', 0.96);
           await FileService.sharePdfToDevice(
             bytes,
             filename,
             sharePositionOrigin: null,
           );
         }
-        onProgress?.call('Opening share options...', 1.0);
-        logDebug('ReportController.downloadReport iOS share done');
-        showMessage('Share opened. Save report to Files on your device.', Colors.green);
+        onProgress?.call('Done', 1.0);
+        logDebug('ReportController.downloadReport iOS done');
         return true;
       }
       logDebug('ReportController.downloadReport Android/public download start');

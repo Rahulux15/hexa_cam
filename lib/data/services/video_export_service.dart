@@ -11,6 +11,9 @@ import 'package:ffmpeg_kit_flutter_new_full/return_code.dart';
 import '../../data/models/annotation.dart';
 import '../../utils/marked_media_renderer.dart';
 
+/// Video burn / thumbnail FFmpeg work runs via **platform channels** on the
+/// main isolate. A Dart [Isolate] cannot host `ffmpeg_kit` without a separate
+/// helper process; use UI-level progress (e.g. loading overlays) for long jobs.
 class VideoExportService {
   static Future<Uint8List?> extractVideoThumbnailBytes({
     required String sourcePath,

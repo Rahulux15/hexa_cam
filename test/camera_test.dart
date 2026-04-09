@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:camera/camera.dart' as cam;
 import 'package:get/get.dart';
@@ -14,39 +15,83 @@ void main() {
 
   tearDown(() {
     cameraController.controller.value?.dispose();
+    Get.reset();
   });
 
   group('Camera System', () {
-    test('initialize camera at low resolution fails gracefully without native camera', () async {
-      // Arrange
-      final cameras = [const cam.CameraDescription(name: 'rear', lensDirection: cam.CameraLensDirection.back, sensorOrientation: 0)];
+    test('initialize tries multiple presets (low→max) and fails gracefully without native camera', () async {
+      final cameras = [
+        const cam.CameraDescription(
+          name: 'rear',
+          lensDirection: cam.CameraLensDirection.back,
+          sensorOrientation: 0,
+        ),
+      ];
 
-      // Act + Assert
-      expect(
-        () => cameraController.initialize(
+      try {
+        await cameraController.initialize(
           cameraProvider: () async => cameras,
           camera: cameras.first,
           preset: cam.ResolutionPreset.low,
           enableAudio: false,
+        );
+      } catch (_) {
+        // [CameraControllerX] rethrows in debug after setting error state.
+        expect(kDebugMode, isTrue);
+      }
+
+      expect(cameraController.isReady.value, isFalse);
+      expect(cameraController.isInitializing.value, isFalse);
+      expect(cameraController.aspectRatio.value, closeTo(16 / 9, 1e-6));
+      expect(cameraController.errorMessage.value, isNotEmpty);
+    });
+
+    test('initialize from medium preset still ends with 16:9 aspect fallback when all fail', () async {
+      final cameras = [
+        const cam.CameraDescription(
+          name: 'rear',
+          lensDirection: cam.CameraLensDirection.back,
+          sensorOrientation: 0,
         ),
-        throwsException,
-      );
+      ];
+
+      try {
+        await cameraController.initialize(
+          cameraProvider: () async => cameras,
+          camera: cameras.first,
+          preset: cam.ResolutionPreset.medium,
+          enableAudio: false,
+        );
+      } catch (_) {
+        expect(kDebugMode, isTrue);
+      }
+
+      expect(cameraController.aspectRatio.value, closeTo(16 / 9, 1e-6));
+      expect(cameraController.isReady.value, isFalse);
     });
 
     test('initialize camera at high resolution fails gracefully without native camera', () async {
-      // Arrange
-      final cameras = [const cam.CameraDescription(name: 'rear', lensDirection: cam.CameraLensDirection.back, sensorOrientation: 0)];
+      final cameras = [
+        const cam.CameraDescription(
+          name: 'rear',
+          lensDirection: cam.CameraLensDirection.back,
+          sensorOrientation: 0,
+        ),
+      ];
 
-      // Act + Assert
-      expect(
-        () => cameraController.initialize(
+      try {
+        await cameraController.initialize(
           cameraProvider: () async => cameras,
           camera: cameras.first,
           preset: cam.ResolutionPreset.high,
           enableAudio: false,
-        ),
-        throwsException,
-      );
+        );
+      } catch (_) {
+        expect(kDebugMode, isTrue);
+      }
+
+      expect(cameraController.isReady.value, isFalse);
+      expect(cameraController.aspectRatio.value, closeTo(16 / 9, 1e-6));
     });
 
     test('flip preview works', () async {
