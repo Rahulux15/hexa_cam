@@ -6,6 +6,7 @@ import '../../data/models/folder.dart';
 import '../../data/models/image_data.dart';
 import '../../state/app_registry.dart';
 import '../../utils/responsive.dart';
+import '../common/release_notes_dialog.dart';
 
 class FoldersPage extends StatefulWidget {
   const FoldersPage({super.key});
@@ -17,6 +18,12 @@ class _FoldersPageState extends State<FoldersPage> {
   String _searchQuery = '';
   final _searchController = TextEditingController();
   final _newFolderController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    scheduleReleaseNotesAfterNavigation(context);
+  }
 
   @override
   void dispose() {

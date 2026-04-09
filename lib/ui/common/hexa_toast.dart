@@ -8,12 +8,22 @@ class HexaToast {
   static OverlayEntry? _activeEntry;
   static Timer? _activeTimer;
 
+  /// Removes the current toast and cancels its dismiss timer.
+  static void dismiss() {
+    _activeTimer?.cancel();
+    _activeTimer = null;
+    _activeEntry?.remove();
+    _activeEntry = null;
+  }
+
   static void show(
     BuildContext context,
     String message, {
     HexaToastType type = HexaToastType.success,
     Duration duration = const Duration(seconds: 2),
     double? progress,
+    /// When true, shows an indeterminate bar (e.g. PDF generation) instead of [progress].
+    bool indeterminateProgress = false,
     /// Extra offset below the status bar / safe-area top (e.g. dense top chrome).
     double topExtraInset = 0,
   }) {
@@ -110,10 +120,12 @@ class HexaToast {
                               ),
                             ),
                           ),
-                          if (progress != null) ...[
+                          if (indeterminateProgress || progress != null) ...[
                             const SizedBox(width: 10),
                             Text(
-                              '${(progress.clamp(0.0, 1.0) * 100).round()}%',
+                              indeterminateProgress
+                                  ? '…'
+                                  : '${(progress!.clamp(0.0, 1.0) * 100).round()}%',
                               style: const TextStyle(
                                 color: Colors.white,
                                 fontWeight: FontWeight.w700,
@@ -123,12 +135,12 @@ class HexaToast {
                           ],
                         ],
                       ),
-                      if (progress != null) ...[
+                      if (indeterminateProgress || progress != null) ...[
                         const SizedBox(height: 9),
                         ClipRRect(
                           borderRadius: BorderRadius.circular(999),
                           child: LinearProgressIndicator(
-                            value: progress,
+                            value: indeterminateProgress ? null : progress,
                             minHeight: 6,
                             backgroundColor: const Color(0x33FFFFFF),
                             valueColor: const AlwaysStoppedAnimation<Color>(

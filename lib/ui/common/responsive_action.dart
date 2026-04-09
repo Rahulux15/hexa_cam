@@ -14,6 +14,8 @@ class ResponsiveActionButton extends StatelessWidget {
     this.progressSize = 16,
     this.style,
     this.tooltip,
+    /// When false, keeps [child] visible while busy (e.g. use a top progress toast instead).
+    this.showSpinnerWhenBusy = true,
   });
 
   final String actionKey;
@@ -24,6 +26,7 @@ class ResponsiveActionButton extends StatelessWidget {
   final double progressSize;
   final ButtonStyle? style;
   final String? tooltip;
+  final bool showSpinnerWhenBusy;
 
   @override
   Widget build(BuildContext context) {
@@ -38,7 +41,7 @@ class ResponsiveActionButton extends StatelessWidget {
         style: style,
         child: AnimatedSwitcher(
           duration: debounceDuration,
-          child: running
+          child: running && showSpinnerWhenBusy
               ? SizedBox(
                   key: const ValueKey('busy'),
                   width: progressSize,
@@ -46,8 +49,13 @@ class ResponsiveActionButton extends StatelessWidget {
                   child: const CircularProgressIndicator(strokeWidth: 2),
                 )
               : KeyedSubtree(
-                  key: const ValueKey('idle'),
-                  child: child,
+                  key: ValueKey<String>(
+                    running && !showSpinnerWhenBusy ? 'busy_label' : 'idle',
+                  ),
+                  child: Opacity(
+                    opacity: running && !showSpinnerWhenBusy ? 0.72 : 1,
+                    child: child,
+                  ),
                 ),
         ),
       );

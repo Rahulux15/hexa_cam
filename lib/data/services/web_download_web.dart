@@ -14,6 +14,7 @@ String webMimeTypeForFilename(String filename) {
   if (lower.endsWith('.gif')) return 'image/gif';
   if (lower.endsWith('.mp4')) return 'video/mp4';
   if (lower.endsWith('.webm')) return 'video/webm';
+  if (lower.endsWith('.zip')) return 'application/zip';
   return 'application/octet-stream';
 }
 

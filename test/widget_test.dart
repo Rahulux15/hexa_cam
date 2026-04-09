@@ -11,8 +11,6 @@ void main() {
 
     await tester.pumpWidget(const HexaCamApp());
     await tester.pump();
-    // [HexaCamApp] schedules release-notes check after ~1.2s; drain timers.
-    await tester.pump(const Duration(milliseconds: 1300));
 
     expect(find.byType(Scaffold), findsOneWidget);
     expect(find.byType(Image), findsWidgets);

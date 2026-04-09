@@ -7,6 +7,7 @@ import '../../../config/app_version.dart';
 import '../../../config/theme.dart';
 import '../../../utils/responsive.dart';
 import '../../../ui/common/hexa_toast.dart';
+import '../../../ui/common/release_notes_dialog.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -64,6 +65,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
     );
 
     _loadVersionLabel();
+    scheduleReleaseNotesAfterNavigation(context);
   }
 
   Future<void> _loadVersionLabel() async {
@@ -229,7 +231,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                                                     width: logoSize,
                                                     height: logoSize,
                                                     child: Image.asset(
-                                                      'assets/images/app_logo.png',
+                                                      'assets/images/logo_quasmo.png',
                                                       fit: BoxFit.contain,
                                                     ),
                                                   ),

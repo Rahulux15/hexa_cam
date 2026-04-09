@@ -81,21 +81,13 @@ class _SettingsPageState extends State<SettingsPage> {
     if (_backupRunning) return;
     setState(() => _backupRunning = true);
     try {
-      final path = await BackupService.createFullBackupZip(storageService);
+      final result = await BackupService.createBackup(storageService);
       if (!mounted) return;
-      if (path != null) {
-        HexaToast.show(
-          context,
-          'Backup saved:\n$path',
-          type: HexaToastType.success,
-        );
-      } else {
-        HexaToast.show(
-          context,
-          'Backup failed (web not supported or error).',
-          type: HexaToastType.error,
-        );
-      }
+      HexaToast.show(
+        context,
+        result.message,
+        type: result.ok ? HexaToastType.success : HexaToastType.error,
+      );
     } finally {
       if (mounted) setState(() => _backupRunning = false);
     }

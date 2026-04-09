@@ -37,7 +37,6 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
   ImageData? _image;
   VideoPlayerController? _videoController;
   List<Annotation> _annotations = [];
-  final bool _showMeasurements = false;
   bool _showMarkings = true;
   int _rotation = 0;
   bool _flipH = false;
@@ -153,7 +152,8 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
                 initialAnnotations: _annotations,
                 hiddenAnnotationIds: _effectiveHiddenAnnotationIds(),
                 showFab: false,
-                showMeasurements: _showMeasurements,
+                // Must match markings visibility: distance/area labels use calibration when set.
+                showMeasurements: _showMarkings,
                 onAnnotationsChanged: (list) {
                   _annotations = list;
                   _schedulePersistAnnotations();
@@ -264,6 +264,7 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
                 child: ViewerScreen(
                   padding: EdgeInsets.zero,
                   showFab: true,
+                  showMeasurements: _showMarkings,
                   image: image,
                   videoController: _videoController,
                   rotation: _rotation,
@@ -842,10 +843,9 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
     return _annotations
         .where((annotation) => bakedIds == null || !bakedIds.contains(annotation.id))
         .map((annotation) {
-      if (annotation.type == AnnotationType.twoPointer) {
-        return annotation.copyWith(measurement: _measurementFor(annotation));
-      }
-      return annotation;
+      final text = _measurementFor(annotation);
+      if (text == null || text.trim().isEmpty) return annotation;
+      return annotation.copyWith(measurement: text);
     }).toList();
   }
 

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:camera/camera.dart' as cam;
@@ -6,11 +7,14 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
+import 'package:http/http.dart' as http;
 import 'package:image/image.dart' as img;
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
+import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../config/constants.dart';
 import '../../config/theme.dart';
 import '../../data/models/folder.dart';
 import '../../data/services/export_prefs.dart';
@@ -48,11 +52,28 @@ class _ReportPageState extends State<ReportPage> {
   final _phoneController = TextEditingController();
   final _locationController = TextEditingController();
   List<Map<String, dynamic>> _items = [];
-  bool _isGeneratingReport = false;
+  Timer? _progressToastDebounce;
+  Timer? _reportFormDebounce;
+  bool _reportFormListenersAttached = false;
+
+  late final VoidCallback _onReportFormChanged;
+
+  /// Saved report preview passes `formData`; new report flows do not.
+  bool get _reportFormReadOnly {
+    final fd = widget.reportData?['formData'];
+    return fd != null && fd is Map;
+  }
 
   @override
   void initState() {
     super.initState();
+    _onReportFormChanged = () {
+      if (_reportFormReadOnly) return;
+      _reportFormDebounce?.cancel();
+      _reportFormDebounce = Timer(const Duration(milliseconds: 500), () {
+        unawaited(_persistReportFormDefaults());
+      });
+    };
     if (widget.reportData != null && widget.reportData!['images'] != null) {
       _items =
           (widget.reportData!['images'] as List).cast<Map<String, dynamic>>();
@@ -68,10 +89,99 @@ class _ReportPageState extends State<ReportPage> {
       _phoneController.text = reportForm.phone;
       _locationController.text = reportForm.location;
     }
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (_reportFormReadOnly) {
+        if (mounted) setState(() {});
+        return;
+      }
+      await _loadReportFormDefaultsFromStorage();
+      await _hydrateReportFieldsFromPrefs(notify: true);
+      _attachReportFormListeners();
+    });
+  }
+
+  Future<void> _loadReportFormDefaultsFromStorage() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(AppConstants.keyReportFormDefaults);
+      if (raw == null || raw.isEmpty) return;
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return;
+      final map = Map<String, dynamic>.from(decoded);
+      void setIf(String key, TextEditingController c) {
+        final v = map[key];
+        if (v is String && v.trim().isNotEmpty) c.text = v;
+      }
+
+      setIf('organizationName', _orgController);
+      setIf('fullName', _nameController);
+      setIf('email', _emailController);
+      setIf('phone', _phoneController);
+      setIf('location', _locationController);
+    } catch (_) {}
+  }
+
+  Future<void> _persistReportFormDefaults() async {
+    if (_reportFormReadOnly) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final data = ReportFormData(
+        organizationName: _orgController.text,
+        fullName: _nameController.text,
+        email: _emailController.text,
+        phone: _phoneController.text,
+        location: _locationController.text,
+      ).toJson();
+      await prefs.setString(
+        AppConstants.keyReportFormDefaults,
+        jsonEncode(data),
+      );
+    } catch (_) {}
+  }
+
+  void _attachReportFormListeners() {
+    if (_reportFormListenersAttached || _reportFormReadOnly) return;
+    _reportFormListenersAttached = true;
+    _orgController.addListener(_onReportFormChanged);
+    _nameController.addListener(_onReportFormChanged);
+    _emailController.addListener(_onReportFormChanged);
+    _phoneController.addListener(_onReportFormChanged);
+    _locationController.addListener(_onReportFormChanged);
+  }
+
+  /// Fills empty report fields from login / settings prefs (name, email; optional user_phone / user_address).
+  Future<void> _hydrateReportFieldsFromPrefs({bool notify = false}) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      void fillIfEmpty(TextEditingController c, String? v) {
+        final t = (v ?? '').trim();
+        if (c.text.trim().isEmpty && t.isNotEmpty) {
+          c.text = t;
+        }
+      }
+
+      fillIfEmpty(_nameController, prefs.getString('user_full_name'));
+      fillIfEmpty(_emailController, prefs.getString('user_email'));
+      fillIfEmpty(_phoneController, prefs.getString('user_phone'));
+      fillIfEmpty(_locationController, prefs.getString('user_address'));
+      if (notify && mounted) setState(() {});
+    } catch (_) {}
   }
 
   @override
   void dispose() {
+    _progressToastDebounce?.cancel();
+    _reportFormDebounce?.cancel();
+    if (_reportFormListenersAttached) {
+      _orgController.removeListener(_onReportFormChanged);
+      _nameController.removeListener(_onReportFormChanged);
+      _emailController.removeListener(_onReportFormChanged);
+      _phoneController.removeListener(_onReportFormChanged);
+      _locationController.removeListener(_onReportFormChanged);
+    }
+    if (!_reportFormReadOnly) {
+      unawaited(_persistReportFormDefaults());
+    }
     _orgController.dispose();
     _nameController.dispose();
     _emailController.dispose();
@@ -132,6 +242,7 @@ class _ReportPageState extends State<ReportPage> {
                                   child: ResponsiveActionButton(
                                     actionKey: 'report_download',
                                     asyncController: _asyncActions,
+                                    showSpinnerWhenBusy: false,
                                     onPressed: _downloadReport,
                                     style: ElevatedButton.styleFrom(
                                       backgroundColor: const Color(0xFF232651),
@@ -164,6 +275,7 @@ class _ReportPageState extends State<ReportPage> {
                                   child: ResponsiveActionButton(
                                     actionKey: 'report_save',
                                     asyncController: _asyncActions,
+                                    showSpinnerWhenBusy: false,
                                     onPressed: _saveReport,
                                     style: ElevatedButton.styleFrom(
                                       backgroundColor: Colors.transparent,
@@ -203,6 +315,7 @@ class _ReportPageState extends State<ReportPage> {
                                 child: ResponsiveActionButton(
                                   actionKey: 'report_download',
                                   asyncController: _asyncActions,
+                                  showSpinnerWhenBusy: false,
                                   onPressed: _downloadReport,
                                   style: ElevatedButton.styleFrom(
                                     backgroundColor: const Color(0xFF232651),
@@ -236,6 +349,7 @@ class _ReportPageState extends State<ReportPage> {
                                 child: ResponsiveActionButton(
                                   actionKey: 'report_save',
                                   asyncController: _asyncActions,
+                                  showSpinnerWhenBusy: false,
                                   onPressed: _saveReport,
                                   style: ElevatedButton.styleFrom(
                                     backgroundColor: Colors.transparent,
@@ -490,16 +604,6 @@ class _ReportPageState extends State<ReportPage> {
           ],
         ),
           ),
-          if (_isGeneratingReport)
-            Positioned.fill(
-              child: IgnorePointer(
-                child: Container(
-                  color: Colors.black.withValues(alpha: 0.35),
-                  alignment: Alignment.center,
-                  child: const CircularProgressIndicator(color: AppTheme.primary),
-                ),
-              ),
-            ),
         ],
       ),
     );
@@ -647,6 +751,7 @@ class _ReportPageState extends State<ReportPage> {
         const SizedBox(height: 12),
         TextField(
           controller: field.controller,
+          enabled: !_reportFormReadOnly,
           style: const TextStyle(color: Colors.white),
           decoration: InputDecoration(
             hintText: field.hint,
@@ -721,10 +826,13 @@ class _ReportPageState extends State<ReportPage> {
   }
 
   Future<_ReportArtifacts> _buildReportArtifacts() async {
+    await _hydrateReportFieldsFromPrefs();
     final reportImages = _reportImages;
     final imageBytes = <Uint8List?>[];
     for (final image in reportImages) {
       imageBytes.add(await _collectPdfImageBytes(image));
+      // Let the UI frame between heavy steps (annotation render + isolate optimize).
+      await Future<void>.delayed(Duration.zero);
     }
     final logoBytes = await _loadReportLogoBytes();
     final pdfFonts = await _loadReportPdfFonts();
@@ -789,6 +897,7 @@ class _ReportPageState extends State<ReportPage> {
       'phone': _phoneController.text.isEmpty ? '-' : _phoneController.text,
       'location': _locationController.text.isEmpty ? '-' : _locationController.text,
       'date': DateTime.now().toIso8601String(),
+      'reportDownloadStamp': _formatReportDownloadStamp(DateTime.now()),
       'logoBytes': logoBytes,
       if (fonts != null) 'fontRegular': fonts.regular,
       if (fonts != null) 'fontBold': fonts.bold,
@@ -824,6 +933,7 @@ class _ReportPageState extends State<ReportPage> {
       }),
     };
 
+    await Future<void>.delayed(Duration.zero);
     final pdfBytes = await compute(_generateReportPdfInBackground, payload);
     return _ReportArtifacts(
       pdfBytes: pdfBytes,
@@ -858,6 +968,22 @@ class _ReportPageState extends State<ReportPage> {
     }
   }
 
+  /// Local wall-clock stamp for PDF: `DD-MM-YYYY hh:mm:ss AM/PM`
+  static String _formatReportDownloadStamp(DateTime dt) {
+    final l = dt.toLocal();
+    final dd = l.day.toString().padLeft(2, '0');
+    final mm = l.month.toString().padLeft(2, '0');
+    final yyyy = l.year.toString();
+    var hour24 = l.hour;
+    final min = l.minute.toString().padLeft(2, '0');
+    final sec = l.second.toString().padLeft(2, '0');
+    final period = hour24 >= 12 ? 'PM' : 'AM';
+    var h12 = hour24 % 12;
+    if (h12 == 0) h12 = 12;
+    final hs = h12.toString().padLeft(2, '0');
+    return '$dd-$mm-$yyyy $hs:$min:$sec $period';
+  }
+
   bool _validateForm() {
     // Report form fields are optional; allow generate/save with empty values.
     return true;
@@ -865,8 +991,8 @@ class _ReportPageState extends State<ReportPage> {
 
   Future<void> _downloadReport() async {
     if (!_validateForm()) return;
-    if (mounted) setState(() => _isGeneratingReport = true);
     try {
+      _showProgress('Generating report…', 0, indeterminate: true);
       final artifacts = await _buildReportArtifacts();
       final bytes = artifacts.pdfBytes;
       final filename = 'report-${DateTime.now().millisecondsSinceEpoch}.pdf';
@@ -880,6 +1006,7 @@ class _ReportPageState extends State<ReportPage> {
         onProgress: _showProgress,
       );
       if (!ok) return;
+      await _persistReportFormDefaults();
 
       final assetId = FileService.generateAssetId('report');
       await MediaDatabase.saveAsset(assetId, bytes);
@@ -916,8 +1043,6 @@ class _ReportPageState extends State<ReportPage> {
       });
     } catch (_) {
       _showMessage('Failed to generate or download report', AppTheme.danger);
-    } finally {
-      if (mounted) setState(() => _isGeneratingReport = false);
     }
   }
 
@@ -940,13 +1065,13 @@ class _ReportPageState extends State<ReportPage> {
         final bytes = await MediaDatabase.getAsset(assetId);
         if (bytes == null || bytes.isEmpty) continue;
         if (image.isMarkingsBaked == true) {
-          return _optimizePdfImageBytes(bytes);
+          return await _optimizePdfImageBytesAsync(bytes);
         }
         final prepared = await _reportController.prepareMediaBytes(
           image: image,
           baseBytes: bytes,
         );
-        return _optimizePdfImageBytes(prepared);
+        return await _optimizePdfImageBytesAsync(prepared);
       }
       final source = image.imageUrl;
       if (kIsWeb && source.isNotEmpty) {
@@ -957,7 +1082,7 @@ class _ReportPageState extends State<ReportPage> {
               image: image,
               baseBytes: bytes,
             );
-            return _optimizePdfImageBytes(prepared);
+            return await _optimizePdfImageBytesAsync(prepared);
           }
         } catch (_) {}
         if (source.startsWith('data:image/')) {
@@ -971,7 +1096,7 @@ class _ReportPageState extends State<ReportPage> {
                   image: image,
                   baseBytes: bytes,
                 );
-                return _optimizePdfImageBytes(prepared);
+                return await _optimizePdfImageBytesAsync(prepared);
               }
             } catch (_) {}
           }
@@ -988,7 +1113,7 @@ class _ReportPageState extends State<ReportPage> {
               image: image,
               baseBytes: thumb,
             );
-            return _optimizePdfImageBytes(prepared);
+            return await _optimizePdfImageBytesAsync(prepared);
           }
         }
         final bytes = await FileService.readBytes(filePath);
@@ -996,7 +1121,7 @@ class _ReportPageState extends State<ReportPage> {
           image: image,
           baseBytes: bytes,
         );
-        return _optimizePdfImageBytes(prepared);
+        return await _optimizePdfImageBytesAsync(prepared);
       }
       if (!kIsWeb &&
           source.isNotEmpty &&
@@ -1012,7 +1137,7 @@ class _ReportPageState extends State<ReportPage> {
               image: image,
               baseBytes: thumb,
             );
-            return _optimizePdfImageBytes(prepared);
+            return await _optimizePdfImageBytesAsync(prepared);
           }
         }
         final bytes = await FileService.readBytes(source);
@@ -1020,7 +1145,19 @@ class _ReportPageState extends State<ReportPage> {
           image: image,
           baseBytes: bytes,
         );
-        return _optimizePdfImageBytes(prepared);
+        return await _optimizePdfImageBytesAsync(prepared);
+      }
+      if (source.startsWith('http://') || source.startsWith('https://')) {
+        try {
+          final response = await http.get(Uri.parse(source));
+          if (response.statusCode == 200 && response.bodyBytes.isNotEmpty) {
+            final prepared = await _reportController.prepareMediaBytes(
+              image: image,
+              baseBytes: Uint8List.fromList(response.bodyBytes),
+            );
+            return await _optimizePdfImageBytesAsync(prepared);
+          }
+        } catch (_) {}
       }
       return null;
     } catch (_) {
@@ -1028,21 +1165,8 @@ class _ReportPageState extends State<ReportPage> {
     }
   }
 
-  Uint8List _optimizePdfImageBytes(Uint8List bytes) {
-    final decoded = img.decodeImage(bytes);
-    if (decoded == null) return bytes;
-    const maxEdge = 2200;
-    if (decoded.width <= maxEdge && decoded.height <= maxEdge) {
-      return bytes;
-    }
-    final resized = img.copyResize(
-      decoded,
-      width: decoded.width >= decoded.height ? maxEdge : null,
-      height: decoded.height > decoded.width ? maxEdge : null,
-      interpolation: img.Interpolation.average,
-    );
-    return Uint8List.fromList(img.encodeJpg(resized, quality: 92));
-  }
+  Future<Uint8List> _optimizePdfImageBytesAsync(Uint8List bytes) =>
+      compute(_reportPdfOptimizeImageBytes, bytes);
 
   double? _imageAspectFromBytes(Uint8List? bytes) {
     if (bytes == null || bytes.isEmpty) return null;
@@ -1053,8 +1177,8 @@ class _ReportPageState extends State<ReportPage> {
 
   Future<void> _saveReport() async {
     if (!_validateForm()) return;
-    if (mounted) setState(() => _isGeneratingReport = true);
     try {
+      _showProgress('Generating report…', 0, indeterminate: true);
       final artifacts = await _buildReportArtifacts();
       final bytes = artifacts.pdfBytes;
       final filename = 'report-${DateTime.now().millisecondsSinceEpoch}.pdf';
@@ -1067,6 +1191,8 @@ class _ReportPageState extends State<ReportPage> {
         onProgress: _showProgress,
       );
       if (!ok) return;
+      await _persistReportFormDefaults();
+
       final assetId = FileService.generateAssetId('report');
       await MediaDatabase.saveAsset(assetId, bytes);
 
@@ -1102,13 +1228,12 @@ class _ReportPageState extends State<ReportPage> {
       });
     } catch (_) {
       _showMessage('Failed to generate or save report', AppTheme.danger);
-    } finally {
-      if (mounted) setState(() => _isGeneratingReport = false);
     }
   }
 
   void _showMessage(String text, Color backgroundColor) {
     if (!mounted) return;
+    _progressToastDebounce?.cancel();
     final type = backgroundColor == AppTheme.danger
         ? HexaToastType.error
         : HexaToastType.success;
@@ -1132,15 +1257,43 @@ class _ReportPageState extends State<ReportPage> {
     }
   }
 
-  void _showProgress(String text, double progress) {
+  void _showProgress(String text, double progress, {bool indeterminate = false}) {
     if (!mounted) return;
-    HexaToast.show(
-      context,
-      text,
-      type: HexaToastType.info,
-      progress: progress.clamp(0.0, 1.0),
-      duration: const Duration(milliseconds: 900),
-    );
+    if (indeterminate) {
+      _progressToastDebounce?.cancel();
+      HexaToast.show(
+        context,
+        text,
+        type: HexaToastType.info,
+        indeterminateProgress: true,
+        duration: const Duration(seconds: 30),
+      );
+      return;
+    }
+    final p = progress.clamp(0.0, 1.0);
+    // 100% must not be debounced: a delayed update could overwrite the success toast.
+    if (p >= 1.0) {
+      _progressToastDebounce?.cancel();
+      HexaToast.show(
+        context,
+        text,
+        type: HexaToastType.info,
+        progress: 1.0,
+        duration: const Duration(milliseconds: 450),
+      );
+      return;
+    }
+    _progressToastDebounce?.cancel();
+    _progressToastDebounce = Timer(const Duration(milliseconds: 160), () {
+      if (!mounted) return;
+      HexaToast.show(
+        context,
+        text,
+        type: HexaToastType.info,
+        progress: p,
+        duration: const Duration(seconds: 30),
+      );
+    });
   }
 
   Rect _sharePositionOrigin() {
@@ -1236,6 +1389,23 @@ String _pdfSafeText(String text, {bool forceAsciiUnits = false}) {
   return text.replaceAll('umm', '\u00b5m');
 }
 
+/// Top-level for [compute] — keeps heavy JPEG resize off the UI isolate.
+Uint8List _reportPdfOptimizeImageBytes(Uint8List bytes) {
+  final decoded = img.decodeImage(bytes);
+  if (decoded == null) return bytes;
+  const maxEdge = 2200;
+  if (decoded.width <= maxEdge && decoded.height <= maxEdge) {
+    return bytes;
+  }
+  final resized = img.copyResize(
+    decoded,
+    width: decoded.width >= decoded.height ? maxEdge : null,
+    height: decoded.height > decoded.width ? maxEdge : null,
+    interpolation: img.Interpolation.average,
+  );
+  return Uint8List.fromList(img.encodeJpg(resized, quality: 92));
+}
+
 Future<Uint8List> _generateReportPdfInBackground(Map<String, dynamic> payload) async {
   final regularBytes = payload['fontRegular'] as Uint8List?;
   final boldBytes = payload['fontBold'] as Uint8List?;
@@ -1255,25 +1425,35 @@ Future<Uint8List> _generateReportPdfInBackground(Map<String, dynamic> payload) a
   );
   final logoBytes = payload['logoBytes'] as Uint8List?;
   final logoProvider = logoBytes != null ? pw.MemoryImage(logoBytes) : null;
-  final generatedAt = DateTime.tryParse(payload['date'] as String? ?? '') ?? DateTime.now();
+  final downloadStamp = payload['reportDownloadStamp'] as String? ?? '';
   final entries = (payload['entries'] as List<dynamic>? ?? const <dynamic>[])
       .cast<Map<String, dynamic>>();
 
-  pw.Widget metric(String label, String value) {
-    return pw.Container(
-      width: 120,
-      padding: const pw.EdgeInsets.all(12),
-      decoration: pw.BoxDecoration(
-        color: PdfColors.grey200,
-        borderRadius: pw.BorderRadius.circular(8),
-      ),
-      child: pw.Column(
-        crossAxisAlignment: pw.CrossAxisAlignment.start,
-        children: [
-          pw.Text(label, style: const pw.TextStyle(fontSize: 10)),
-          pw.SizedBox(height: 8),
-          pw.Text(value, style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold)),
-        ],
+  pw.Widget metricMinimal(String label, String value) {
+    return pw.Expanded(
+      child: pw.Container(
+        padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+        decoration: pw.BoxDecoration(
+          border: pw.Border.all(color: PdfColors.grey400, width: 0.5),
+        ),
+        child: pw.Column(
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          children: [
+            pw.Text(
+              label,
+              style: pw.TextStyle(fontSize: 8, color: PdfColors.grey600),
+            ),
+            pw.SizedBox(height: 4),
+            pw.Text(
+              value,
+              style: pw.TextStyle(
+                fontSize: 11,
+                fontWeight: pw.FontWeight.bold,
+                color: PdfColors.grey800,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1281,7 +1461,7 @@ Future<Uint8List> _generateReportPdfInBackground(Map<String, dynamic> payload) a
   pdf.addPage(
     pw.MultiPage(
       pageFormat: PdfPageFormat.a4,
-      margin: const pw.EdgeInsets.all(20),
+      margin: const pw.EdgeInsets.all(22),
       header: (context) => pw.Column(
         crossAxisAlignment: pw.CrossAxisAlignment.start,
         children: [
@@ -1294,98 +1474,83 @@ Future<Uint8List> _generateReportPdfInBackground(Map<String, dynamic> payload) a
                   children: [
                     pw.Text(
                       payload['organizationName'] as String? ?? 'Organization Name',
-                      style: pw.TextStyle(fontSize: 24, fontWeight: pw.FontWeight.bold),
+                      style: pw.TextStyle(
+                        fontSize: 18,
+                        fontWeight: pw.FontWeight.bold,
+                        color: PdfColors.grey800,
+                      ),
                     ),
-                    pw.SizedBox(height: 8),
+                    pw.SizedBox(height: 6),
                     pw.Text(
-                      'Email: ${payload['email']}    Full Name: ${payload['fullName']}',
+                      'Email: ${payload['email']}    Full name: ${payload['fullName']}',
+                      style: pw.TextStyle(fontSize: 9, color: PdfColors.grey700),
                     ),
-                    pw.SizedBox(height: 4),
-                    pw.Text('Phone: ${payload['phone']}'),
-                    pw.SizedBox(height: 4),
-                    pw.Text('Address: ${payload['location']}'),
+                    pw.SizedBox(height: 2),
+                    pw.Text(
+                      'Phone: ${payload['phone']}    Address: ${payload['location']}',
+                      style: pw.TextStyle(fontSize: 9, color: PdfColors.grey700),
+                    ),
                   ],
                 ),
               ),
-              pw.Column(
-                crossAxisAlignment: pw.CrossAxisAlignment.end,
-                children: [
-                  pw.Text(
-                    'Page: ${context.pageNumber} of ${context.pagesCount}',
-                    style: const pw.TextStyle(fontSize: 10),
-                  ),
-                  pw.SizedBox(height: 6),
-                  pw.Text(
-                    'Date: ${generatedAt.day}-${generatedAt.month}-${generatedAt.year}',
-                    style: const pw.TextStyle(fontSize: 10),
-                  ),
-                ],
+              pw.Text(
+                'Page ${context.pageNumber} of ${context.pagesCount}',
+                style: pw.TextStyle(fontSize: 9, color: PdfColors.grey600),
               ),
             ],
           ),
-          pw.SizedBox(height: 16),
-          pw.Divider(color: PdfColors.grey300),
-          pw.SizedBox(height: 14),
+          pw.SizedBox(height: 12),
+          pw.Divider(thickness: 0.5, color: PdfColors.grey400),
+          pw.SizedBox(height: 10),
         ],
       ),
       footer: (context) => pw.Column(
         children: [
-          pw.Divider(color: PdfColors.grey300),
-          pw.SizedBox(height: 10),
+          pw.Divider(thickness: 0.5, color: PdfColors.grey400),
+          pw.SizedBox(height: 8),
           pw.Row(
             mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
             children: [
               if (logoProvider != null)
                 pw.SizedBox(
-                  width: 192,
-                  height: 60,
+                  width: 140,
+                  height: 44,
                   child: pw.Image(logoProvider, fit: pw.BoxFit.contain),
                 )
               else
-                pw.SizedBox(width: 192, height: 60),
-              pw.Text(
-                'Generated by Hexa-Cam - Scientific Imaging & Microscopy Platform\n© 2026 All Rights Reserved',
-                textAlign: pw.TextAlign.right,
-                style: const pw.TextStyle(fontSize: 10),
+                pw.SizedBox(width: 140, height: 44),
+              pw.Expanded(
+                child: pw.Text(
+                  'Hexa-Cam — Scientific Imaging & Microscopy\n© 2026 All rights reserved',
+                  textAlign: pw.TextAlign.right,
+                  style: pw.TextStyle(fontSize: 8, color: PdfColors.grey600),
+                ),
               ),
             ],
           ),
         ],
       ),
       build: (context) => [
-        if (payload['provenanceEnabled'] == true) ...[
-          pw.Text(
-            'Provenance & integrity',
-            style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold),
+        pw.Text(
+          'Camera settings',
+          style: pw.TextStyle(
+            fontSize: 12,
+            fontWeight: pw.FontWeight.bold,
+            color: PdfColors.grey800,
           ),
-          pw.SizedBox(height: 10),
-          ...(payload['provenanceLines'] as List<dynamic>? ?? const <dynamic>[])
-              .map(
-                (e) => pw.Padding(
-                  padding: const pw.EdgeInsets.only(bottom: 4),
-                  child: pw.Text(
-                    e.toString(),
-                    style: const pw.TextStyle(fontSize: 9),
-                  ),
-                ),
-              ),
-          pw.SizedBox(height: 8),
-          pw.Text(
-            'SHA-256 (canonical metadata): ${payload['provenanceHash']}',
-            style: const pw.TextStyle(fontSize: 8),
-          ),
-          pw.SizedBox(height: 16),
-        ],
-        pw.Text('Camera Settings', style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold)),
-        pw.SizedBox(height: 12),
-        pw.Wrap(
-          spacing: 10,
-          runSpacing: 10,
+        ),
+        pw.SizedBox(height: 8),
+        pw.Row(
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
           children: [
-            metric('Exposure', '${payload['primaryExposure']}%'),
-            metric('ISO', '${payload['primaryIso']}'),
-            metric('Temperature', '${payload['primaryTemperature']}K'),
-            metric('Tint', '${payload['primaryTint']}'),
+            metricMinimal('Exposure', '${payload['primaryExposure']}%'),
+            pw.SizedBox(width: 8),
+            metricMinimal('ISO', '${payload['primaryIso']}'),
+            pw.SizedBox(width: 8),
+            metricMinimal('Temperature', '${payload['primaryTemperature']}K'),
+            pw.SizedBox(width: 8),
+            metricMinimal('Tint', '${payload['primaryTint']}'),
           ],
         ),
         pw.SizedBox(height: 18),
@@ -1403,55 +1568,120 @@ Future<Uint8List> _generateReportPdfInBackground(Map<String, dynamic> payload) a
                 ),
               )
               .toList();
+          // Inseparable: [MultiPage] Column can split children across pages; keep title + image + markings together.
           return [
-            pw.Container(
-              width: double.infinity,
-              padding: const pw.EdgeInsets.all(14),
-              decoration: pw.BoxDecoration(
-                color: PdfColors.grey100,
-                borderRadius: pw.BorderRadius.circular(10),
-              ),
+            pw.Inseparable(
               child: pw.Column(
                 crossAxisAlignment: pw.CrossAxisAlignment.start,
                 children: [
-                  pw.Text(
-                    section['title'] as String? ?? 'Marked Image',
-                    style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold),
+                  pw.Container(
+                    width: double.infinity,
+                    padding: const pw.EdgeInsets.all(12),
+                    decoration: pw.BoxDecoration(
+                      color: PdfColors.white,
+                      borderRadius: pw.BorderRadius.circular(4),
+                      border: pw.Border.all(color: PdfColors.grey400, width: 0.5),
+                    ),
+                    child: pw.Inseparable(
+                      child: pw.Column(
+                        crossAxisAlignment: pw.CrossAxisAlignment.start,
+                        children: [
+                          pw.Text(
+                            section['title'] as String? ?? 'Marked Image',
+                            style: pw.TextStyle(
+                              fontSize: 12,
+                              fontWeight: pw.FontWeight.bold,
+                              color: PdfColors.grey800,
+                            ),
+                          ),
+                          pw.SizedBox(height: 10),
+                          if (bytes != null && bytes.isNotEmpty)
+                            pw.Container(
+                              height: imageHeight,
+                              width: double.infinity,
+                              decoration: const pw.BoxDecoration(color: PdfColors.white),
+                              child: pw.Image(pw.MemoryImage(bytes), fit: pw.BoxFit.contain),
+                            )
+                          else
+                            pw.Container(
+                              height: 340,
+                              width: double.infinity,
+                              alignment: pw.Alignment.center,
+                              decoration: const pw.BoxDecoration(color: PdfColors.white),
+                              child: pw.Text(
+                                'No image available',
+                                style: pw.TextStyle(fontSize: 9, color: PdfColors.grey600),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
                   ),
-                  pw.SizedBox(height: 12),
-                  if (bytes != null && bytes.isNotEmpty)
-                    pw.Container(
-                      height: imageHeight,
-                      width: double.infinity,
-                      decoration: const pw.BoxDecoration(color: PdfColors.grey100),
-                      child: pw.Image(pw.MemoryImage(bytes), fit: pw.BoxFit.contain),
+                  pw.SizedBox(height: 14),
+                  pw.Text(
+                    'Marking details',
+                    style: pw.TextStyle(
+                      fontSize: 11,
+                      fontWeight: pw.FontWeight.bold,
+                      color: PdfColors.grey800,
+                    ),
+                  ),
+                  pw.SizedBox(height: 8),
+                  if (annotations.isEmpty)
+                    pw.Text(
+                      'No markings available',
+                      style: pw.TextStyle(fontSize: 9, color: PdfColors.grey700),
                     )
                   else
-                    pw.Container(
-                      height: 340,
-                      width: double.infinity,
-                      alignment: pw.Alignment.center,
-                      decoration: const pw.BoxDecoration(color: PdfColors.grey100),
-                      child: pw.Text('No image available', style: const pw.TextStyle(fontSize: 10)),
+                    ...annotations.map(
+                      (text) => pw.Padding(
+                        padding: const pw.EdgeInsets.only(bottom: 6),
+                        child: pw.Text(
+                          text,
+                          style: pw.TextStyle(fontSize: 9, color: PdfColors.grey800),
+                        ),
+                      ),
                     ),
                 ],
               ),
             ),
-            pw.SizedBox(height: 16),
-            pw.Text('Marking Details', style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold)),
-            pw.SizedBox(height: 10),
-            if (annotations.isEmpty)
-              pw.Text('No markings available')
-            else
-              ...annotations.map(
-                (text) => pw.Padding(
-                  padding: const pw.EdgeInsets.only(bottom: 8),
-                  child: pw.Text(text),
-                ),
-              ),
             if (entry.key != entries.length - 1) pw.SizedBox(height: 20),
           ];
         }),
+        pw.SizedBox(height: 8),
+        pw.Divider(thickness: 0.5, color: PdfColors.grey400),
+        pw.SizedBox(height: 12),
+        if (payload['provenanceEnabled'] == true) ...[
+          pw.Text(
+            'Provenance & integrity',
+            style: pw.TextStyle(
+              fontSize: 11,
+              fontWeight: pw.FontWeight.bold,
+              color: PdfColors.grey800,
+            ),
+          ),
+          pw.SizedBox(height: 8),
+          ...(payload['provenanceLines'] as List<dynamic>? ?? const <dynamic>[])
+              .map(
+                (e) => pw.Padding(
+                  padding: const pw.EdgeInsets.only(bottom: 3),
+                  child: pw.Text(
+                    e.toString(),
+                    style: pw.TextStyle(fontSize: 8, color: PdfColors.grey700),
+                  ),
+                ),
+              ),
+          pw.SizedBox(height: 8),
+          pw.Text(
+            'SHA-256 (canonical metadata): ${payload['provenanceHash']}',
+            style: pw.TextStyle(fontSize: 7, color: PdfColors.grey600),
+          ),
+          pw.SizedBox(height: 10),
+        ],
+        pw.Text(
+          'Report downloaded: $downloadStamp',
+          style: pw.TextStyle(fontSize: 9, color: PdfColors.grey700),
+        ),
       ],
     ),
   );

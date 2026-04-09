@@ -89,6 +89,8 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
   final Uuid _uuid = const Uuid();
   Size _lastSourceSize = Size.zero;
   double _pinchStartZoom = 1.0;
+  /// True if this scale gesture used 2+ fingers (pinch); skip pan end / use zoom only.
+  bool _previewScaleWasMultiTouch = false;
   int _activePreviewPointers = 0;
   HexaPoint? _focusIndicatorPoint;
   bool _focusIndicatorSuccess = true;
@@ -141,6 +143,9 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
   }
 
   CameraSettings _settings = const CameraSettings();
+  /// Drives preview color matrix without rebuilding the whole camera page (avoids freezing on slider drag).
+  final ValueNotifier<CameraSettings> _cameraGradeNotifier =
+      ValueNotifier(const CameraSettings());
   double _maxSupportedZoom = AppConstants.maxZoom;
 
   /// Web and devices without optical zoom: scale preview + overlay together.
@@ -503,6 +508,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                   ),
                 );
               });
+              _cameraGradeNotifier.value = _settings;
               _attachCameraListener();
               break;
             } catch (e) {
@@ -561,6 +567,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    _cameraGradeNotifier.dispose();
     WidgetsBinding.instance.removeObserver(this);
     _focusIndicatorTimer?.cancel();
     _manualOverrideController.dispose();
@@ -703,7 +710,11 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                 padding: EdgeInsets.symmetric(horizontal: isTablet ? 80 : 24),
                 child: ConstrainedBox(
                   constraints: BoxConstraints(maxWidth: isTablet ? 520 : 420),
-                  child: _buildCameraSettingsPanel(isTablet),
+                  child: StatefulBuilder(
+                    builder: (context, setModalState) {
+                      return _buildCameraSettingsPanel(isTablet, setModalState);
+                    },
+                  ),
                 ),
               ),
             ),
@@ -934,7 +945,17 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                                   child: Stack(
                                     fit: StackFit.expand,
                                     children: [
-                                      _buildCameraPreviewWithOptionalFilter(),
+                                      RepaintBoundary(
+                                        child: ValueListenableBuilder<
+                                            CameraSettings>(
+                                          valueListenable: _cameraGradeNotifier,
+                                          builder: (context, gradeSettings, _) {
+                                            return _buildCameraPreviewWithOptionalFilterFor(
+                                              gradeSettings,
+                                            );
+                                          },
+                                        ),
+                                      ),
                                       if (uiStateController.measurementMode)
                                         IgnorePointer(
                                           child: CustomPaint(
@@ -948,37 +969,73 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                                           behavior: HitTestBehavior.translucent,
                                           // Pinch must live on the same detector as pan (not a parent):
                                           // nested scale+pan recognizers fight the arena on Android/iOS.
-                                          onScaleStart: (_) =>
-                                              _pinchStartZoom = _settings.zoom,
+                                          // Pan + pinch must share one scale recognizer (not pan+scale).
+                                          onScaleStart: (details) {
+                                            _pinchStartZoom = _settings.zoom;
+                                            _previewScaleWasMultiTouch = false;
+                                            if (details.pointerCount == 1 &&
+                                                _activePreviewPointers <= 1) {
+                                              _onPanStart(
+                                                DragStartDetails(
+                                                  globalPosition:
+                                                      details.focalPoint,
+                                                  localPosition:
+                                                      details.localFocalPoint,
+                                                ),
+                                              );
+                                            }
+                                          },
                                           onScaleUpdate: (details) {
-                                            if (details.pointerCount < 2) return;
-                                            _setZoom(
-                                              _pinchStartZoom * details.scale,
+                                            if (details.pointerCount >= 2) {
+                                              _previewScaleWasMultiTouch = true;
+                                              if (_isDrawing) {
+                                                setState(() {
+                                                  _currentPoints = [];
+                                                  _isDrawing = false;
+                                                  _lastDrawPoint = null;
+                                                });
+                                              }
+                                              if (_moveMode &&
+                                                  _activeAnnotationIndex !=
+                                                      null) {
+                                                setState(() {
+                                                  _activeAnnotationIndex = null;
+                                                  _moveStartCursor = null;
+                                                  _moveStartPoints = null;
+                                                });
+                                              }
+                                              _setZoom(
+                                                _pinchStartZoom * details.scale,
+                                              );
+                                              return;
+                                            }
+                                            if (_activePreviewPointers > 1) {
+                                              return;
+                                            }
+                                            _onPanUpdate(
+                                              DragUpdateDetails(
+                                                globalPosition:
+                                                    details.focalPoint,
+                                                localPosition:
+                                                    details.localFocalPoint,
+                                                delta: details.focalPointDelta,
+                                              ),
                                             );
+                                          },
+                                          onScaleEnd: (_) {
+                                            if (_previewScaleWasMultiTouch) {
+                                              return;
+                                            }
+                                            if (_activePreviewPointers > 1) {
+                                              return;
+                                            }
+                                            _onPanEnd(DragEndDetails());
                                           },
                                           onTapDown: (details) {
                                             if (_activePreviewPointers > 1) {
                                               return;
                                             }
                                             _onTapDown(details);
-                                          },
-                                          onPanStart: (details) {
-                                            if (_activePreviewPointers > 1) {
-                                              return;
-                                            }
-                                            _onPanStart(details);
-                                          },
-                                          onPanUpdate: (details) {
-                                            if (_activePreviewPointers > 1) {
-                                              return;
-                                            }
-                                            _onPanUpdate(details);
-                                          },
-                                          onPanEnd: (details) {
-                                            if (_activePreviewPointers > 1) {
-                                              return;
-                                            }
-                                            _onPanEnd(details);
                                           },
                                           child: const SizedBox.expand(),
                                         ),
@@ -2241,7 +2298,10 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
     );
   }
 
-  Widget _buildCameraSettingsPanel(bool isTablet) {
+  Widget _buildCameraSettingsPanel(
+    bool isTablet,
+    void Function(void Function()) setModalState,
+  ) {
     return Container(
       padding: EdgeInsets.all(isTablet ? 18 : 14),
       decoration: BoxDecoration(
@@ -2264,7 +2324,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
               ),
               const SizedBox(width: 10),
               TextButton.icon(
-                onPressed: _resetCameraSettings,
+                onPressed: () => _resetCameraSettings(setModalState),
                 style: TextButton.styleFrom(
                   backgroundColor: Colors.white.withValues(alpha: 0.08),
                   foregroundColor: Colors.white,
@@ -2295,6 +2355,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
               children: [
                 _lightPresetChip(
                   isTablet,
+                  setModalState,
                   'Bright field',
                   const CameraSettings(
                     exposure: 100,
@@ -2305,6 +2366,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                 ),
                 _lightPresetChip(
                   isTablet,
+                  setModalState,
                   'Low light',
                   const CameraSettings(
                     exposure: 120,
@@ -2315,6 +2377,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                 ),
                 _lightPresetChip(
                   isTablet,
+                  setModalState,
                   'Default',
                   const CameraSettings(),
                 ),
@@ -2329,8 +2392,11 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
             min: 25,
             max: 200,
             value: _settings.exposure,
-            onChanged: (value) =>
-                setState(() => _settings = _settings.copyWith(exposure: value)),
+            onChanged: (value) {
+              _settings = _settings.copyWith(exposure: value);
+              _cameraGradeNotifier.value = _settings;
+              setModalState(() {});
+            },
           ),
           _buildSettingSlider(
             icon: Icons.blur_circular_rounded,
@@ -2339,8 +2405,11 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
             min: 100,
             max: 1600,
             value: _settings.iso,
-            onChanged: (value) =>
-                setState(() => _settings = _settings.copyWith(iso: value)),
+            onChanged: (value) {
+              _settings = _settings.copyWith(iso: value);
+              _cameraGradeNotifier.value = _settings;
+              setModalState(() {});
+            },
           ),
           _buildSettingSlider(
             icon: Icons.thermostat_outlined,
@@ -2349,9 +2418,11 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
             min: 2500,
             max: 9000,
             value: _settings.temperature,
-            onChanged: (value) => setState(
-              () => _settings = _settings.copyWith(temperature: value),
-            ),
+            onChanged: (value) {
+              _settings = _settings.copyWith(temperature: value);
+              _cameraGradeNotifier.value = _settings;
+              setModalState(() {});
+            },
           ),
           _buildSettingSlider(
             icon: Icons.invert_colors_on_outlined,
@@ -2360,24 +2431,34 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
             min: -100,
             max: 100,
             value: _settings.tint,
-            onChanged: (value) =>
-                setState(() => _settings = _settings.copyWith(tint: value)),
+            onChanged: (value) {
+              _settings = _settings.copyWith(tint: value);
+              _cameraGradeNotifier.value = _settings;
+              setModalState(() {});
+            },
           ),
         ],
       ),
     );
   }
 
-  Widget _lightPresetChip(bool isTablet, String label, CameraSettings preset) {
+  Widget _lightPresetChip(
+    bool isTablet,
+    void Function(void Function()) setModalState,
+    String label,
+    CameraSettings preset,
+  ) {
     return TextButton(
-      onPressed: () => setState(() {
+      onPressed: () {
         _settings = _settings.copyWith(
           exposure: preset.exposure,
           iso: preset.iso,
           temperature: preset.temperature,
           tint: preset.tint,
         );
-      }),
+        _cameraGradeNotifier.value = _settings;
+        setModalState(() {});
+      },
       style: TextButton.styleFrom(
         backgroundColor: Colors.white.withValues(alpha: 0.08),
         foregroundColor: Colors.white,
@@ -2454,10 +2535,12 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
     );
   }
 
-  void _resetCameraSettings() {
+  void _resetCameraSettings(void Function(void Function())? setModalState) {
     setState(() {
       _settings = const CameraSettings();
     });
+    _cameraGradeNotifier.value = _settings;
+    setModalState?.call(() {});
   }
 
   void _selectDrawingTool(AnnotationType tool) {
@@ -2721,19 +2804,19 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
 
   /// When every slider matches app defaults, show the platform preview without a color matrix
   /// so the feed matches the device camera (no extra grading until the user adjusts settings).
-  bool get _previewUsesDeviceColorPassthrough =>
-      (_settings.exposure - AppConstants.defaultExposure).abs() < 0.01 &&
-      (_settings.iso - AppConstants.defaultIso).abs() < 0.01 &&
-      (_settings.temperature - AppConstants.defaultTemperature).abs() < 0.5 &&
-      (_settings.tint - AppConstants.defaultTint).abs() < 0.01;
+  static bool _previewUsesPassthrough(CameraSettings s) =>
+      (s.exposure - AppConstants.defaultExposure).abs() < 0.01 &&
+      (s.iso - AppConstants.defaultIso).abs() < 0.01 &&
+      (s.temperature - AppConstants.defaultTemperature).abs() < 0.5 &&
+      (s.tint - AppConstants.defaultTint).abs() < 0.01;
 
-  Widget _buildCameraPreviewWithOptionalFilter() {
+  Widget _buildCameraPreviewWithOptionalFilterFor(CameraSettings gradeSettings) {
     final w = cam.CameraPreview(_controller!);
-    if (_previewUsesDeviceColorPassthrough) {
+    if (_previewUsesPassthrough(gradeSettings)) {
       return w;
     }
     return ColorFiltered(
-      colorFilter: ColorFilter.matrix(cameraPreviewColorMatrix(_settings)),
+      colorFilter: ColorFilter.matrix(cameraPreviewColorMatrix(gradeSettings)),
       child: w,
     );
   }
@@ -3744,6 +3827,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
     setState(() {
       _settings = _settings.copyWith(zoom: zoom);
     });
+    _cameraGradeNotifier.value = _settings;
   }
 
   Future<void> _togglePauseMode() async {

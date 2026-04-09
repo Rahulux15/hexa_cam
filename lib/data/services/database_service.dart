@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
@@ -66,5 +68,17 @@ class MediaDatabase {
     }
     final db = await database;
     await db.delete(_tableName);
+  }
+
+  /// JSON snapshot of in-memory web blobs for ZIP backup (web only).
+  static String webStoreSnapshotJsonForBackup() {
+    if (!kIsWeb) {
+      return jsonEncode(<String, dynamic>{'version': 1, 'assets': <String, String>{}});
+    }
+    final map = <String, String>{};
+    for (final e in _webStore.entries) {
+      map[e.key] = base64Encode(e.value);
+    }
+    return jsonEncode(<String, dynamic>{'version': 1, 'assets': map});
   }
 }

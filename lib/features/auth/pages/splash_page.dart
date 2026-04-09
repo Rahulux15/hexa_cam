@@ -168,7 +168,7 @@ class _SplashPageState extends State<SplashPage> with TickerProviderStateMixin {
                               width: 150,
                               height: 150,
                               child: Image.asset(
-                                'assets/images/logo.png',
+                                'assets/images/logo_quasmo.png',
                                 fit: BoxFit.contain,
                               ),
                             ),
