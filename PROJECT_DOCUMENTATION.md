@@ -217,6 +217,54 @@ flutter build apk --debug
 
 Output (typical): `build/app/outputs/flutter-apk/app-debug.apk` — install with `adb install -r` or share the file. **Do not commit** `build/`; it stays ignored by git.
 
+### Android release — APK (install / sideload)
+
+```bash
+flutter build apk --release
+```
+
+- Output: `build/app/outputs/flutter-apk/app-release.apk`
+- Smaller per-CPU builds (optional):
+
+```bash
+flutter build apk --release --split-per-abi
+```
+
+- Outputs under `build/app/outputs/flutter-apk/` as `app-*-release.apk` (armeabi-v7a, arm64-v8a, x86_64).
+
+**Signing:** Play Store and serious sideload need a **release keystore**. Configure in `android/app/build.gradle.kts` (or `.gradle`) via `key.properties` pointing to your keystore — see [Flutter Android deployment](https://docs.flutter.dev/deployment/android).
+
+### Android release — App Bundle (Google Play)
+
+```bash
+flutter build appbundle --release
+```
+
+- Output: `build/app/outputs/bundle/release/app-release.aab`
+- Upload **`.aab`** in Play Console (not the raw APK for default Play distribution).
+
+### iOS release — IPA (TestFlight / App Store)
+
+Prerequisites: **Apple Developer** account, **signing certificates**, **provisioning profiles**, Xcode installed.
+
+```bash
+cd ios && pod install && cd ..
+flutter build ipa
+```
+
+- Flutter drives **Xcode archive** flow; output is typically under `build/ios/ipa/`.
+- Alternative: open **`ios/Runner.xcworkspace`** in Xcode → **Product → Archive** → Distribute App.
+
+**Versioning:** bump `version:` in `pubspec.yaml` (`major.minor.patch+buildNumber` maps to iOS `CFBundleShortVersionString` / `CFBundleVersion`).
+
+### Pre-release checks (all platforms)
+
+```bash
+flutter pub get
+dart analyze --fatal-infos
+flutter test
+```
+
 ## Important Config Files
 
 - `pubspec.yaml`
