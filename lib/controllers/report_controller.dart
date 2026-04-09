@@ -96,14 +96,20 @@ class ReportController extends GetxController {
   }) async {
     if (isDownloading.value) return false;
     isDownloading.value = true;
+    logDebug(
+      'ReportController.downloadReport start filename=$filename folder=$folderName bytes=${bytes.length}',
+    );
     try {
       if (kIsWeb) {
+        logDebug('ReportController.downloadReport web branch');
         onProgress?.call('Downloading report...', 0.4);
         await FileService.savePdfToDevice(bytes, filename);
         onProgress?.call('Downloading report...', 1.0);
+        logDebug('ReportController.downloadReport web download done');
         showMessage('Report downloaded to Downloads', Colors.green);
         return true;
       }
+      logDebug('ReportController.downloadReport native app-folder save start');
       onProgress?.call('Saving report to app folder...', 0.18);
       await _saveToAppFolderOnly(
         bytes,
@@ -114,7 +120,9 @@ class ReportController extends GetxController {
           0.18 + (p * 0.12),
         ),
       );
+      logDebug('ReportController.downloadReport native app-folder save done');
       if (Platform.isIOS) {
+        logDebug('ReportController.downloadReport iOS share start');
         onProgress?.call('Opening share options...', 0.5);
         try {
           await FileService.sharePdfToDevice(
@@ -124,6 +132,7 @@ class ReportController extends GetxController {
           );
         } catch (_) {
           // Second safe retry path when anchored popover share fails.
+          logDebug('ReportController.downloadReport iOS share retry without anchor');
           onProgress?.call('Retrying share...', 0.75);
           await FileService.sharePdfToDevice(
             bytes,
@@ -132,9 +141,11 @@ class ReportController extends GetxController {
           );
         }
         onProgress?.call('Opening share options...', 1.0);
+        logDebug('ReportController.downloadReport iOS share done');
         showMessage('Share opened. Save report to Files on your device.', Colors.green);
         return true;
       }
+      logDebug('ReportController.downloadReport Android/public download start');
       onProgress?.call('Preparing report download...', 0.2);
       final permissionController = _permissionController;
       final permissionOk = permissionController == null
@@ -159,12 +170,14 @@ class ReportController extends GetxController {
         );
       }
       if (downloadPath.isEmpty) {
+        logDebug('ReportController.downloadReport public download path empty');
         showMessage(
           'Failed to download to public storage. Report is still saved in app folder.',
           Colors.red,
         );
         return false;
       }
+      logDebug('ReportController.downloadReport public download done path=$downloadPath');
       final normalizedPath = downloadPath.replaceAll('\\', '/');
       if (normalizedPath.contains('/Download/')) {
         showMessage('Report downloaded to Downloads/Hexa Cam Reports', Colors.green);

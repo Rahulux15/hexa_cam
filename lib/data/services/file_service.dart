@@ -11,6 +11,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 
+import '../../utils/app_logger.dart';
 import 'web_download_stub.dart' if (dart.library.html) 'web_download_web.dart';
 
 class FileService {
@@ -25,17 +26,22 @@ class FileService {
     String filename, {
     Rect? sharePositionOrigin,
   }) async {
+    logDebug('FileService.saveToDevice start filename=$filename bytes=${bytes.length}');
     if (kIsWeb) {
       final name = _safeFilename(filename, fallbackExtension: '.jpg');
+      logDebug('FileService.saveToDevice web download name=$name');
       await downloadBytesWeb(bytes, name, mimeType: 'image/jpeg');
+      logDebug('FileService.saveToDevice web download done');
       return;
     }
     if (Platform.isIOS) {
+      logDebug('FileService.saveToDevice iOS share flow filename=$filename');
       await shareImageToDevice(
         bytes,
         filename,
         sharePositionOrigin: sharePositionOrigin,
       );
+      logDebug('FileService.saveToDevice iOS share flow done');
       return;
     }
     final sanitized = filename
@@ -44,7 +50,9 @@ class FileService {
     final name = sanitized.isEmpty
         ? 'hexacam-${DateTime.now().millisecondsSinceEpoch}'
         : sanitized;
+    logDebug('FileService.saveToDevice gallery write name=$name');
     await Gal.putImageBytes(bytes, name: name);
+    logDebug('FileService.saveToDevice gallery write done');
   }
 
   static Future<void> savePdfToDevice(Uint8List bytes, String filename) async {
@@ -102,15 +110,20 @@ class FileService {
     String filename, {
     Rect? sharePositionOrigin,
   }) async {
+    logDebug('FileService.saveVideoToDevice start filename=$filename path=$videoPath');
     if (!kIsWeb && Platform.isIOS) {
+      logDebug('FileService.saveVideoToDevice iOS share flow filename=$filename');
       await shareVideoToDevice(
         videoPath,
         filename,
         sharePositionOrigin: sharePositionOrigin,
       );
+      logDebug('FileService.saveVideoToDevice iOS share flow done');
       return;
     }
+    logDebug('FileService.saveVideoToDevice gallery write path=$videoPath');
     await Gal.putVideo(videoPath);
+    logDebug('FileService.saveVideoToDevice gallery write done');
   }
 
   static Future<void> shareImageToDevice(
@@ -132,6 +145,7 @@ class FileService {
     final tempFile = File(tempPath);
     await tempFile.writeAsBytes(bytes, flush: true);
     try {
+      logDebug('FileService.shareImageToDevice share anchored path=$tempPath');
       await SharePlus.instance.share(
         ShareParams(
           files: [XFile(tempFile.path, mimeType: 'image/jpeg')],
@@ -139,14 +153,17 @@ class FileService {
           sharePositionOrigin: sharePositionOrigin,
         ),
       );
+      logDebug('FileService.shareImageToDevice share anchored done');
     } catch (_) {
       // iOS fallback for popover-origin failures.
+      logDebug('FileService.shareImageToDevice fallback share path=$tempPath');
       await SharePlus.instance.share(
         ShareParams(
           files: [XFile(tempFile.path, mimeType: 'image/jpeg')],
           title: safeName,
         ),
       );
+      logDebug('FileService.shareImageToDevice fallback share done');
     }
   }
 
@@ -167,6 +184,7 @@ class FileService {
     );
     final shareFile = await source.copy(safePath);
     try {
+      logDebug('FileService.shareVideoToDevice share anchored path=${shareFile.path}');
       await SharePlus.instance.share(
         ShareParams(
           files: [XFile(shareFile.path, mimeType: 'video/mp4')],
@@ -174,14 +192,17 @@ class FileService {
           sharePositionOrigin: sharePositionOrigin,
         ),
       );
+      logDebug('FileService.shareVideoToDevice share anchored done');
     } catch (_) {
       // iOS fallback for popover-origin failures.
+      logDebug('FileService.shareVideoToDevice fallback share path=${shareFile.path}');
       await SharePlus.instance.share(
         ShareParams(
           files: [XFile(shareFile.path, mimeType: 'video/mp4')],
           title: safeName,
         ),
       );
+      logDebug('FileService.shareVideoToDevice fallback share done');
     }
   }
 

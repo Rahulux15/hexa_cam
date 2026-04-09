@@ -13,6 +13,7 @@ import '../../data/services/file_service.dart';
 import '../../data/services/video_export_service.dart';
 import '../../state/app_registry.dart';
 import '../../utils/image_bytes_codec.dart';
+import '../../utils/app_logger.dart';
 import '../../utils/marked_media_renderer.dart';
 import '../../utils/measurement_calculator.dart';
 import '../../utils/responsive.dart';
@@ -187,90 +188,23 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
             Positioned(
               right: isTab ? 18 : 14,
               top: isTab ? 16 : 10,
-              child: ConstrainedBox(
-                constraints: BoxConstraints(
-                  maxWidth: MediaQuery.sizeOf(context).width * 0.75,
-                ),
-                child: SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
-                    children: [
-                      GestureDetector(
-                        onTap: () => setState(() {
-                          _showMarkings = !_showMarkings;
-                        }),
-                        child: Container(
-                          height: 42,
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF232651),
-                            borderRadius: BorderRadius.circular(999),
-                            border: Border.all(
-                              color: _showMarkings
-                                  ? AppTheme.primaryLight
-                                  : Colors.white.withValues(alpha: 0.14),
-                            ),
-                          ),
-                          child: Row(
-                            children: [
-                              const Icon(
-                                Icons.add,
-                                color: Colors.white,
-                                size: 18,
-                              ),
-                              const SizedBox(width: 6),
-                              Text(
-                                _showMarkings ? 'ON' : 'OFF',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      _sideCircleButton(
-                        icon: Icons.edit_rounded,
-                        onTap: () => _viewerKey.currentState?.openEditor(),
-                      ),
-                      const SizedBox(width: 10),
-                      _sideCircleButton(
-                        icon: Icons.info_outline_rounded,
-                        onTap: _showMediaInfo,
-                      ),
-                      const SizedBox(width: 10),
-                      _sideCircleButton(
-                        icon: Icons.download_outlined,
-                        onTap: _showDownloadOptionsSheet,
-                      ),
-                      const SizedBox(width: 10),
-                      _sideCircleButton(
-                        icon: Icons.undo_rounded,
-                        onTap: () => _viewerKey.currentState?.undo(),
-                      ),
-                      const SizedBox(width: 10),
-                      _sideCircleButton(
-                        icon: Icons.rotate_right_rounded,
-                        onTap: () {
-                          setState(() => _rotation = (_rotation + 90) % 360);
-                          _schedulePersistAnnotations();
-                        },
-                      ),
-                      const SizedBox(width: 10),
-                      _sideCircleButton(
-                        icon: Icons.fullscreen_rounded,
-                        onTap: _openFullscreenViewer,
-                      ),
-                      const SizedBox(width: 10),
-                      _sideCircleButton(
-                        icon: Icons.delete_outline_rounded,
-                        onTap: _confirmDeleteOrClear,
-                      ),
-                    ],
-                  ),
-                ),
+              child: _ViewerTopActionRow(
+                maxWidth: MediaQuery.sizeOf(context).width * 0.75,
+                showMarkings: _showMarkings,
+                onToggleMarkings: () => setState(() {
+                  _showMarkings = !_showMarkings;
+                }),
+                sideCircleButtonBuilder: _sideCircleButton,
+                onOpenEditor: () => _viewerKey.currentState?.openEditor(),
+                onShowMediaInfo: _showMediaInfo,
+                onShowDownloadOptions: _showDownloadOptionsSheet,
+                onUndo: () => _viewerKey.currentState?.undo(),
+                onRotate: () {
+                  setState(() => _rotation = (_rotation + 90) % 360);
+                  _schedulePersistAnnotations();
+                },
+                onOpenFullscreen: _openFullscreenViewer,
+                onDeleteOrClear: _confirmDeleteOrClear,
               ),
             ),
           ],
@@ -565,7 +499,9 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
         if (pathToExport != videoPath) {
           try {
             await File(pathToExport).delete();
-          } catch (_) {}
+          } catch (error) {
+            logDebug('ImageViewer cleanup exported video failed: $error');
+          }
         }
       } else {
         final bytes = await _buildStillExportBytes();
@@ -590,7 +526,8 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
                 : 'Image downloaded to Gallery'),
         AppTheme.success,
       );
-    } catch (_) {
+    } catch (error) {
+      logDebug('ImageViewer save/download media failed: $error');
       if (!mounted) return;
       _showMessage('Failed to download media', AppTheme.danger);
     }
@@ -628,7 +565,8 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
         reportThumbId = bakedId;
         hasBakedCapture = true;
       }
-    } catch (_) {
+    } catch (error) {
+      logDebug('ImageViewer capture flattened report preview failed: $error');
       // Fallback to existing source/media path if flatten capture fails.
     }
 
@@ -851,8 +789,34 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
       return;
     }
     if (choice == 'remove') {
-      await foldersController.removeImage(widget.folderId, widget.imageId);
+      await _deleteCurrentImage();
       if (mounted) Get.back<void>();
+    }
+  }
+
+  Future<void> _deleteCurrentImage() async {
+    final image = _image;
+    if (image == null) {
+      await foldersController.removeImage(widget.folderId, widget.imageId);
+      return;
+    }
+    try {
+      await foldersController.removeImage(widget.folderId, widget.imageId);
+      final assetIds = <String>{
+        if (image.mediaId != null && image.mediaId!.isNotEmpty) image.mediaId!,
+        if (image.thumbnailId != null && image.thumbnailId!.isNotEmpty)
+          image.thumbnailId!,
+      };
+      for (final assetId in assetIds) {
+        try {
+          await MediaDatabase.deleteAsset(assetId);
+        } catch (error) {
+          logDebug('ImageViewer delete media asset failed ($assetId): $error');
+        }
+      }
+    } catch (error) {
+      logDebug('ImageViewer delete image failed: $error');
+      rethrow;
     }
   }
 
@@ -1041,5 +1005,106 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
     if (box == null || !box.hasSize) return const Rect.fromLTWH(0, 0, 1, 1);
     final origin = box.localToGlobal(Offset.zero);
     return origin & box.size;
+  }
+}
+
+class _ViewerTopActionRow extends StatelessWidget {
+  const _ViewerTopActionRow({
+    required this.maxWidth,
+    required this.showMarkings,
+    required this.onToggleMarkings,
+    required this.sideCircleButtonBuilder,
+    required this.onOpenEditor,
+    required this.onShowMediaInfo,
+    required this.onShowDownloadOptions,
+    required this.onUndo,
+    required this.onRotate,
+    required this.onOpenFullscreen,
+    required this.onDeleteOrClear,
+  });
+
+  final double maxWidth;
+  final bool showMarkings;
+  final VoidCallback onToggleMarkings;
+  final Widget Function({
+    required IconData icon,
+    required VoidCallback onTap,
+    bool active,
+  }) sideCircleButtonBuilder;
+  final VoidCallback onOpenEditor;
+  final VoidCallback onShowMediaInfo;
+  final VoidCallback onShowDownloadOptions;
+  final VoidCallback onUndo;
+  final VoidCallback onRotate;
+  final VoidCallback onOpenFullscreen;
+  final VoidCallback onDeleteOrClear;
+
+  @override
+  Widget build(BuildContext context) {
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxWidth: maxWidth),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            GestureDetector(
+              onTap: onToggleMarkings,
+              child: Container(
+                height: 42,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF232651),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(
+                    color: showMarkings
+                        ? AppTheme.primaryLight
+                        : Colors.white.withValues(alpha: 0.14),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.add, color: Colors.white, size: 18),
+                    const SizedBox(width: 6),
+                    Text(
+                      showMarkings ? 'ON' : 'OFF',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            sideCircleButtonBuilder(icon: Icons.edit_rounded, onTap: onOpenEditor),
+            const SizedBox(width: 10),
+            sideCircleButtonBuilder(
+              icon: Icons.info_outline_rounded,
+              onTap: onShowMediaInfo,
+            ),
+            const SizedBox(width: 10),
+            sideCircleButtonBuilder(
+              icon: Icons.download_outlined,
+              onTap: onShowDownloadOptions,
+            ),
+            const SizedBox(width: 10),
+            sideCircleButtonBuilder(icon: Icons.undo_rounded, onTap: onUndo),
+            const SizedBox(width: 10),
+            sideCircleButtonBuilder(icon: Icons.rotate_right_rounded, onTap: onRotate),
+            const SizedBox(width: 10),
+            sideCircleButtonBuilder(
+              icon: Icons.fullscreen_rounded,
+              onTap: onOpenFullscreen,
+            ),
+            const SizedBox(width: 10),
+            sideCircleButtonBuilder(
+              icon: Icons.delete_outline_rounded,
+              onTap: onDeleteOrClear,
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
