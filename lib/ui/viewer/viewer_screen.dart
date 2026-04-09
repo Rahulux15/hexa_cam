@@ -15,6 +15,7 @@ import '../../data/models/image_data.dart';
 import '../../data/models/point.dart';
 import '../../data/models/stored_calibration.dart';
 import '../../state/app_registry.dart';
+import '../../utils/calibration_guard.dart';
 import '../../utils/annotation_painter.dart';
 import '../../utils/calibration_calculator.dart';
 import '../../utils/measurement_calculator.dart';
@@ -394,11 +395,57 @@ class ViewerScreenState extends State<ViewerScreen> {
     knownController.dispose();
     if (known == null || known <= 0 || px <= 0) return;
     final unitPerPixel = CalibrationCalculator.computeFactor(px, known);
+    final pixelsPerUnit = 1.0 / unitPerPixel;
+    final scaleErr = CalibrationGuard.validateScale(
+      unitPerPixel: unitPerPixel,
+      pixelsPerUnit: pixelsPerUnit,
+      measuredPixelDistance: px,
+      referenceLength: known,
+    );
+    if (scaleErr != null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(scaleErr)),
+      );
+      return;
+    }
+    if (CalibrationGuard.shouldWarnShortLine(
+      measuredPixelDistance: px,
+      imageWidth: _lastSourceSize.width,
+      imageHeight: _lastSourceSize.height,
+    )) {
+      if (!mounted) return;
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: const Color(0xFF232651),
+          title: const Text(
+            'Short reference line',
+            style: TextStyle(color: Colors.white),
+          ),
+          content: const Text(
+            'The calibration line is very short; results may be noisy. Continue?',
+            style: TextStyle(color: Colors.white70),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Continue'),
+            ),
+          ],
+        ),
+      );
+      if (ok != true) return;
+    }
     final calibration = StoredCalibration(
       lens: lens,
       unit: _calibrationUnit,
       unitPerPixel: unitPerPixel,
-      pixelsPerUnit: 1.0 / unitPerPixel,
+      pixelsPerUnit: pixelsPerUnit,
       referenceLength: known,
       measuredPixelDistance: px,
       createdAt: DateTime.now().toIso8601String(),

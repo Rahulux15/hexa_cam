@@ -3,12 +3,15 @@ import 'package:get/get.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../controllers/permission_controller.dart';
+import '../../data/services/backup_service.dart';
 import '../../data/services/database_service.dart';
+import '../../data/services/export_prefs.dart';
+import '../../state/app_registry.dart';
 import '../../config/app_version.dart';
 import '../../config/theme.dart';
-import '../../state/app_registry.dart';
 import '../../utils/responsive.dart';
 import '../common/hexa_toast.dart';
+import '../common/release_notes_dialog.dart';
 import '../../ui/common/save_dialog.dart';
 
 enum SettingsView { main, profile, privacy, help, about }
@@ -29,6 +32,10 @@ class _SettingsPageState extends State<SettingsPage> {
 
   /// `null` while loading; empty string if [PackageInfo] failed.
   String? _appVersionLabel;
+
+  bool _exportWatermark = true;
+  bool _pdfProvenance = true;
+  bool _backupRunning = false;
 
   @override
   void initState() {
@@ -58,12 +65,40 @@ class _SettingsPageState extends State<SettingsPage> {
     final prefs = await SharedPreferences.getInstance();
     final fullName = (prefs.getString('user_full_name') ?? '').trim();
     final email = (prefs.getString('user_email') ?? '').trim();
+    final wm = await ExportPrefs.watermarkEnabled();
+    final prov = await ExportPrefs.includeProvenanceInPdf();
 
     if (!mounted) return;
     setState(() {
       _nameController.text = fullName;
       _emailController.text = email;
+      _exportWatermark = wm;
+      _pdfProvenance = prov;
     });
+  }
+
+  Future<void> _runBackup() async {
+    if (_backupRunning) return;
+    setState(() => _backupRunning = true);
+    try {
+      final path = await BackupService.createFullBackupZip(storageService);
+      if (!mounted) return;
+      if (path != null) {
+        HexaToast.show(
+          context,
+          'Backup saved:\n$path',
+          type: HexaToastType.success,
+        );
+      } else {
+        HexaToast.show(
+          context,
+          'Backup failed (web not supported or error).',
+          type: HexaToastType.error,
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _backupRunning = false);
+    }
   }
 
   void _goBackSafely() {
@@ -184,6 +219,48 @@ class _SettingsPageState extends State<SettingsPage> {
         _buildTile(Icons.info_outline_rounded, 'About', 'App information', () => setState(() => _currentView = SettingsView.about)),
       ]),
       SizedBox(height: isTab ? 18 : 16),
+      _buildSection('Export & backup', [
+        _buildSwitchTile(
+          Icons.branding_watermark_outlined,
+          'Logo watermark on exports',
+          'Report logo at ~10% opacity on saved stills',
+          _exportWatermark,
+          (v) async {
+            await ExportPrefs.setWatermarkEnabled(v);
+            if (mounted) setState(() => _exportWatermark = v);
+          },
+        ),
+        _buildSwitchTile(
+          Icons.fingerprint_outlined,
+          'PDF provenance section',
+          'App version, install ID, inspection fields, SHA-256 hash',
+          _pdfProvenance,
+          (v) async {
+            await ExportPrefs.setIncludeProvenanceInPdf(v);
+            if (mounted) setState(() => _pdfProvenance = v);
+          },
+        ),
+        _backupRunning
+            ? _buildTile(
+                Icons.hourglass_top_rounded,
+                'Creating backup…',
+                'Please wait',
+                () {},
+              )
+            : _buildTile(
+                Icons.folder_zip_outlined,
+                'Backup data to ZIP',
+                'Documents/HexaCamBackups (folders + media DB)',
+                _runBackup,
+              ),
+        _buildTile(
+          Icons.new_releases_outlined,
+          "What's new",
+          'Release notes for this version',
+          () => showReleaseNotesIfNeeded(context, force: true),
+        ),
+      ]),
+      SizedBox(height: isTab ? 18 : 16),
       _buildSection('Data', [
         _buildTile(Icons.delete_sweep_outlined, 'Clear All Data', 'Reset everything', () => setState(() => _showClearDialog = true), isDanger: true),
       ]),
@@ -226,6 +303,60 @@ class _SettingsPageState extends State<SettingsPage> {
         child: Column(children: items.asMap().entries.map((e) => Column(children: [e.value, if (e.key < items.length - 1) const Divider(height: 1, color: AppTheme.borderColor, indent: 60)])).toList()),
       ),
     ]);
+  }
+
+  Widget _buildSwitchTile(
+    IconData icon,
+    String title,
+    String subtitle,
+    bool value,
+    Future<void> Function(bool next) onChanged,
+  ) {
+    final isTab = Responsive.isTablet(context);
+    return Padding(
+      padding: EdgeInsets.all(isTab ? 18 : 16),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: isTab ? 48 : 44,
+            height: isTab ? 48 : 44,
+            decoration: BoxDecoration(
+              gradient: AppTheme.primaryGradient,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(icon, color: Colors.white, size: isTab ? 22 : 20),
+          ),
+          SizedBox(width: isTab ? 14 : 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: isTab ? 17 : 16,
+                    fontWeight: FontWeight.w500,
+                    color: AppTheme.textPrimary,
+                  ),
+                ),
+                Text(
+                  subtitle,
+                  style: TextStyle(
+                    fontSize: isTab ? 13 : 12,
+                    color: AppTheme.textMuted,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Switch(
+            value: value,
+            onChanged: (v) => onChanged(v),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildTile(IconData icon, String title, String subtitle, VoidCallback onTap, {bool isDanger = false}) {

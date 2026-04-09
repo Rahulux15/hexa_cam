@@ -55,6 +55,8 @@ dependencies:
   device_info_plus: ^12.4.0
   package_info_plus: ^9.0.0
   share_plus: ^12.0.2
+  crypto: ^3.0.6
+  archive: ^3.6.1
 
 
 dev_dependencies:
@@ -86,6 +88,7 @@ flutter:
     - assets/images/
     - assets/fonts/NotoSans-Regular.ttf
     - assets/fonts/NotoSans-Bold.ttf
+    - assets/release_notes.json
   #   - images/a_dot_ham.jpeg
 
   # An image asset can refer to one or more resolution-specific "variants", see

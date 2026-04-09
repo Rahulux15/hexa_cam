@@ -1,7 +1,7 @@
 import 'dart:io';
-import 'dart:ui';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:gal/gal.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -12,6 +12,8 @@ import 'package:uuid/uuid.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 
 import '../../utils/app_logger.dart';
+import '../../utils/export_watermark_util.dart';
+import 'export_prefs.dart';
 import 'web_download_stub.dart' if (dart.library.html) 'web_download_web.dart';
 
 class FileService {
@@ -22,6 +24,19 @@ class FileService {
   static String generateAssetId([String prefix = 'media']) =>
       '$prefix-${_uuid.v4()}';
 
+  /// Optional logo watermark on exported stills (JPEG). Falls back to [bytes] on failure.
+  static Future<Uint8List> _encodeBytesForExport(Uint8List bytes) async {
+    try {
+      if (!await ExportPrefs.watermarkEnabled()) return bytes;
+      final logo = await rootBundle.load('assets/images/report_logo.png');
+      final out = applyReportLogoWatermark(bytes, logo.buffer.asUint8List());
+      return out ?? bytes;
+    } catch (e) {
+      logDebug('FileService._encodeBytesForExport watermark skipped: $e');
+      return bytes;
+    }
+  }
+
   /// Returns true when the image was written directly (web download, Android/iOS
   /// gallery/Photos). On iOS, false means the share sheet was used as fallback.
   static Future<bool> saveToDevice(
@@ -30,6 +45,7 @@ class FileService {
     Rect? sharePositionOrigin,
   }) async {
     logDebug('FileService.saveToDevice start filename=$filename bytes=${bytes.length}');
+    bytes = await _encodeBytesForExport(bytes);
     if (kIsWeb) {
       final name = _safeFilename(filename, fallbackExtension: '.jpg');
       logDebug('FileService.saveToDevice web download name=$name');
@@ -172,6 +188,7 @@ class FileService {
     String filename, {
     Rect? sharePositionOrigin,
   }) async {
+    bytes = await _encodeBytesForExport(bytes);
     if (kIsWeb) {
       final name = _safeFilename(filename, fallbackExtension: '.jpg');
       await downloadBytesWeb(bytes, name, mimeType: 'image/jpeg');

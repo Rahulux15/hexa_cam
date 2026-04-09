@@ -1,14 +1,20 @@
 import 'dart:convert';
-import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart';
+
 import 'package:camera/camera.dart' as cam;
+import 'package:crypto/crypto.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:image/image.dart' as img;
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
 import '../../config/theme.dart';
+import '../../data/models/folder.dart';
+import '../../data/services/export_prefs.dart';
+import '../../data/services/install_id_service.dart';
 import '../../controllers/report_controller.dart';
 import '../../data/models/annotation.dart';
 import '../../data/models/image_data.dart';
@@ -724,7 +730,57 @@ class _ReportPageState extends State<ReportPage> {
     final pdfFonts = await _loadReportPdfFonts();
     final fonts = pdfFonts;
     final asciiMeasurementFallback = fonts == null;
+
+    final includeProv = await ExportPrefs.includeProvenanceInPdf();
+    final packageInfo = await PackageInfo.fromPlatform();
+    final installId = await InstallIdService.getOrCreateId();
+    Folder? folder;
+    try {
+      folder = foldersController.folders
+          .firstWhere((f) => f.id == widget.folderId);
+    } catch (_) {
+      folder = null;
+    }
+
+    final appVer = '${packageInfo.version}+${packageInfo.buildNumber}';
+    final provenanceLines = <String>[
+      'App version: $appVer',
+      'Non-secret install ID: $installId',
+      'Report generated (UTC): ${DateTime.now().toUtc().toIso8601String()}',
+      if (folder != null &&
+          (folder.inspectionSiteId?.isNotEmpty ?? false))
+        'Inspection site / asset: ${folder.inspectionSiteId}',
+      if (folder != null &&
+          (folder.inspectionOutcome?.isNotEmpty ?? false))
+        'Inspection outcome: ${folder.inspectionOutcome}',
+      if (folder != null && (folder.inspectionNotes?.isNotEmpty ?? false))
+        'Inspection notes: ${folder.inspectionNotes}',
+    ];
+    for (var i = 0; i < reportImages.length; i++) {
+      final shot = reportImages[i];
+      final lens = shot.lens;
+      final ts = shot.timestamp;
+      final cal = lens == null ? null : calibrationController.calibrations[lens];
+      provenanceLines.add(
+        'Media ${i + 1}: lens=${lens ?? '-'}, capture=$ts, '
+        'calibration saved=${cal?.createdAt ?? 'n/a'}',
+      );
+    }
+    final canonical = jsonEncode({
+      'appVersion': appVer,
+      'installId': installId,
+      'folderId': widget.folderId,
+      'imageIds': reportImages.map((e) => e.id).toList(),
+      'inspectionSiteId': folder?.inspectionSiteId,
+      'inspectionOutcome': folder?.inspectionOutcome,
+      'inspectionNotes': folder?.inspectionNotes,
+    });
+    final provenanceHash = sha256.convert(utf8.encode(canonical)).toString();
+
     final payload = <String, dynamic>{
+      'provenanceEnabled': includeProv,
+      'provenanceLines': provenanceLines,
+      'provenanceHash': provenanceHash,
       'organizationName': _orgController.text.trim().isEmpty
           ? 'Organization Name'
           : _orgController.text.trim(),
@@ -1297,6 +1353,29 @@ Future<Uint8List> _generateReportPdfInBackground(Map<String, dynamic> payload) a
         ],
       ),
       build: (context) => [
+        if (payload['provenanceEnabled'] == true) ...[
+          pw.Text(
+            'Provenance & integrity',
+            style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold),
+          ),
+          pw.SizedBox(height: 10),
+          ...(payload['provenanceLines'] as List<dynamic>? ?? const <dynamic>[])
+              .map(
+                (e) => pw.Padding(
+                  padding: const pw.EdgeInsets.only(bottom: 4),
+                  child: pw.Text(
+                    e.toString(),
+                    style: const pw.TextStyle(fontSize: 9),
+                  ),
+                ),
+              ),
+          pw.SizedBox(height: 8),
+          pw.Text(
+            'SHA-256 (canonical metadata): ${payload['provenanceHash']}',
+            style: const pw.TextStyle(fontSize: 8),
+          ),
+          pw.SizedBox(height: 16),
+        ],
         pw.Text('Camera Settings', style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold)),
         pw.SizedBox(height: 12),
         pw.Wrap(

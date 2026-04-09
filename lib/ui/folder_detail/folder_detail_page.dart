@@ -110,6 +110,13 @@ class _FolderDetailPageState extends State<FolderDetailPage> {
                           ]),
                     ),
                     _roundButton(
+                        icon: Icons.fact_check_outlined,
+                        onTap: () => _showInspectionEditor(context, folder),
+                        isTab: isTab,
+                        active: (folder.inspectionOutcome != null &&
+                            folder.inspectionOutcome!.isNotEmpty)),
+                    SizedBox(width: isTab ? 12 : 8),
+                    _roundButton(
                         icon: _selectionMode
                             ? Icons.check_box_outlined
                             : Icons.checklist_rounded,
@@ -890,6 +897,142 @@ class _FolderDetailPageState extends State<FolderDetailPage> {
         );
       },
     );
+  }
+
+  Future<void> _showInspectionEditor(BuildContext context, Folder folder) async {
+    final siteCtrl = TextEditingController(text: folder.inspectionSiteId ?? '');
+    final notesCtrl = TextEditingController(text: folder.inspectionNotes ?? '');
+    String? outcome = folder.inspectionOutcome;
+    if (outcome != null && outcome.isEmpty) outcome = null;
+    final isTab = Responsive.isTablet(context);
+    final bottomPad = MediaQuery.paddingOf(context).bottom;
+    try {
+      await showModalBottomSheet<void>(
+        context: context,
+        backgroundColor: const Color(0xFF16182E),
+        isScrollControlled: true,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+        ),
+        builder: (ctx) => Padding(
+          padding: EdgeInsets.fromLTRB(20, 16, 20, 20 + bottomPad),
+          child: StatefulBuilder(
+            builder: (ctx, setModal) {
+              return SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'Inspection',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: isTab ? 20 : 18,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    const Text(
+                      'Included in PDF provenance when enabled in Settings.',
+                      style:
+                          TextStyle(color: Color(0xFFAFB5D9), fontSize: 13),
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: siteCtrl,
+                      style: const TextStyle(color: Colors.white),
+                      decoration: InputDecoration(
+                        labelText: 'Site / asset ID',
+                        labelStyle: const TextStyle(color: Color(0xFFAFB5D9)),
+                        filled: true,
+                        fillColor: const Color(0xFF1E2140),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    InputDecorator(
+                      decoration: InputDecoration(
+                        labelText: 'Outcome',
+                        labelStyle: const TextStyle(color: Color(0xFFAFB5D9)),
+                        filled: true,
+                        fillColor: const Color(0xFF1E2140),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<String>(
+                          value: outcome,
+                          isExpanded: true,
+                          dropdownColor: const Color(0xFF1E2140),
+                          hint: const Text(
+                            'Select',
+                            style: TextStyle(color: Color(0xFFAFB5D9)),
+                          ),
+                          items: const [
+                            DropdownMenuItem(
+                              value: 'pass',
+                              child: Text('Pass'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'fail',
+                              child: Text('Fail'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'na',
+                              child: Text('N/A'),
+                            ),
+                          ],
+                          onChanged: (v) => setModal(() => outcome = v),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: notesCtrl,
+                      maxLines: 3,
+                      style: const TextStyle(color: Colors.white),
+                      decoration: InputDecoration(
+                        labelText: 'Notes',
+                        labelStyle: const TextStyle(color: Color(0xFFAFB5D9)),
+                        filled: true,
+                        fillColor: const Color(0xFF1E2140),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+                    ElevatedButton(
+                      onPressed: () async {
+                        await foldersController.updateFolderInspection(
+                          folder.id,
+                          inspectionSiteId: siteCtrl.text,
+                          inspectionOutcome: outcome ?? '',
+                          inspectionNotes: notesCtrl.text,
+                        );
+                        if (ctx.mounted) Navigator.pop(ctx);
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.primary,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                      ),
+                      child: const Text('Save'),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ),
+      );
+    } finally {
+      siteCtrl.dispose();
+      notesCtrl.dispose();
+    }
   }
 
   void _goBackSafely() {

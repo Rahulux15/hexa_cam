@@ -29,6 +29,7 @@ import '../../../utils/calibration_calculator.dart';
 import '../../../utils/image_bytes_codec.dart';
 import '../../../utils/marked_media_renderer.dart';
 import '../../../utils/measurement_calculator.dart';
+import '../../../utils/calibration_guard.dart';
 import '../../../utils/responsive.dart';
 import '../../../ui/common/hexa_toast.dart';
 import '../../../ui/common/save_dialog.dart'; 
@@ -2038,6 +2039,17 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
               fontWeight: FontWeight.w500,
             ),
           ),
+          if (hasStored) ...[
+            SizedBox(height: isTablet ? 4 : 3),
+            Text(
+              'Last calibrated: ${_formatCalibrationTimestamp(effectiveCalibration.createdAt)}',
+              style: TextStyle(
+                color: const Color(0xFF9EE7C9),
+                fontSize: isTablet ? 11 : 10,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
           SizedBox(height: isTablet ? 4 : 3),
           Text(
             'Measurements stay in px until you calibrate this lens.',
@@ -2275,6 +2287,41 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
             ],
           ),
           const SizedBox(height: 10),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _lightPresetChip(
+                  isTablet,
+                  'Bright field',
+                  const CameraSettings(
+                    exposure: 100,
+                    iso: 200,
+                    temperature: 6500,
+                    tint: 0,
+                  ),
+                ),
+                _lightPresetChip(
+                  isTablet,
+                  'Low light',
+                  const CameraSettings(
+                    exposure: 120,
+                    iso: 1200,
+                    temperature: 4000,
+                    tint: 0,
+                  ),
+                ),
+                _lightPresetChip(
+                  isTablet,
+                  'Default',
+                  const CameraSettings(),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
           _buildSettingSlider(
             icon: Icons.wb_sunny_outlined,
             label: 'Exposure',
@@ -2319,6 +2366,38 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
         ],
       ),
     );
+  }
+
+  Widget _lightPresetChip(bool isTablet, String label, CameraSettings preset) {
+    return TextButton(
+      onPressed: () => setState(() {
+        _settings = _settings.copyWith(
+          exposure: preset.exposure,
+          iso: preset.iso,
+          temperature: preset.temperature,
+          tint: preset.tint,
+        );
+      }),
+      style: TextButton.styleFrom(
+        backgroundColor: Colors.white.withValues(alpha: 0.08),
+        foregroundColor: Colors.white,
+        padding: EdgeInsets.symmetric(
+          horizontal: isTablet ? 18 : 14,
+          vertical: 8,
+        ),
+      ),
+      child: Text(label),
+    );
+  }
+
+  String _formatCalibrationTimestamp(String iso) {
+    try {
+      final d = DateTime.parse(iso);
+      return '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')} '
+          '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
+    } catch (_) {
+      return iso;
+    }
   }
 
   Widget _buildSettingSlider({
@@ -4214,18 +4293,18 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
         : manualController.text.trim();
     knownController.dispose();
     manualController.dispose();
-    _saveCalibrationFromAnnotation(
+    await _saveCalibrationFromAnnotation(
       latestDistance,
       knownDistance: knownDistance,
       manualOverride: manualOverride,
     );
   }
 
-  void _saveCalibrationFromAnnotation(
+  Future<void> _saveCalibrationFromAnnotation(
     Annotation latestDistance, {
     required double knownDistance,
     double? manualOverride,
-  }) {
+  }) async {
     if (latestDistance.points.length < 2) {
       _showMessage(
         'Distance annotation is incomplete',
@@ -4257,12 +4336,59 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
     final unitPerPixel = override > 0
         ? override
         : CalibrationCalculator.computeFactor(pixelDistance, knownDistance);
+    final pixelsPerUnit = 1 / unitPerPixel;
+
+    final scaleErr = CalibrationGuard.validateScale(
+      unitPerPixel: unitPerPixel,
+      pixelsPerUnit: pixelsPerUnit,
+      measuredPixelDistance: pixelDistance,
+      referenceLength: knownDistance,
+    );
+    if (scaleErr != null) {
+      _showMessage(
+        scaleErr,
+        backgroundColor: AppTheme.danger,
+      );
+      return;
+    }
+
+    if (CalibrationGuard.shouldWarnShortLine(
+      measuredPixelDistance: pixelDistance,
+      imageWidth: _lastSourceSize.width,
+      imageHeight: _lastSourceSize.height,
+    )) {
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: const Color(0xFF232651),
+          title: const Text(
+            'Short reference line',
+            style: TextStyle(color: Colors.white),
+          ),
+          content: const Text(
+            'The calibration line is very short; results may be noisy. Continue?',
+            style: TextStyle(color: Colors.white70),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Continue'),
+            ),
+          ],
+        ),
+      );
+      if (ok != true) return;
+    }
 
     final calibration = StoredCalibration(
       lens: _selectedLens,
       unit: _calibrationUnit,
       unitPerPixel: unitPerPixel,
-      pixelsPerUnit: 1 / unitPerPixel,
+      pixelsPerUnit: pixelsPerUnit,
       referenceLength: knownDistance,
       measuredPixelDistance: pixelDistance,
       createdAt: DateTime.now().toIso8601String(),

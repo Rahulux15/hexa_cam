@@ -49,5 +49,9 @@ class AppConstants {
   static const String keyAppearance = 'appearance';
   static const String keyCalibration = 'calibration';
   static const String keyCalibrations = 'hexacam_calibrations';
+  static const String keyExportWatermark = 'hexacam_export_watermark';
+  static const String keyExportPdfProvenance = 'hexacam_export_pdf_provenance';
+  static const String keyLastSeenReleaseNotesVersion =
+      'hexacam_last_seen_release_notes';
   static const String demoEmail = 'test@hexacam.com';
 }

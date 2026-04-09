@@ -96,6 +96,31 @@ class FoldersController extends GetxController {
     await _saveAndRefresh(immediate: true);
   }
 
+  Future<void> updateFolderInspection(
+    String folderId, {
+    required String inspectionSiteId,
+    required String inspectionOutcome,
+    required String inspectionNotes,
+  }) async {
+    folders = folders.map((f) {
+      if (f.id != folderId) return f;
+      return Folder(
+        id: f.id,
+        name: f.name,
+        createdAt: f.createdAt,
+        images: f.images,
+        reports: f.reports,
+        inspectionSiteId:
+            inspectionSiteId.trim().isEmpty ? null : inspectionSiteId.trim(),
+        inspectionOutcome:
+            inspectionOutcome.trim().isEmpty ? null : inspectionOutcome.trim(),
+        inspectionNotes:
+            inspectionNotes.trim().isEmpty ? null : inspectionNotes.trim(),
+      );
+    }).toList();
+    await _saveAndRefresh(immediate: true);
+  }
+
   Future<void> addImage(String folderId, ImageData image) async {
     folders = folders.map((f) {
       if (f.id != folderId) return f;

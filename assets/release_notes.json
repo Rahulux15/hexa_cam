@@ -1,0 +1,9 @@
+{
+  "2.0.0+2": [
+    "Export: optional logo watermark and provenance metadata in PDFs",
+    "Settings: backup all app data to a ZIP on device",
+    "Folders: optional inspection site / outcome / notes for reports",
+    "Calibration: stricter validation before save",
+    "Camera: quick lighting presets (bright field / low light)"
+  ]
+}
