@@ -67,7 +67,7 @@ class ReportController extends GetxController {
     required ImageData image,
     required Uint8List baseBytes,
   }) async {
-    if (image.annotations.isEmpty || image.type == MediaType.video) {
+    if (image.annotations.isEmpty) {
       return baseBytes;
     }
     return MarkedMediaRenderer.renderPhotoWithAnnotations(
@@ -90,12 +90,23 @@ class ReportController extends GetxController {
     required String filename,
     required String folderName,
     String? folderLabel,
+    Rect? sharePositionOrigin,
     required void Function(String message, Color color) showMessage,
     void Function(String message, double progress)? onProgress,
   }) async {
     if (isDownloading.value) return false;
     isDownloading.value = true;
     try {
+      onProgress?.call('Saving report to app folder...', 0.18);
+      await _saveToAppFolderOnly(
+        bytes,
+        filename: filename,
+        folderName: folderName,
+        onProgress: (p) => onProgress?.call(
+          'Saving report to app folder...',
+          0.18 + (p * 0.12),
+        ),
+      );
       if (kIsWeb) {
         onProgress?.call('Downloading report...', 0.4);
         await FileService.savePdfToDevice(bytes, filename);
@@ -105,7 +116,11 @@ class ReportController extends GetxController {
       }
       if (Platform.isIOS) {
         onProgress?.call('Opening share options...', 0.5);
-        await FileService.sharePdfToDevice(bytes, filename);
+        await FileService.sharePdfToDevice(
+          bytes,
+          filename,
+          sharePositionOrigin: sharePositionOrigin,
+        );
         onProgress?.call('Opening share options...', 1.0);
         showMessage('Share opened. Save report to Files on your device.', Colors.green);
         return true;

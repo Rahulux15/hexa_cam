@@ -11,9 +11,11 @@ import 'annotation_painter.dart';
 
 class MarkedMediaRenderer {
   // Keep exported stroke thickness visually consistent with live drawing.
-  // We use a neutral scale so 2.0 stays 2.0 across preview/export/report.
+  // High-resolution exports need stronger scale so marks remain legible in
+  // gallery thumbnails, reports, and saved media across devices.
   static double _exportUiScale(Size sourceSize) {
-    return 1.0;
+    final shortSide = sourceSize.shortestSide <= 0 ? 1.0 : sourceSize.shortestSide;
+    return (shortSide / 720.0).clamp(1.35, 4.4).toDouble();
   }
 
   static Future<Uint8List> renderAnnotationOverlay({

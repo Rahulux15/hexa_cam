@@ -37,6 +37,7 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
   VideoPlayerController? _videoController;
   List<Annotation> _annotations = [];
   bool _showMeasurements = false;
+  bool _showMarkings = true;
   int _rotation = 0;
   bool _flipH = false;
   final bool _flipV = false;
@@ -149,7 +150,7 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
                 mirrorX: _flipH || _mirror,
                 mirrorY: _flipV,
                 initialAnnotations: _annotations,
-                hiddenAnnotationIds: _bakedAnnotationIdsAtOpen ?? const <String>{},
+                hiddenAnnotationIds: _effectiveHiddenAnnotationIds(),
                 showFab: false,
                 showMeasurements: _showMeasurements,
                 onAnnotationsChanged: (list) {
@@ -195,8 +196,9 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
                   child: Row(
                     children: [
                       GestureDetector(
-                        onTap: () => setState(
-                            () => _showMeasurements = !_showMeasurements),
+                        onTap: () => setState(() {
+                          _showMarkings = !_showMarkings;
+                        }),
                         child: Container(
                           height: 42,
                           padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -204,7 +206,7 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
                             color: const Color(0xFF232651),
                             borderRadius: BorderRadius.circular(999),
                             border: Border.all(
-                              color: _showMeasurements
+                              color: _showMarkings
                                   ? AppTheme.primaryLight
                                   : Colors.white.withValues(alpha: 0.14),
                             ),
@@ -218,7 +220,7 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
                               ),
                               const SizedBox(width: 6),
                               Text(
-                                _showMeasurements ? 'ON' : 'OFF',
+                                _showMarkings ? 'ON' : 'OFF',
                                 style: const TextStyle(
                                   color: Colors.white,
                                   fontWeight: FontWeight.w700,
@@ -307,6 +309,12 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
     );
   }
 
+  Set<String> _effectiveHiddenAnnotationIds() {
+    // ON/OFF should control visibility only; never auto-hide by baked ids.
+    if (_showMarkings) return const <String>{};
+    return _annotations.map((annotation) => annotation.id).toSet();
+  }
+
   void _openFullscreenViewer() {
     final image = _image;
     if (image == null) return;
@@ -328,7 +336,7 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
                   mirrorX: _flipH || _mirror,
                   mirrorY: _flipV,
                   initialAnnotations: List<Annotation>.from(_annotations),
-                  hiddenAnnotationIds: _bakedAnnotationIdsAtOpen ?? const <String>{},
+                  hiddenAnnotationIds: _effectiveHiddenAnnotationIds(),
                   onAnnotationsChanged: (list) {
                     _annotations = list;
                     _schedulePersistAnnotations();
@@ -552,6 +560,7 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
         await FileService.saveVideoToDevice(
           pathToExport,
           image.filename ?? 'hexa-cam-video.mp4',
+          sharePositionOrigin: _sharePositionOrigin(),
         );
         if (pathToExport != videoPath) {
           try {
@@ -567,13 +576,18 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
         await FileService.saveToDevice(
           bytes,
           image.filename ?? 'hexa-cam-image.jpg',
+          sharePositionOrigin: _sharePositionOrigin(),
         );
       }
       if (!mounted) return;
       _showMessage(
         image.type == MediaType.video
-            ? 'Video downloaded to Gallery'
-            : 'Image downloaded to Gallery',
+            ? (Platform.isIOS
+                ? 'Share opened. Save video to Photos or Files.'
+                : 'Video downloaded to Gallery')
+            : (Platform.isIOS
+                ? 'Share opened. Save image to Photos or Files.'
+                : 'Image downloaded to Gallery'),
         AppTheme.success,
       );
     } catch (_) {
@@ -604,6 +618,7 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
 
     String? reportMediaId = image.mediaId;
     String? reportThumbId = image.thumbnailId;
+    var hasBakedCapture = false;
     try {
       final flattened = await _viewerKey.currentState?.captureFlattenedPng();
       if (flattened != null && flattened.isNotEmpty) {
@@ -611,6 +626,7 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
         await MediaDatabase.saveAsset(bakedId, flattened);
         reportMediaId = bakedId;
         reportThumbId = bakedId;
+        hasBakedCapture = true;
       }
     } catch (_) {
       // Fallback to existing source/media path if flatten capture fails.
@@ -638,8 +654,8 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
       showCalibrationStamp: image.showCalibrationStamp,
       sourceWidth: image.sourceWidth,
       sourceHeight: image.sourceHeight,
-      // Viewer-captured flattened image should be used as-is for report media.
-      isMarkingsBaked: true,
+      // Mark as baked only when flattened capture actually succeeded.
+      isMarkingsBaked: hasBakedCapture,
     );
 
     if (!mounted) return;
@@ -761,37 +777,68 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
   Future<void> _confirmDeleteOrClear() async {
     final choice = await showDialog<String>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF232651),
-        title: const Text('Delete', style: TextStyle(color: Colors.white)),
-        content: const Text(
-          'Remove all markings on this image, or delete the image from the folder?',
-          style: TextStyle(color: Colors.white70),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, 'cancel'),
-            child: const Text(
-              'Cancel',
-              style: TextStyle(color: Colors.white54),
+      builder: (ctx) {
+        final media = MediaQuery.of(ctx);
+        final maxHeight = media.size.height - media.viewInsets.bottom - 48;
+        return Dialog(
+          backgroundColor: const Color(0xFF232651),
+          insetPadding: EdgeInsets.fromLTRB(
+            20,
+            24,
+            20,
+            24 + media.viewInsets.bottom,
+          ),
+          child: SafeArea(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxHeight: maxHeight.clamp(220, 560)),
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(20, 18, 20, 12),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Delete', style: TextStyle(color: Colors.white)),
+                    const SizedBox(height: 10),
+                    const Text(
+                      'Remove all markings on this image, or delete the image from the folder?',
+                      style: TextStyle(color: Colors.white70),
+                    ),
+                    const SizedBox(height: 14),
+                    Wrap(
+                      alignment: WrapAlignment.end,
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(ctx, 'cancel'),
+                          child: const Text(
+                            'Cancel',
+                            style: TextStyle(color: Colors.white54),
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: () => Navigator.pop(ctx, 'clear'),
+                          child: const Text(
+                            'Clear markings',
+                            style: TextStyle(color: Colors.white70),
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: () => Navigator.pop(ctx, 'remove'),
+                          child: Text(
+                            'Delete image',
+                            style: TextStyle(color: AppTheme.danger),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
             ),
           ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, 'clear'),
-            child: const Text(
-              'Clear markings',
-              style: TextStyle(color: Colors.white70),
-            ),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, 'remove'),
-            child: Text(
-              'Delete image',
-              style: TextStyle(color: AppTheme.danger),
-            ),
-          ),
-        ],
-      ),
+        );
+      },
     );
     if (!mounted || choice == null || choice == 'cancel') return;
     if (choice == 'clear') {
@@ -846,41 +893,65 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
     if (image == null) return;
     showDialog(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        backgroundColor: const Color(0xFF232651),
-        title: const Text('Media Info', style: TextStyle(color: Colors.white)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Type: ${image.type == MediaType.video ? 'Video' : 'Image'}',
-              style: const TextStyle(color: Colors.white70),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              'Lens: ${image.lens ?? '-'}',
-              style: const TextStyle(color: Colors.white70),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              'Time: ${image.timestamp}',
-              style: const TextStyle(color: Colors.white70),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              'Annotations: ${_annotations.length}',
-              style: const TextStyle(color: Colors.white70),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Close', style: TextStyle(color: Colors.white)),
+      builder: (dialogContext) {
+        final media = MediaQuery.of(dialogContext);
+        final maxHeight = media.size.height - media.viewInsets.bottom - 48;
+        return Dialog(
+          backgroundColor: const Color(0xFF232651),
+          insetPadding: EdgeInsets.fromLTRB(
+            20,
+            24,
+            20,
+            24 + media.viewInsets.bottom,
           ),
-        ],
-      ),
+          child: SafeArea(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxHeight: maxHeight.clamp(220, 560)),
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(20, 18, 20, 12),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Media Info', style: TextStyle(color: Colors.white)),
+                    const SizedBox(height: 10),
+                    Text(
+                      'Type: ${image.type == MediaType.video ? 'Video' : 'Image'}',
+                      style: const TextStyle(color: Colors.white70),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Lens: ${image.lens ?? '-'}',
+                      style: const TextStyle(color: Colors.white70),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Time: ${image.timestamp}',
+                      style: const TextStyle(color: Colors.white70),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Annotations: ${_annotations.length}',
+                      style: const TextStyle(color: Colors.white70),
+                    ),
+                    const SizedBox(height: 14),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton(
+                        onPressed: () => Navigator.pop(dialogContext),
+                        child: const Text(
+                          'Close',
+                          style: TextStyle(color: Colors.white),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -964,4 +1035,11 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
       ),
     ),
   );
+
+  Rect _sharePositionOrigin() {
+    final box = context.findRenderObject() as RenderBox?;
+    if (box == null || !box.hasSize) return const Rect.fromLTWH(0, 0, 1, 1);
+    final origin = box.localToGlobal(Offset.zero);
+    return origin & box.size;
+  }
 }

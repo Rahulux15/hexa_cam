@@ -15,6 +15,7 @@ import '../../data/models/image_data.dart';
 import '../../data/models/report_data.dart';
 import '../../data/services/database_service.dart';
 import '../../data/services/file_service.dart';
+import '../../data/services/video_export_service.dart';
 import '../../state/app_registry.dart';
 import '../../utils/responsive.dart';
 import '../common/media_image.dart';
@@ -698,7 +699,7 @@ class _ReportPageState extends State<ReportPage> {
     );
   }
 
-  Future<Uint8List> _buildReportPdf() async {
+  Future<_ReportArtifacts> _buildReportArtifacts() async {
     final reportImages = _reportImages;
     final imageBytes = <Uint8List?>[];
     for (final image in reportImages) {
@@ -746,7 +747,11 @@ class _ReportPageState extends State<ReportPage> {
       }),
     };
 
-    return compute(_generateReportPdfInBackground, payload);
+    final pdfBytes = await compute(_generateReportPdfInBackground, payload);
+    return _ReportArtifacts(
+      pdfBytes: pdfBytes,
+      primaryPreviewBytes: imageBytes.isEmpty ? null : imageBytes.first,
+    );
   }
 
   Future<Uint8List?> _loadReportLogoBytes() async {
@@ -771,13 +776,15 @@ class _ReportPageState extends State<ReportPage> {
   Future<void> _downloadReport() async {
     if (!_validateForm()) return;
     try {
-      final bytes = await _buildReportPdf();
+      final artifacts = await _buildReportArtifacts();
+      final bytes = artifacts.pdfBytes;
       final filename = 'report-${DateTime.now().millisecondsSinceEpoch}.pdf';
       final ok = await _reportController.downloadReport(
         bytes: bytes,
         filename: filename,
         folderName: widget.folderId,
         folderLabel: _folderLabel(),
+        sharePositionOrigin: _sharePositionOrigin(),
         showMessage: _showMessage,
         onProgress: _showProgress,
       );
@@ -787,7 +794,10 @@ class _ReportPageState extends State<ReportPage> {
       await MediaDatabase.saveAsset(assetId, bytes);
 
       final primaryImage = _primaryImage;
-      final previewAssetId = await _storeSavedReportPreviewAsset(primaryImage);
+      final previewAssetId = await _storeSavedReportPreviewAsset(
+        primaryImage,
+        cachedBytes: artifacts.primaryPreviewBytes,
+      );
       final report = ReportData(
         id: DateTime.now().millisecondsSinceEpoch.toString(),
         filename: filename,
@@ -875,9 +885,20 @@ class _ReportPageState extends State<ReportPage> {
         }
       }
       if (!kIsWeb && source.startsWith('file://')) {
-        final bytes = await FileService.readBytes(
-          source.replaceFirst('file://', ''),
-        );
+        final filePath = source.replaceFirst('file://', '');
+        if (image.type == MediaType.video) {
+          final thumb = await VideoExportService.extractVideoThumbnailBytes(
+            sourcePath: filePath,
+          );
+          if (thumb != null && thumb.isNotEmpty) {
+            final prepared = await _reportController.prepareMediaBytes(
+              image: image,
+              baseBytes: thumb,
+            );
+            return _optimizePdfImageBytes(prepared);
+          }
+        }
+        final bytes = await FileService.readBytes(filePath);
         final prepared = await _reportController.prepareMediaBytes(
           image: image,
           baseBytes: bytes,
@@ -889,6 +910,18 @@ class _ReportPageState extends State<ReportPage> {
           !source.startsWith('http://') &&
           !source.startsWith('https://') &&
           !source.startsWith('data:')) {
+        if (image.type == MediaType.video) {
+          final thumb = await VideoExportService.extractVideoThumbnailBytes(
+            sourcePath: source,
+          );
+          if (thumb != null && thumb.isNotEmpty) {
+            final prepared = await _reportController.prepareMediaBytes(
+              image: image,
+              baseBytes: thumb,
+            );
+            return _optimizePdfImageBytes(prepared);
+          }
+        }
         final bytes = await FileService.readBytes(source);
         final prepared = await _reportController.prepareMediaBytes(
           image: image,
@@ -928,7 +961,8 @@ class _ReportPageState extends State<ReportPage> {
   Future<void> _saveReport() async {
     if (!_validateForm()) return;
     try {
-      final bytes = await _buildReportPdf();
+      final artifacts = await _buildReportArtifacts();
+      final bytes = artifacts.pdfBytes;
       final filename = 'report-${DateTime.now().millisecondsSinceEpoch}.pdf';
       final ok = await _reportController.saveReport(
         bytes: bytes,
@@ -943,7 +977,10 @@ class _ReportPageState extends State<ReportPage> {
       await MediaDatabase.saveAsset(assetId, bytes);
 
       final primaryImage = _primaryImage;
-      final previewAssetId = await _storeSavedReportPreviewAsset(primaryImage);
+      final previewAssetId = await _storeSavedReportPreviewAsset(
+        primaryImage,
+        cachedBytes: artifacts.primaryPreviewBytes,
+      );
       final report = ReportData(
         id: DateTime.now().millisecondsSinceEpoch.toString(),
         filename: filename,
@@ -982,10 +1019,14 @@ class _ReportPageState extends State<ReportPage> {
     HexaToast.show(context, text, type: type);
   }
 
-  Future<String?> _storeSavedReportPreviewAsset(ImageData? image) async {
+  Future<String?> _storeSavedReportPreviewAsset(
+    ImageData? image, {
+    Uint8List? cachedBytes,
+  }) async {
     if (image == null) return null;
     try {
-      final previewBytes = await _collectPdfImageBytes(image);
+      final previewBytes =
+          cachedBytes ?? await _collectPdfImageBytes(image);
       if (previewBytes == null || previewBytes.isEmpty) return null;
       final previewAssetId = FileService.generateAssetId('report-preview');
       await MediaDatabase.saveAsset(previewAssetId, previewBytes);
@@ -1004,6 +1045,13 @@ class _ReportPageState extends State<ReportPage> {
       progress: progress.clamp(0.0, 1.0),
       duration: const Duration(milliseconds: 900),
     );
+  }
+
+  Rect _sharePositionOrigin() {
+    final box = context.findRenderObject() as RenderBox?;
+    if (box == null || !box.hasSize) return const Rect.fromLTWH(0, 0, 1, 1);
+    final origin = box.localToGlobal(Offset.zero);
+    return origin & box.size;
   }
 
   String _folderLabel() {
@@ -1026,6 +1074,16 @@ class _ReportPageState extends State<ReportPage> {
     }
     Get.offAllNamed<void>('/folders');
   }
+}
+
+class _ReportArtifacts {
+  const _ReportArtifacts({
+    required this.pdfBytes,
+    required this.primaryPreviewBytes,
+  });
+
+  final Uint8List pdfBytes;
+  final Uint8List? primaryPreviewBytes;
 }
 
 class _FieldData {

@@ -758,6 +758,13 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
     Get.offAllNamed<void>('/folders');
   }
 
+  Rect _sharePositionOrigin() {
+    final box = context.findRenderObject() as RenderBox?;
+    if (box == null || !box.hasSize) return const Rect.fromLTWH(0, 0, 1, 1);
+    final origin = box.localToGlobal(Offset.zero);
+    return origin & box.size;
+  }
+
   Widget _buildCameraViewport() {
     if (!_isInitialized || _controller == null) {
       if (_isInitializingCamera) {
@@ -1041,6 +1048,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
           },
         ),
       ),
+    ),
     );
   }
 
@@ -3255,6 +3263,11 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
 
       await MediaDatabase.saveAsset(mediaId, finalBytes);
       String? thumbnailId = isVideo ? null : mediaId;
+      if (!isVideo && annotations.isNotEmpty) {
+        final thumbId = FileService.generateAssetId('thumb');
+        await MediaDatabase.saveAsset(thumbId, finalBytes);
+        thumbnailId = thumbId;
+      }
       if (isVideo && !kIsWeb) {
         try {
           final thumbBytes = await VideoExportService.extractVideoThumbnailBytes(
@@ -3304,11 +3317,23 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
 
       if (exportToDevice) {
         if (kIsWeb) {
-          await FileService.saveToDevice(finalBytes, preferredName);
+          await FileService.saveToDevice(
+            finalBytes,
+            preferredName,
+            sharePositionOrigin: _sharePositionOrigin(),
+          );
         } else if (isVideo) {
-          await FileService.saveVideoToDevice(mediaSourcePath, preferredName);
+          await FileService.saveVideoToDevice(
+            mediaSourcePath,
+            preferredName,
+            sharePositionOrigin: _sharePositionOrigin(),
+          );
         } else {
-          await FileService.saveToDevice(finalBytes, preferredName);
+          await FileService.saveToDevice(
+            finalBytes,
+            preferredName,
+            sharePositionOrigin: _sharePositionOrigin(),
+          );
         }
       }
 
@@ -3338,8 +3363,12 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
       _showMessage(
         exportToDevice
             ? (isVideo
-                ? 'Video downloaded to Gallery'
-                : 'Image downloaded to Gallery')
+                ? (Platform.isIOS
+                    ? 'Share opened. Save video to Photos or Files.'
+                    : 'Video downloaded to Gallery')
+                : (Platform.isIOS
+                    ? 'Share opened. Save image to Photos or Files.'
+                    : 'Image downloaded to Gallery'))
             : (isVideo
                 ? 'Saved video to ${_folderLabel(_displayFolderName())}'
                 : 'Saved image to ${_folderLabel(_displayFolderName())}'),
@@ -3675,29 +3704,56 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
     if (!permanent) return;
     await showDialog<void>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => Dialog(
         backgroundColor: const Color(0xFF2B295C),
-        title: const Text(
-          'Camera access needed',
-          style: TextStyle(color: Colors.white, fontSize: 18),
-        ),
-        content: const Text(
-          'Hexa Cam needs camera permission. You can enable it in Settings → Privacy & Security → Camera.',
-          style: TextStyle(color: Colors.white70, height: 1.35),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Not now', style: TextStyle(color: Colors.white70)),
+        insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: 420,
+            maxHeight: MediaQuery.sizeOf(ctx).height * 0.85,
           ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              openAppSettings();
-            },
-            child: const Text('Open Settings', style: TextStyle(color: AppTheme.primary)),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Camera access needed',
+                  style: TextStyle(color: Colors.white, fontSize: 18),
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'Hexa Cam needs camera permission. You can enable it in Settings → Privacy & Security → Camera.',
+                  style: TextStyle(color: Colors.white70, height: 1.35),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx),
+                      child: const Text(
+                        'Not now',
+                        style: TextStyle(color: Colors.white70),
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: () {
+                        Navigator.pop(ctx);
+                        openAppSettings();
+                      },
+                      child: const Text(
+                        'Open Settings',
+                        style: TextStyle(color: AppTheme.primary),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
-        ],
+        ),
       ),
     );
   }
@@ -3719,70 +3775,92 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
     }
   }
 
-  void _showTextDialog(HexaPoint tapPoint) {
+  Future<void> _showTextDialog(HexaPoint tapPoint) async {
     final TextEditingController controller = TextEditingController();
-    showDialog(
+    final text = await showDialog<String>(
       context: context,
       barrierDismissible: false,
-      builder: (context) => AlertDialog(
+      builder: (ctx) => Dialog(
         backgroundColor: const Color(0xFF2B295C),
-        title: const Text(
-          'Add Text',
-          style: TextStyle(color: Colors.white, fontSize: 18),
+        insetPadding: EdgeInsets.fromLTRB(
+          20,
+          20,
+          20,
+          20 + MediaQuery.viewInsetsOf(ctx).bottom,
         ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: controller,
-              style: const TextStyle(color: Colors.white),
-              decoration: const InputDecoration(
-                hintText: 'Enter text',
-                hintStyle: TextStyle(color: Color(0xFFAFB5D9)),
-                enabledBorder: UnderlineInputBorder(
-                  borderSide: BorderSide(color: Color(0xFF4A57AA)),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: 420,
+            maxHeight: MediaQuery.sizeOf(ctx).height * 0.85,
+          ),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Add Text',
+                  style: TextStyle(color: Colors.white, fontSize: 18),
                 ),
-                focusedBorder: UnderlineInputBorder(
-                  borderSide: BorderSide(color: AppTheme.primary),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: controller,
+                  autofocus: true,
+                  style: const TextStyle(color: Colors.white),
+                  decoration: const InputDecoration(
+                    hintText: 'Enter text',
+                    hintStyle: TextStyle(color: Color(0xFFAFB5D9)),
+                    enabledBorder: UnderlineInputBorder(
+                      borderSide: BorderSide(color: Color(0xFF4A57AA)),
+                    ),
+                    focusedBorder: UnderlineInputBorder(
+                      borderSide: BorderSide(color: AppTheme.primary),
+                    ),
+                  ),
                 ),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text(
-              'Cancel',
-              style: TextStyle(color: Colors.white70),
+                const SizedBox(height: 16),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx),
+                      child: const Text(
+                        'Cancel',
+                        style: TextStyle(color: Colors.white70),
+                      ),
+                    ),
+                    ElevatedButton(
+                      onPressed: () =>
+                          Navigator.pop(ctx, controller.text.trim()),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.primary,
+                      ),
+                      child: const Text('Add', style: TextStyle(color: Colors.white)),
+                    ),
+                  ],
+                ),
+              ],
             ),
           ),
-          ElevatedButton(
-            onPressed: () {
-              final text = controller.text.trim();
-              if (text.isNotEmpty) {
-                final annotation = Annotation(
-                  id: _uuid.v4(),
-                  type: AnnotationType.text,
-                  points: [tapPoint],
-                  color: _drawingColor,
-                  strokeWidth: _drawingStrokeWidth,
-                  timestamp: DateTime.now().toIso8601String(),
-                  text: text,
-                );
-                setState(() {
-                  _annotations.add(annotation);
-                  _redoStack.clear();
-                });
-              }
-              Navigator.pop(context);
-            },
-            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.primary),
-            child: const Text('Add', style: TextStyle(color: Colors.white)),
-          ),
-        ],
+        ),
       ),
     );
+    controller.dispose();
+    if (text == null || text.isEmpty || !mounted) return;
+    final annotation = Annotation(
+      id: _uuid.v4(),
+      type: AnnotationType.text,
+      points: [tapPoint],
+      color: _drawingColor,
+      strokeWidth: _drawingStrokeWidth,
+      timestamp: DateTime.now().toIso8601String(),
+      text: text,
+    );
+    setState(() {
+      _annotations.add(annotation);
+      _redoStack.clear();
+    });
   }
 
   void _updateDrawingColor({int? red, int? green, int? blue}) {
@@ -3852,175 +3930,192 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
           ? _manualOverrideController.text.trim()
           : (stored == null ? '' : stored.unitPerPixel.toStringAsFixed(3)),
     );
-    await showDialog<void>(
+    final result = await showDialog<Map<String, double?>>(
       context: context,
       barrierDismissible: false,
       builder: (dialogContext) => Dialog(
         backgroundColor: Colors.transparent,
-        insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+        insetPadding: EdgeInsets.fromLTRB(
+          18,
+          18,
+          18,
+          18 + MediaQuery.viewInsetsOf(dialogContext).bottom,
+        ),
         child: ConstrainedBox(
-          constraints: BoxConstraints(maxWidth: isTablet ? 420 : 360),
+          constraints: BoxConstraints(
+            maxWidth: isTablet ? 420 : 360,
+            maxHeight: MediaQuery.sizeOf(dialogContext).height * 0.9,
+          ),
           child: Container(
             padding: EdgeInsets.all(isTablet ? 24 : 20),
             decoration: AppTheme.softCardDecoration(
               borderRadius: BorderRadius.circular(24),
               color: const Color(0xFF2A295D),
             ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Set Calibration',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: isTablet ? 22 : 18,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  'Enter the real distance for this line ($_selectedLens).',
-                  style: const TextStyle(color: Color(0xFFD9DCF4), height: 1.4),
-                ),
-                const SizedBox(height: 14),
-                TextField(
-                  controller: knownController,
-                  autofocus: true,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
-                  ),
-                  style: const TextStyle(color: Colors.white),
-                  decoration: InputDecoration(
-                    labelText:
-                        'Distance (${_calibrationUnit == 'μm' ? 'Micron' : 'Nanometer'})',
-                    labelStyle: const TextStyle(color: Color(0xFF9DA5CB)),
-                    filled: true,
-                    fillColor: const Color(0xFF1D284D),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(18),
-                      borderSide: const BorderSide(color: Color(0xFF35517A)),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Set Calibration',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: isTablet ? 22 : 18,
+                      fontWeight: FontWeight.w700,
                     ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(18),
-                      borderSide: const BorderSide(color: Color(0xFF35517A)),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    'Enter the real distance for this line ($_selectedLens).',
+                    style: const TextStyle(color: Color(0xFFD9DCF4), height: 1.4),
+                  ),
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: knownController,
+                    autofocus: true,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
                     ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(18),
-                      borderSide: const BorderSide(
-                        color: AppTheme.primaryLight,
+                    style: const TextStyle(color: Colors.white),
+                    decoration: InputDecoration(
+                      labelText:
+                          'Distance (${_calibrationUnit == 'μm' ? 'Micron' : 'Nanometer'})',
+                      labelStyle: const TextStyle(color: Color(0xFF9DA5CB)),
+                      filled: true,
+                      fillColor: const Color(0xFF1D284D),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(18),
+                        borderSide: const BorderSide(color: Color(0xFF35517A)),
                       ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: manualController,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
-                  ),
-                  style: const TextStyle(color: Colors.white),
-                  decoration: InputDecoration(
-                    labelText: 'Manual Override (unit/px) - optional',
-                    labelStyle: const TextStyle(color: Color(0xFF9DA5CB)),
-                    filled: true,
-                    fillColor: const Color(0xFF1D284D),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(18),
-                      borderSide: const BorderSide(color: Color(0xFF35517A)),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(18),
-                      borderSide: const BorderSide(color: Color(0xFF35517A)),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(18),
-                      borderSide: const BorderSide(
-                        color: AppTheme.primaryLight,
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(18),
+                        borderSide: const BorderSide(color: Color(0xFF35517A)),
                       ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Row(
-                  children: [
-                    Expanded(
-                      child: SizedBox(
-                        height: 48,
-                        child: ElevatedButton(
-                          onPressed: () => Navigator.pop(dialogContext),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF1D284D),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(18),
-                            ),
-                          ),
-                          child: const Text(
-                            'Cancel',
-                            style: TextStyle(color: Colors.white),
-                          ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(18),
+                        borderSide: const BorderSide(
+                          color: AppTheme.primaryLight,
                         ),
                       ),
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: SizedBox(
-                        height: 48,
-                        child: ElevatedButton(
-                          onPressed: () {
-                            final knownDistance =
-                                double.tryParse(knownController.text.trim()) ??
-                                0;
-                            final manualOverride = double.tryParse(
-                              manualController.text.trim(),
-                            );
-                            _manualOverrideController.text =
-                                manualController.text.trim().isEmpty
-                                ? '0'
-                                : manualController.text.trim();
-                            Navigator.pop(dialogContext);
-                            _saveCalibrationFromAnnotation(
-                              latestDistance,
-                              knownDistance: knownDistance,
-                              manualOverride: manualOverride,
-                            );
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.transparent,
-                            shadowColor: Colors.transparent,
-                            padding: EdgeInsets.zero,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(18),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: manualController,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    style: const TextStyle(color: Colors.white),
+                    decoration: InputDecoration(
+                      labelText: 'Manual Override (unit/px) - optional',
+                      labelStyle: const TextStyle(color: Color(0xFF9DA5CB)),
+                      filled: true,
+                      fillColor: const Color(0xFF1D284D),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(18),
+                        borderSide: const BorderSide(color: Color(0xFF35517A)),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(18),
+                        borderSide: const BorderSide(color: Color(0xFF35517A)),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(18),
+                        borderSide: const BorderSide(
+                          color: AppTheme.primaryLight,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: SizedBox(
+                          height: 48,
+                          child: ElevatedButton(
+                            onPressed: () => Navigator.pop(dialogContext),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF1D284D),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(18),
+                              ),
+                            ),
+                            child: const Text(
+                              'Cancel',
+                              style: TextStyle(color: Colors.white),
                             ),
                           ),
-                          child: Ink(
-                            decoration: BoxDecoration(
-                              gradient: AppTheme.buttonGradient,
-                              borderRadius: BorderRadius.circular(18),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: SizedBox(
+                          height: 48,
+                          child: ElevatedButton(
+                            onPressed: () {
+                              Navigator.pop(dialogContext, <String, double?>{
+                                'knownDistance':
+                                    double.tryParse(knownController.text.trim()) ??
+                                    0,
+                                'manualOverride': double.tryParse(
+                                  manualController.text.trim(),
+                                ),
+                              });
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.transparent,
+                              shadowColor: Colors.transparent,
+                              padding: EdgeInsets.zero,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(18),
+                              ),
                             ),
-                            child: const Center(
-                              child: Text(
-                                'Save',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w700,
+                            child: Ink(
+                              decoration: BoxDecoration(
+                                gradient: AppTheme.buttonGradient,
+                                borderRadius: BorderRadius.circular(18),
+                              ),
+                              child: const Center(
+                                child: Text(
+                                  'Save',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w700,
+                                  ),
                                 ),
                               ),
                             ),
                           ),
                         ),
                       ),
-                    ),
-                  ],
-                ),
-              ],
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
         ),
       ),
     );
+    if (result == null) {
+      knownController.dispose();
+      manualController.dispose();
+      return;
+    }
+    final knownDistance = result['knownDistance'] ?? 0;
+    final manualOverride = result['manualOverride'];
+    _manualOverrideController.text = manualController.text.trim().isEmpty
+        ? '0'
+        : manualController.text.trim();
     knownController.dispose();
     manualController.dispose();
+    _saveCalibrationFromAnnotation(
+      latestDistance,
+      knownDistance: knownDistance,
+      manualOverride: manualOverride,
+    );
   }
 
   void _saveCalibrationFromAnnotation(

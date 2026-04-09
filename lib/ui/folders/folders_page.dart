@@ -517,21 +517,33 @@ class _FoldersPageState extends State<FoldersPage> {
     required FutureOr<void> Function() onPrimary,
   }) {
     final isTab = Responsive.isTablet(context);
+    final media = MediaQuery.of(context);
+    final maxHeight = media.size.height - media.viewInsets.bottom - 48;
     return Dialog(
       backgroundColor: Colors.transparent,
-      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
-      child: ConstrainedBox(
-        constraints: BoxConstraints(maxWidth: isTab ? 460 : 380),
-        child: Container(
-          padding: EdgeInsets.all(isTab ? 26 : 24),
-          decoration: AppTheme.softCardDecoration(
-            borderRadius: BorderRadius.circular(24),
-            color: const Color(0xFF2A295D),
+      insetPadding: EdgeInsets.fromLTRB(
+        24,
+        24,
+        24,
+        24 + media.viewInsets.bottom,
+      ),
+      child: SafeArea(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: isTab ? 460 : 380,
+            maxHeight: maxHeight.clamp(240, 620),
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
+          child: Container(
+            padding: EdgeInsets.all(isTab ? 26 : 24),
+            decoration: AppTheme.softCardDecoration(
+              borderRadius: BorderRadius.circular(24),
+              color: const Color(0xFF2A295D),
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
               Text(
                 title,
                 style: TextStyle(
@@ -586,6 +598,8 @@ class _FoldersPageState extends State<FoldersPage> {
                 ],
               ),
             ],
+              ),
+            ),
           ),
         ),
       ),

@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:ui';
 
 import 'package:flutter/foundation.dart';
 import 'package:gal/gal.dart';
@@ -19,10 +20,22 @@ class FileService {
   static String generateAssetId([String prefix = 'media']) =>
       '$prefix-${_uuid.v4()}';
 
-  static Future<void> saveToDevice(Uint8List bytes, String filename) async {
+  static Future<void> saveToDevice(
+    Uint8List bytes,
+    String filename, {
+    Rect? sharePositionOrigin,
+  }) async {
     if (kIsWeb) {
       final name = _safeFilename(filename, fallbackExtension: '.jpg');
       await downloadBytesWeb(bytes, name, mimeType: 'image/jpeg');
+      return;
+    }
+    if (Platform.isIOS) {
+      await shareImageToDevice(
+        bytes,
+        filename,
+        sharePositionOrigin: sharePositionOrigin,
+      );
       return;
     }
     final sanitized = filename
@@ -47,7 +60,11 @@ class FileService {
     );
   }
 
-  static Future<void> sharePdfToDevice(Uint8List bytes, String filename) async {
+  static Future<void> sharePdfToDevice(
+    Uint8List bytes,
+    String filename, {
+    Rect? sharePositionOrigin,
+  }) async {
     if (kIsWeb) {
       final name = _safeFilename(filename, fallbackExtension: '.pdf');
       await downloadBytesWeb(bytes, name, mimeType: 'application/pdf');
@@ -61,19 +78,111 @@ class FileService {
     );
     final tempFile = File(tempPath);
     await tempFile.writeAsBytes(bytes, flush: true);
-    await SharePlus.instance.share(
-      ShareParams(
-        files: [XFile(tempFile.path, mimeType: 'application/pdf')],
-        title: safeName,
-      ),
-    );
+    try {
+      await SharePlus.instance.share(
+        ShareParams(
+          files: [XFile(tempFile.path, mimeType: 'application/pdf')],
+          title: safeName,
+          sharePositionOrigin: sharePositionOrigin,
+        ),
+      );
+    } catch (_) {
+      // iOS fallback for popover-origin failures.
+      await SharePlus.instance.share(
+        ShareParams(
+          files: [XFile(tempFile.path, mimeType: 'application/pdf')],
+          title: safeName,
+        ),
+      );
+    }
   }
 
   static Future<void> saveVideoToDevice(
     String videoPath,
-    String filename,
-  ) async {
+    String filename, {
+    Rect? sharePositionOrigin,
+  }) async {
+    if (!kIsWeb && Platform.isIOS) {
+      await shareVideoToDevice(
+        videoPath,
+        filename,
+        sharePositionOrigin: sharePositionOrigin,
+      );
+      return;
+    }
     await Gal.putVideo(videoPath);
+  }
+
+  static Future<void> shareImageToDevice(
+    Uint8List bytes,
+    String filename, {
+    Rect? sharePositionOrigin,
+  }) async {
+    if (kIsWeb) {
+      final name = _safeFilename(filename, fallbackExtension: '.jpg');
+      await downloadBytesWeb(bytes, name, mimeType: 'image/jpeg');
+      return;
+    }
+    final tempDir = await getTemporaryDirectory();
+    final safeName = _safeFilename(filename, fallbackExtension: '.jpg');
+    final tempPath = p.join(
+      tempDir.path,
+      'share-${DateTime.now().millisecondsSinceEpoch}-$safeName',
+    );
+    final tempFile = File(tempPath);
+    await tempFile.writeAsBytes(bytes, flush: true);
+    try {
+      await SharePlus.instance.share(
+        ShareParams(
+          files: [XFile(tempFile.path, mimeType: 'image/jpeg')],
+          title: safeName,
+          sharePositionOrigin: sharePositionOrigin,
+        ),
+      );
+    } catch (_) {
+      // iOS fallback for popover-origin failures.
+      await SharePlus.instance.share(
+        ShareParams(
+          files: [XFile(tempFile.path, mimeType: 'image/jpeg')],
+          title: safeName,
+        ),
+      );
+    }
+  }
+
+  static Future<void> shareVideoToDevice(
+    String videoPath,
+    String filename, {
+    Rect? sharePositionOrigin,
+  }) async {
+    if (kIsWeb) {
+      return;
+    }
+    final safeName = _safeFilename(filename, fallbackExtension: '.mp4');
+    final tempDir = await getTemporaryDirectory();
+    final source = File(videoPath);
+    final safePath = p.join(
+      tempDir.path,
+      'share-${DateTime.now().millisecondsSinceEpoch}-$safeName',
+    );
+    final shareFile = await source.copy(safePath);
+    try {
+      await SharePlus.instance.share(
+        ShareParams(
+          files: [XFile(shareFile.path, mimeType: 'video/mp4')],
+          title: safeName,
+          sharePositionOrigin: sharePositionOrigin,
+        ),
+      );
+    } catch (_) {
+      // iOS fallback for popover-origin failures.
+      await SharePlus.instance.share(
+        ShareParams(
+          files: [XFile(shareFile.path, mimeType: 'video/mp4')],
+          title: safeName,
+        ),
+      );
+    }
   }
 
   static Future<String> getTempPath() async {

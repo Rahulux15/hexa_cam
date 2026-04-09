@@ -883,6 +883,7 @@ class _FolderDetailPageState extends State<FolderDetailPage> {
       bytes: bytes,
       filename: report.filename,
       folderName: widget.folderId,
+      sharePositionOrigin: _sharePositionOrigin(),
       showMessage: (message, color) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(message), backgroundColor: color),
@@ -899,6 +900,13 @@ class _FolderDetailPageState extends State<FolderDetailPage> {
       return;
     }
     Get.offAllNamed<void>('/folders');
+  }
+
+  Rect _sharePositionOrigin() {
+    final box = context.findRenderObject() as RenderBox?;
+    if (box == null || !box.hasSize) return const Rect.fromLTWH(0, 0, 1, 1);
+    final origin = box.localToGlobal(Offset.zero);
+    return origin & box.size;
   }
 }
 

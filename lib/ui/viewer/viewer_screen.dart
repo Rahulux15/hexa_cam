@@ -245,7 +245,9 @@ class ViewerScreenState extends State<ViewerScreen> {
   }
 
   List<Annotation> _annotationsForPaint() {
-    if (!widget.showMeasurements) return const <Annotation>[];
+    if (!widget.showMeasurements) {
+      return _annotations.map((a) => a.copyWith(measurement: null)).toList();
+    }
     final lens = widget.image.lens;
     final cal = lens == null ? null : calibrationController.calibrations[lens];
     return _annotations.map((a) {
@@ -266,22 +268,33 @@ class ViewerScreenState extends State<ViewerScreen> {
     final knownController = TextEditingController(
       text: stored == null ? '' : stored.referenceLength.toStringAsFixed(0),
     );
+    var dialogUnit = _calibrationUnit;
     final px = _pixelDistance(latestDistance);
-    final ok = await showDialog<bool>(
+    final result = await showDialog<Map<String, dynamic>>(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) => Dialog(
-        backgroundColor: Colors.transparent,
-        insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
-        child: ConstrainedBox(
-          constraints: BoxConstraints(maxWidth: isTablet ? 420 : 360),
-          child: Container(
-            padding: EdgeInsets.all(isTablet ? 24 : 20),
-            decoration: AppTheme.softCardDecoration(
-              borderRadius: BorderRadius.circular(24),
-              color: const Color(0xFF2A295D),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: EdgeInsets.fromLTRB(
+            18,
+            18,
+            18,
+            18 + MediaQuery.viewInsetsOf(ctx).bottom,
+          ),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: isTablet ? 420 : 360,
+              maxHeight: MediaQuery.sizeOf(ctx).height * 0.9,
             ),
-            child: Column(
+            child: Container(
+              padding: EdgeInsets.all(isTablet ? 24 : 20),
+              decoration: AppTheme.softCardDecoration(
+                borderRadius: BorderRadius.circular(24),
+                color: const Color(0xFF2A295D),
+              ),
+              child: SingleChildScrollView(
+                child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -321,7 +334,7 @@ class ViewerScreenState extends State<ViewerScreen> {
                     const SizedBox(width: 10),
                     DropdownButtonHideUnderline(
                       child: DropdownButton<String>(
-                        value: _calibrationUnit,
+                        value: dialogUnit,
                         dropdownColor: const Color(0xFF1E2140),
                         style: const TextStyle(color: Colors.white),
                         items: const [
@@ -330,7 +343,7 @@ class ViewerScreenState extends State<ViewerScreen> {
                         ],
                         onChanged: (v) {
                           if (v == null) return;
-                          setState(() => _calibrationUnit = v);
+                          setDialogState(() => dialogUnit = v);
                         },
                       ),
                     ),
@@ -356,19 +369,29 @@ class ViewerScreenState extends State<ViewerScreen> {
                         foregroundColor: Colors.white,
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                       ),
-                      onPressed: () => Navigator.pop(ctx, true),
+                      onPressed: () => Navigator.pop(ctx, <String, dynamic>{
+                        'confirmed': true,
+                        'unit': dialogUnit,
+                      }),
                       child: const Text('Save'),
                     ),
                   ],
                 ),
               ],
             ),
+              ),
+            ),
           ),
         ),
       ),
     );
-    if (ok != true) return;
+    if (result == null || result['confirmed'] != true) {
+      knownController.dispose();
+      return;
+    }
+    _calibrationUnit = (result['unit'] as String?) ?? _calibrationUnit;
     final known = double.tryParse(knownController.text.trim());
+    knownController.dispose();
     if (known == null || known <= 0 || px <= 0) return;
     final unitPerPixel = CalibrationCalculator.computeFactor(px, known);
     final calibration = StoredCalibration(
@@ -457,30 +480,63 @@ class ViewerScreenState extends State<ViewerScreen> {
     final controller = TextEditingController();
     final text = await showDialog<String>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => Dialog(
         backgroundColor: const Color(0xFF232651),
-        title: const Text('Label', style: TextStyle(color: Colors.white)),
-        content: TextField(
-          controller: controller,
-          style: const TextStyle(color: Colors.white),
-          decoration: const InputDecoration(
-            hintText: 'Enter text',
-            hintStyle: TextStyle(color: Colors.white38),
-          ),
-          autofocus: true,
+        insetPadding: EdgeInsets.fromLTRB(
+          20,
+          20,
+          20,
+          20 + MediaQuery.viewInsetsOf(ctx).bottom,
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel', style: TextStyle(color: Colors.white54)),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: 420,
+            maxHeight: MediaQuery.sizeOf(ctx).height * 0.85,
           ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
-            child: const Text('OK', style: TextStyle(color: AppTheme.primaryLight)),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Label', style: TextStyle(color: Colors.white)),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: controller,
+                  style: const TextStyle(color: Colors.white),
+                  decoration: const InputDecoration(
+                    hintText: 'Enter text',
+                    hintStyle: TextStyle(color: Colors.white38),
+                  ),
+                  autofocus: true,
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx),
+                      child: const Text(
+                        'Cancel',
+                        style: TextStyle(color: Colors.white54),
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+                      child: const Text(
+                        'OK',
+                        style: TextStyle(color: AppTheme.primaryLight),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
-        ],
+        ),
       ),
     );
+    controller.dispose();
     if (text == null || text.isEmpty || !mounted) return;
     final ann = Annotation(
       id: _uuid.v4(),
@@ -770,8 +826,7 @@ class ViewerScreenState extends State<ViewerScreen> {
                                 child: CustomPaint(
                                   painter: AnnotationPainter(
                                     annotations: _annotationsForPaint(),
-                                    currentDrawing: widget.showMeasurements &&
-                                            _isDrawing &&
+                                    currentDrawing: _isDrawing &&
                                             _annotationType != null
                                         ? Annotation(
                                             id: 'current',

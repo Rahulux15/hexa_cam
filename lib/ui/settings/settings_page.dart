@@ -833,18 +833,27 @@ class _SettingsPageState extends State<SettingsPage> {
 
   Widget _buildClearDialog() {
     final isTab = Responsive.isTablet(context);
+    final media = MediaQuery.of(context);
+    final maxHeight = media.size.height - media.viewInsets.bottom - 48;
     return GestureDetector(
       onTap: () => setState(() => _showClearDialog = false),
       child: Container(
         color: Colors.black.withValues(alpha: 0.7),
-        child: Center(
-          child: GestureDetector(
-            onTap: () {},
-            child: Container(
-              margin: const EdgeInsets.all(32),
-              padding: EdgeInsets.all(isTab ? 28 : 24),
-              decoration: BoxDecoration(color: AppTheme.bgCard, borderRadius: BorderRadius.circular(20)),
-              child: Column(mainAxisSize: MainAxisSize.min, children: [
+        child: SafeArea(
+          child: Center(
+            child: GestureDetector(
+              onTap: () {},
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxWidth: isTab ? 560 : media.size.width - 40,
+                  maxHeight: maxHeight.clamp(280, 640),
+                ),
+                child: SingleChildScrollView(
+                  child: Container(
+                    margin: const EdgeInsets.all(20),
+                    padding: EdgeInsets.all(isTab ? 28 : 24),
+                    decoration: BoxDecoration(color: AppTheme.bgCard, borderRadius: BorderRadius.circular(20)),
+                    child: Column(mainAxisSize: MainAxisSize.min, children: [
                 Container(
                   width: isTab ? 64 : 56,
                   height: isTab ? 64 : 56,
@@ -890,6 +899,9 @@ class _SettingsPageState extends State<SettingsPage> {
                   ),
                 ]),
               ]),
+                  ),
+                ),
+              ),
             ),
           ),
         ),
