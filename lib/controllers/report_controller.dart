@@ -97,6 +97,13 @@ class ReportController extends GetxController {
     if (isDownloading.value) return false;
     isDownloading.value = true;
     try {
+      if (kIsWeb) {
+        onProgress?.call('Downloading report...', 0.4);
+        await FileService.savePdfToDevice(bytes, filename);
+        onProgress?.call('Downloading report...', 1.0);
+        showMessage('Report downloaded to Downloads', Colors.green);
+        return true;
+      }
       onProgress?.call('Saving report to app folder...', 0.18);
       await _saveToAppFolderOnly(
         bytes,
@@ -107,20 +114,23 @@ class ReportController extends GetxController {
           0.18 + (p * 0.12),
         ),
       );
-      if (kIsWeb) {
-        onProgress?.call('Downloading report...', 0.4);
-        await FileService.savePdfToDevice(bytes, filename);
-        onProgress?.call('Downloading report...', 1.0);
-        showMessage('Report downloaded to Downloads', Colors.green);
-        return true;
-      }
       if (Platform.isIOS) {
         onProgress?.call('Opening share options...', 0.5);
-        await FileService.sharePdfToDevice(
-          bytes,
-          filename,
-          sharePositionOrigin: sharePositionOrigin,
-        );
+        try {
+          await FileService.sharePdfToDevice(
+            bytes,
+            filename,
+            sharePositionOrigin: sharePositionOrigin,
+          );
+        } catch (_) {
+          // Second safe retry path when anchored popover share fails.
+          onProgress?.call('Retrying share...', 0.75);
+          await FileService.sharePdfToDevice(
+            bytes,
+            filename,
+            sharePositionOrigin: null,
+          );
+        }
         onProgress?.call('Opening share options...', 1.0);
         showMessage('Share opened. Save report to Files on your device.', Colors.green);
         return true;
@@ -149,10 +159,22 @@ class ReportController extends GetxController {
         );
       }
       if (downloadPath.isEmpty) {
-        showMessage('Failed to download report to Downloads/Hexa Cam Reports', Colors.red);
+        showMessage(
+          'Failed to download to public storage. Report is still saved in app folder.',
+          Colors.red,
+        );
         return false;
       }
-      showMessage('Report downloaded to Downloads/Hexa Cam Reports', Colors.green);
+      final normalizedPath = downloadPath.replaceAll('\\', '/');
+      if (normalizedPath.contains('/Download/')) {
+        showMessage('Report downloaded to Downloads/Hexa Cam Reports', Colors.green);
+      } else {
+        final folderPath = p.dirname(downloadPath).replaceAll('\\', '/');
+        showMessage(
+          'Report downloaded to fallback folder: $folderPath',
+          Colors.green,
+        );
+      }
       return true;
     } catch (e) {
       logDebug('Download report failed: $e');
@@ -169,6 +191,12 @@ class ReportController extends GetxController {
     required String folderName,
     void Function(double progress)? onProgress,
   }) async {
+    // Web builds do not support application-documents directory plugin channels.
+    // Caller paths should already guard with kIsWeb, but keep this as a hard safety net.
+    if (kIsWeb) {
+      onProgress?.call(1.0);
+      return filename ?? 'report_${DateTime.now().millisecondsSinceEpoch}.pdf';
+    }
     final dir = await _appDocumentsDirectory();
     final name = filename ?? 'report_${DateTime.now().millisecondsSinceEpoch}.pdf';
     final safeName = p.basename(name);
