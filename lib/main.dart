@@ -25,22 +25,29 @@ void main() async {
       DeviceOrientation.landscapeRight,
     ]);
 
-    SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
-      statusBarColor: Colors.transparent,
-      statusBarIconBrightness: Brightness.light,
-      systemNavigationBarColor: Color(0xFF0F0F23),
-      systemNavigationBarIconBrightness: Brightness.light,
-    ));
+    SystemChrome.setSystemUIOverlayStyle(
+      const SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: Brightness.light,
+        systemNavigationBarColor: Color(0xFF0F0F23),
+        systemNavigationBarIconBrightness: Brightness.light,
+      ),
+    );
   }
 
   runApp(const HexaCamApp());
-  unawaited(
-    Future<void>(() async {
-      try {
-        await Get.find<PermissionController>().requestStartupPermissions();
-      } catch (_) {
-        // Keep startup resilient in release even if OS permission API fails.
-      }
-    }),
-  );
+  // Let the first frame paint (splash / route) so system permission sheets
+  // are not competing with a blank screen; then ask for everything once.
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    unawaited(
+      Future<void>(() async {
+        try {
+          await Future<void>.delayed(const Duration(milliseconds: 450));
+          await Get.find<PermissionController>().runStartupPermissionFlow();
+        } catch (_) {
+          // Keep startup resilient in release even if OS permission API fails.
+        }
+      }),
+    );
+  });
 }

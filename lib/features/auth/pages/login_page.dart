@@ -43,14 +43,14 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
       parent: _entryController,
       curve: Curves.easeOutCubic,
     );
-    _entryOffset = Tween<Offset>(
-      begin: const Offset(0, 0.06),
-      end: Offset.zero,
-    ).animate(CurvedAnimation(parent: _entryController, curve: Curves.easeOutCubic));
+    _entryOffset = Tween<Offset>(begin: const Offset(0, 0.06), end: Offset.zero)
+        .animate(
+          CurvedAnimation(parent: _entryController, curve: Curves.easeOutCubic),
+        );
 
     _particles = List.generate(
       12,
-          (_) => _Particle(
+      (_) => _Particle(
         x: _random.nextDouble(),
         y: _random.nextDouble(),
         driftX: (_random.nextDouble() - 0.5) * 22,
@@ -121,8 +121,11 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
     final logoSize = Responsive.isLandscape(context)
         ? (isTab ? 122.0 : 108.0)
         : (isTab ? 132.0 : 116.0);
+    final keyboardBottom = MediaQuery.viewInsetsOf(context).bottom;
+    final verticalPad = isTab ? 40.0 : 24.0;
 
     return Scaffold(
+      resizeToAvoidBottomInset: true,
       body: Container(
         decoration: const BoxDecoration(
           gradient: LinearGradient(
@@ -131,327 +134,397 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
             colors: [
               AppTheme.bgPrimary,
               AppTheme.bgSecondary,
-              AppTheme.bgTertiary
+              AppTheme.bgTertiary,
             ],
             stops: [0.0, 0.5, 1.0],
           ),
         ),
         child: Stack(
           children: [
-            ..._particles.map((p) => AnimatedBuilder(
-              animation: p.controller,
-            builder: (context, _) => Positioned(
-                left: (MediaQuery.sizeOf(context).width * p.x) +
-                    ((p.controller.value - 0.5) * p.driftX),
-                top: (MediaQuery.sizeOf(context).height * p.y) +
-                    ((p.controller.value - 0.5) * p.driftY),
-                child: Opacity(
-                  opacity: 0.16 + p.controller.value * 0.34,
-                  child: Container(
-                    width: (isTab ? 6 : 4) + p.size,
-                    height: (isTab ? 6 : 4) + p.size,
-                    decoration: const BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: AppTheme.primary,
-                    ),
-                  ),
-                ),
-              ),
-            )),
-
-            Center(
-              child: FadeTransition(
-                opacity: _entryOpacity,
-                child: SlideTransition(
-                  position: _entryOffset,
-                  child: SingleChildScrollView(
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(
-                    minHeight: MediaQuery.sizeOf(context).height,
-                  ),
-                  child: Padding(
-                    padding: EdgeInsets.symmetric(
-                      horizontal: Responsive.pagePadding(context),
-                      vertical: isTab ? 40 : 24,
-                    ),
-                    child: Center(
-                      child: Container(
-                        constraints: BoxConstraints(maxWidth: cardMaxWidth),
-                        padding: EdgeInsets.all(isTab ? 30.0 : 22.0),
-                        child: Column(
-                          children: [
-                            // Logo
-                            Center(
-                              child: AnimatedBuilder(
-                                animation: _glowController,
-                                builder: (context, _) => Column(
-                                children: [
-                                  Container(
-                                    width: logoSize + 14,
-                                    height: logoSize + 14,
-                                    decoration: BoxDecoration(
-                                      shape: BoxShape.circle,
-                                      boxShadow: [
-                                        BoxShadow(
-                                          color: const Color(0xFF8F5CFF).withValues(
-                                            alpha: 0.15 + (_glowController.value * 0.23),
-                                          ),
-                                          blurRadius: 28,
-                                          spreadRadius: 1,
-                                        ),
-                                      ],
-                                    ),
-                                    child: Center(
-                                      child: SizedBox(
-                                        width: logoSize,
-                                        height: logoSize,
-                                        child: Image.asset(
-                                          'assets/images/app_logo.png',
-                                          fit: BoxFit.contain,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 10),
-                                  const Text(
-                                    "Hexa-Cam",
-                                    style: TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.white,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 3),
-                                  const Text(
-                                    "Scientific Imaging & Microscopy",
-                                    textAlign: TextAlign.center,
-                                    style: TextStyle(
-                                      color: Colors.white60,
-                                      fontSize: 11,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              ),
-                            ),
-
-                            const SizedBox(height: 32),
-
-                            // Error message
-                            Obx(() => authController.errorMessage.value.isNotEmpty
-                                ? Container(
-                              margin: const EdgeInsets.only(bottom: 16),
-                              padding: const EdgeInsets.all(8),
-                              decoration: BoxDecoration(
-                                color: Colors.red.withValues(alpha: 0.1),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Row(
-                                children: [
-                                  const Icon(Icons.error_outline, color: Colors.red, size: 16),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: Text(
-                                      authController.errorMessage.value,
-                                      style: const TextStyle(
-                                        color: Colors.red,
-                                        fontSize: 12,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            )
-                                : const SizedBox.shrink()),
-
-                            // Email field
-                            _buildLabel('Email Address'),
-                            const SizedBox(height: 8),
-                            _buildTextField(
-                              authController.emailController,
-                              'Enter your email',
-                              Icons.mail_outline,
-                              fontSize: fieldFontSize,
-                            ),
-                            SizedBox(height: isTab ? 24 : 20),
-
-                            // Password field
-                            _buildLabel('Password'),
-                            const SizedBox(height: 8),
-                            Obx(() => _buildTextField(
-                              authController.passwordController,
-                              'Enter your password',
-                              Icons.lock_outline,
-                              isPassword: true,
-                              fontSize: fieldFontSize,
-                              obscureText: !authController.isPasswordVisible.value,
-                              onToggleVisibility: authController.togglePasswordVisibility,
-                            )),
-                            const SizedBox(height: 24),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 4),
-                              child: Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Checkbox(
-                                    value: _acceptTerms,
-                                    activeColor: AppTheme.primary,
-                                    onChanged: (value) {
-                                      setState(() => _acceptTerms = value ?? false);
-                                    },
-                                  ),
-                                  const SizedBox(width: 6),
-                                  const Expanded(
-                                    child: Padding(
-                                      padding: EdgeInsets.only(top: 10),
-                                      child: Text(
-                                        'I have read and agree to the Terms & Conditions and Privacy Policy.',
-                                        style: TextStyle(
-                                          color: AppTheme.textSecondary,
-                                          fontSize: 12,
-                                          height: 1.35,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            Container(
-                              width: double.infinity,
-                              margin: const EdgeInsets.symmetric(horizontal: 6),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 10,
-                              ),
-                              decoration: BoxDecoration(
-                                color: const Color(0x1A6C8EFF),
-                                borderRadius: BorderRadius.circular(10),
-                                border: Border.all(color: const Color(0x3F7C96FF)),
-                              ),
-                              child: const Row(
-                                children: [
-                                  Icon(
-                                    Icons.support_agent_rounded,
-                                    color: Color(0xFFC7D7FF),
-                                    size: 16,
-                                  ),
-                                  SizedBox(width: 8),
-                                  Expanded(
-                                    child: Text(
-                                      'For Login ID and Password, contact Quality Scientific and Mechanical Works.',
-                                      style: TextStyle(
-                                        color: Color(0xFFD6E0FF),
-                                        fontSize: 11.5,
-                                        fontWeight: FontWeight.w500,
-                                        height: 1.3,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(height: 12),
-
-                            // Sign In button
-                            ObxValue<RxBool>(
-                              (isLoading) {
-                                final enabled = !isLoading.value && _acceptTerms;
-                                return SizedBox(
-                                  width: double.infinity,
-                                  height: btnHeight,
-                                  child: ElevatedButton(
-                                    onPressed: enabled ? _handleLogin : null,
-                                    style: ElevatedButton.styleFrom(
-                                      padding: EdgeInsets.zero,
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(12),
-                                      ),
-                                      backgroundColor: Colors.transparent,
-                                      disabledBackgroundColor: Colors.transparent,
-                                      shadowColor: Colors.transparent,
-                                    ),
-                                    child: Ink(
-                                      decoration: BoxDecoration(
-                                        gradient: enabled
-                                            ? AppTheme.primaryGradient
-                                            : const LinearGradient(
-                                                colors: [
-                                                  Color(0xFF3A426B),
-                                                  Color(0xFF2D335A),
-                                                ],
-                                              ),
-                                        borderRadius: BorderRadius.circular(12),
-                                      ),
-                                      child: Center(
-                                        child: isLoading.value
-                                            ? const SizedBox(
-                                                width: 20,
-                                                height: 20,
-                                                child: CircularProgressIndicator(
-                                                  strokeWidth: 2,
-                                                  color: Colors.white,
-                                                ),
-                                              )
-                                            : Text(
-                                                'Sign In',
-                                                style: TextStyle(
-                                                  fontSize: isTab ? 16 : 14,
-                                                  fontWeight: FontWeight.w600,
-                                                  color: enabled
-                                                      ? Colors.white
-                                                      : Colors.white70,
-                                                ),
-                                              ),
-                                      ),
-                                    ),
-                                  ),
-                                );
-                              },
-                              authController.isLoading,
-                            ),
-                            const SizedBox(height: 20),
-                            const Text(
-                              'Developed & Maintained By Quality Scientific and Mechanical Works',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                color: Colors.white70,
-                                fontSize: 11,
-                                height: 1.35,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            const Text(
-                              'Brand - Quasmo  All Rights Reserved 2026',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                color: Colors.white60,
-                                fontSize: 11,
-                              ),
-                            ),
-                            const SizedBox(height: 6),
-                            Text(
-                              _appVersionLabel == null
-                                  ? 'Version loading...'
-                                  : (_appVersionLabel!.isEmpty
-                                      ? 'Version unavailable'
-                                      : 'Version $_appVersionLabel'),
-                              textAlign: TextAlign.center,
-                              style: const TextStyle(
-                                color: Colors.white54,
-                                fontSize: 10.5,
-                              ),
-                            ),
-
-                          ],
-                        ),
+            ..._particles.map(
+              (p) => AnimatedBuilder(
+                animation: p.controller,
+                builder: (context, _) => Positioned(
+                  left:
+                      (MediaQuery.sizeOf(context).width * p.x) +
+                      ((p.controller.value - 0.5) * p.driftX),
+                  top:
+                      (MediaQuery.sizeOf(context).height * p.y) +
+                      ((p.controller.value - 0.5) * p.driftY),
+                  child: Opacity(
+                    opacity: 0.16 + p.controller.value * 0.34,
+                    child: Container(
+                      width: (isTab ? 6 : 4) + p.size,
+                      height: (isTab ? 6 : 4) + p.size,
+                      decoration: const BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: AppTheme.primary,
                       ),
                     ),
                   ),
                 ),
-                ),
               ),
+            ),
+
+            SafeArea(
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  return Center(
+                    child: FadeTransition(
+                      opacity: _entryOpacity,
+                      child: SlideTransition(
+                        position: _entryOffset,
+                        child: SingleChildScrollView(
+                          keyboardDismissBehavior:
+                              ScrollViewKeyboardDismissBehavior.onDrag,
+                          child: ConstrainedBox(
+                            constraints: BoxConstraints(
+                              minHeight: constraints.maxHeight,
+                            ),
+                            child: Padding(
+                              padding: EdgeInsets.fromLTRB(
+                                Responsive.pagePadding(context),
+                                verticalPad,
+                                Responsive.pagePadding(context),
+                                verticalPad + keyboardBottom,
+                              ),
+                              child: Center(
+                                child: Container(
+                                  constraints: BoxConstraints(
+                                    maxWidth: cardMaxWidth,
+                                  ),
+                                  padding: EdgeInsets.all(isTab ? 30.0 : 22.0),
+                                  child: Column(
+                                    children: [
+                                      // Logo
+                                      Center(
+                                        child: AnimatedBuilder(
+                                          animation: _glowController,
+                                          builder: (context, _) => Column(
+                                            children: [
+                                              Container(
+                                                width: logoSize + 14,
+                                                height: logoSize + 14,
+                                                decoration: BoxDecoration(
+                                                  shape: BoxShape.circle,
+                                                  boxShadow: [
+                                                    BoxShadow(
+                                                      color:
+                                                          const Color(
+                                                            0xFF8F5CFF,
+                                                          ).withValues(
+                                                            alpha:
+                                                                0.15 +
+                                                                (_glowController
+                                                                        .value *
+                                                                    0.23),
+                                                          ),
+                                                      blurRadius: 28,
+                                                      spreadRadius: 1,
+                                                    ),
+                                                  ],
+                                                ),
+                                                child: Center(
+                                                  child: SizedBox(
+                                                    width: logoSize,
+                                                    height: logoSize,
+                                                    child: Image.asset(
+                                                      'assets/images/app_logo.png',
+                                                      fit: BoxFit.contain,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
+                                              const SizedBox(height: 10),
+                                              const Text(
+                                                "Hexa-Cam",
+                                                style: TextStyle(
+                                                  fontSize: 16,
+                                                  fontWeight: FontWeight.bold,
+                                                  color: Colors.white,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 3),
+                                              const Text(
+                                                "Scientific Imaging & Microscopy",
+                                                textAlign: TextAlign.center,
+                                                style: TextStyle(
+                                                  color: Colors.white60,
+                                                  fontSize: 11,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+
+                                      const SizedBox(height: 32),
+
+                                      // Error message
+                                      Obx(
+                                        () =>
+                                            authController
+                                                .errorMessage
+                                                .value
+                                                .isNotEmpty
+                                            ? Container(
+                                                margin: const EdgeInsets.only(
+                                                  bottom: 16,
+                                                ),
+                                                padding: const EdgeInsets.all(
+                                                  8,
+                                                ),
+                                                decoration: BoxDecoration(
+                                                  color: Colors.red.withValues(
+                                                    alpha: 0.1,
+                                                  ),
+                                                  borderRadius:
+                                                      BorderRadius.circular(8),
+                                                ),
+                                                child: Row(
+                                                  children: [
+                                                    const Icon(
+                                                      Icons.error_outline,
+                                                      color: Colors.red,
+                                                      size: 16,
+                                                    ),
+                                                    const SizedBox(width: 8),
+                                                    Expanded(
+                                                      child: Text(
+                                                        authController
+                                                            .errorMessage
+                                                            .value,
+                                                        style: const TextStyle(
+                                                          color: Colors.red,
+                                                          fontSize: 12,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              )
+                                            : const SizedBox.shrink(),
+                                      ),
+
+                                      // Email field
+                                      _buildLabel('Email Address'),
+                                      const SizedBox(height: 8),
+                                      _buildTextField(
+                                        authController.emailController,
+                                        'Enter your email',
+                                        Icons.mail_outline,
+                                        fontSize: fieldFontSize,
+                                      ),
+                                      SizedBox(height: isTab ? 24 : 20),
+
+                                      // Password field
+                                      _buildLabel('Password'),
+                                      const SizedBox(height: 8),
+                                      Obx(
+                                        () => _buildTextField(
+                                          authController.passwordController,
+                                          'Enter your password',
+                                          Icons.lock_outline,
+                                          isPassword: true,
+                                          fontSize: fieldFontSize,
+                                          obscureText: !authController
+                                              .isPasswordVisible
+                                              .value,
+                                          onToggleVisibility: authController
+                                              .togglePasswordVisibility,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 24),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 4,
+                                        ),
+                                        child: Row(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Checkbox(
+                                              value: _acceptTerms,
+                                              activeColor: AppTheme.primary,
+                                              onChanged: (value) {
+                                                setState(
+                                                  () => _acceptTerms =
+                                                      value ?? false,
+                                                );
+                                              },
+                                            ),
+                                            const SizedBox(width: 6),
+                                            const Expanded(
+                                              child: Padding(
+                                                padding: EdgeInsets.only(
+                                                  top: 10,
+                                                ),
+                                                child: Text(
+                                                  'I have read and agree to the Terms & Conditions and Privacy Policy.',
+                                                  style: TextStyle(
+                                                    color:
+                                                        AppTheme.textSecondary,
+                                                    fontSize: 12,
+                                                    height: 1.35,
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      const SizedBox(height: 8),
+                                      Container(
+                                        width: double.infinity,
+                                        margin: const EdgeInsets.symmetric(
+                                          horizontal: 6,
+                                        ),
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 12,
+                                          vertical: 10,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0x1A6C8EFF),
+                                          borderRadius: BorderRadius.circular(
+                                            10,
+                                          ),
+                                          border: Border.all(
+                                            color: const Color(0x3F7C96FF),
+                                          ),
+                                        ),
+                                        child: const Row(
+                                          children: [
+                                            Icon(
+                                              Icons.support_agent_rounded,
+                                              color: Color(0xFFC7D7FF),
+                                              size: 16,
+                                            ),
+                                            SizedBox(width: 8),
+                                            Expanded(
+                                              child: Text(
+                                                'For Login ID and Password, contact Quality Scientific and Mechanical Works.',
+                                                style: TextStyle(
+                                                  color: Color(0xFFD6E0FF),
+                                                  fontSize: 11.5,
+                                                  fontWeight: FontWeight.w500,
+                                                  height: 1.3,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      const SizedBox(height: 12),
+
+                                      // Sign In button
+                                      ObxValue<RxBool>((isLoading) {
+                                        final enabled =
+                                            !isLoading.value && _acceptTerms;
+                                        return SizedBox(
+                                          width: double.infinity,
+                                          height: btnHeight,
+                                          child: ElevatedButton(
+                                            onPressed: enabled
+                                                ? _handleLogin
+                                                : null,
+                                            style: ElevatedButton.styleFrom(
+                                              padding: EdgeInsets.zero,
+                                              shape: RoundedRectangleBorder(
+                                                borderRadius:
+                                                    BorderRadius.circular(12),
+                                              ),
+                                              backgroundColor:
+                                                  Colors.transparent,
+                                              disabledBackgroundColor:
+                                                  Colors.transparent,
+                                              shadowColor: Colors.transparent,
+                                            ),
+                                            child: Ink(
+                                              decoration: BoxDecoration(
+                                                gradient: enabled
+                                                    ? AppTheme.primaryGradient
+                                                    : const LinearGradient(
+                                                        colors: [
+                                                          Color(0xFF3A426B),
+                                                          Color(0xFF2D335A),
+                                                        ],
+                                                      ),
+                                                borderRadius:
+                                                    BorderRadius.circular(12),
+                                              ),
+                                              child: Center(
+                                                child: isLoading.value
+                                                    ? const SizedBox(
+                                                        width: 20,
+                                                        height: 20,
+                                                        child:
+                                                            CircularProgressIndicator(
+                                                              strokeWidth: 2,
+                                                              color:
+                                                                  Colors.white,
+                                                            ),
+                                                      )
+                                                    : Text(
+                                                        'Sign In',
+                                                        style: TextStyle(
+                                                          fontSize: isTab
+                                                              ? 16
+                                                              : 14,
+                                                          fontWeight:
+                                                              FontWeight.w600,
+                                                          color: enabled
+                                                              ? Colors.white
+                                                              : Colors.white70,
+                                                        ),
+                                                      ),
+                                              ),
+                                            ),
+                                          ),
+                                        );
+                                      }, authController.isLoading),
+                                      const SizedBox(height: 20),
+                                      const Text(
+                                        'Developed & Maintained By Quality Scientific and Mechanical Works',
+                                        textAlign: TextAlign.center,
+                                        style: TextStyle(
+                                          color: Colors.white70,
+                                          fontSize: 11,
+                                          height: 1.35,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      const Text(
+                                        'Brand - Quasmo  All Rights Reserved 2026',
+                                        textAlign: TextAlign.center,
+                                        style: TextStyle(
+                                          color: Colors.white60,
+                                          fontSize: 11,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 6),
+                                      Text(
+                                        _appVersionLabel == null
+                                            ? 'Version loading...'
+                                            : (_appVersionLabel!.isEmpty
+                                                  ? 'Version unavailable'
+                                                  : 'Version $_appVersionLabel'),
+                                        textAlign: TextAlign.center,
+                                        style: const TextStyle(
+                                          color: Colors.white54,
+                                          fontSize: 10.5,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                },
               ),
             ),
           ],
@@ -476,14 +549,14 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
   }
 
   Widget _buildTextField(
-      TextEditingController controller,
-      String hint,
-      IconData icon, {
-        bool isPassword = false,
-        double fontSize = 16,
-        bool obscureText = false,
-        VoidCallback? onToggleVisibility,
-      }) {
+    TextEditingController controller,
+    String hint,
+    IconData icon, {
+    bool isPassword = false,
+    double fontSize = 16,
+    bool obscureText = false,
+    VoidCallback? onToggleVisibility,
+  }) {
     final isTab = Responsive.isTablet(context);
     return TextField(
       controller: controller,
@@ -492,16 +565,20 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
       decoration: InputDecoration(
         hintText: hint,
         hintStyle: const TextStyle(color: AppTheme.textMuted),
-        prefixIcon: Icon(icon, color: AppTheme.textMuted, size: isTab ? 22 : 20),
+        prefixIcon: Icon(
+          icon,
+          color: AppTheme.textMuted,
+          size: isTab ? 22 : 20,
+        ),
         suffixIcon: isPassword
             ? IconButton(
-          onPressed: onToggleVisibility,
-          icon: Icon(
-            obscureText ? Icons.visibility_off : Icons.visibility,
-            color: AppTheme.textMuted,
-            size: isTab ? 22 : 20,
-          ),
-        )
+                onPressed: onToggleVisibility,
+                icon: Icon(
+                  obscureText ? Icons.visibility_off : Icons.visibility,
+                  color: AppTheme.textMuted,
+                  size: isTab ? 22 : 20,
+                ),
+              )
             : null,
         filled: true,
         fillColor: AppTheme.bgTertiary,
@@ -542,4 +619,3 @@ class _Particle {
     required this.controller,
   });
 }
-

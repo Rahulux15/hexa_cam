@@ -275,6 +275,9 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
   Future<void> _requestPermissionsAndInitCamera() async {
     var shouldInitCamera = true;
     _lastPreviewMetricsLogAt = null;
+    if (mounted) {
+      setState(() => _cameraInitError = null);
+    }
     try {
       // Handle permissions for mobile platforms
       if (!kIsWeb) {
@@ -310,17 +313,25 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
           if (!cameraStatus.isGranted) {
             shouldInitCamera = false;
             if (mounted) {
-              _showMessage('Camera permission is required to capture photos');
+              await _handleCameraPermissionDenied(cameraStatus);
             }
           }
         } else if (Platform.isIOS) {
-          // Request camera permission on iOS
-          final status = await Permission.camera.request();
-          await Permission.microphone.request();
+          var status = await Permission.camera.status;
+          if (!status.isGranted) {
+            status = await Permission.camera.request().timeout(
+              const Duration(seconds: 10),
+              onTimeout: () => PermissionStatus.denied,
+            );
+          }
+          await Permission.microphone.request().timeout(
+            const Duration(seconds: 10),
+            onTimeout: () => PermissionStatus.denied,
+          );
           if (!status.isGranted) {
             shouldInitCamera = false;
             if (mounted) {
-              _showMessage('Camera permission is required to capture photos');
+              await _handleCameraPermissionDenied(status);
             }
           }
         }
@@ -580,13 +591,14 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
     final viewportHeight = MediaQuery.sizeOf(context).height;
     final safeTop = MediaQuery.paddingOf(context).top;
     final safeBottom = MediaQuery.paddingOf(context).bottom;
+    final basePreviewPad = Responsive.cameraPreviewPadding(context);
     final previewPadding = isTablet
-        ? Responsive.cameraPreviewPadding(context)
-        : EdgeInsets.fromLTRB(
-            isTablet ? 4 : (isLandscape ? 3 : 2),
-            safeTop + (isTablet ? 2 : (isLandscape ? 2 : 0)),
-            isTablet ? 4 : (isLandscape ? 3 : 2),
-            isTablet ? 4 : (isLandscape ? 3 : 2),
+        ? basePreviewPad
+        : EdgeInsets.only(
+            left: basePreviewPad.left,
+            right: basePreviewPad.right,
+            top: basePreviewPad.top + safeTop,
+            bottom: basePreviewPad.bottom,
           );
     final sideRailInset = (viewportHeight * 0.14)
         .clamp(isTablet ? 64.0 : 58.0, isTablet ? 124.0 : 112.0)
@@ -3514,12 +3526,79 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
         : storedCalibration;
   }
 
-  void _showMessage(String text, {Color backgroundColor = AppTheme.success}) {
+  double _cameraToastBottomExtra() {
+    if (!mounted) return 0;
+    if (!Responsive.isPortrait(context)) {
+      return 36;
+    }
+    final isTablet = Responsive.isTablet(context);
+    final safeBottom = MediaQuery.paddingOf(context).bottom;
+    final railHeight = CameraLayoutTokens.recordButtonSize(isTablet) +
+        CameraLayoutTokens.railButtonSize(isTablet) +
+        CameraLayoutTokens.railGap(isTablet) * 2;
+    return railHeight + safeBottom + 20;
+  }
+
+  void _showMessage(
+    String text, {
+    Color backgroundColor = AppTheme.success,
+    bool liftAboveCameraChrome = true,
+  }) {
     if (!mounted) return;
     final type = backgroundColor == AppTheme.danger
         ? HexaToastType.error
         : HexaToastType.success;
-    HexaToast.show(context, text, type: type);
+    HexaToast.show(
+      context,
+      text,
+      type: type,
+      bottomExtraInset: liftAboveCameraChrome ? _cameraToastBottomExtra() : 0,
+    );
+  }
+
+  Future<void> _handleCameraPermissionDenied(PermissionStatus status) async {
+    if (!mounted) return;
+    final permanent = status.isPermanentlyDenied;
+    setState(() {
+      _cameraInitError = permanent
+          ? 'Camera access is off for this app. Open Settings to allow the camera, then tap Retry.'
+          : 'Camera permission is required. Tap Retry to allow access.';
+    });
+    _showMessage(
+      permanent
+          ? 'Camera is blocked. Open Settings to allow camera access for this app.'
+          : 'Camera permission is required to capture photos.',
+      backgroundColor: AppTheme.danger,
+      liftAboveCameraChrome: true,
+    );
+    if (!permanent) return;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF2B295C),
+        title: const Text(
+          'Camera access needed',
+          style: TextStyle(color: Colors.white, fontSize: 18),
+        ),
+        content: const Text(
+          'Hexa Cam needs camera permission. You can enable it in Settings → Privacy & Security → Camera.',
+          style: TextStyle(color: Colors.white70, height: 1.35),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Not now', style: TextStyle(color: Colors.white70)),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              openAppSettings();
+            },
+            child: const Text('Open Settings', style: TextStyle(color: AppTheme.primary)),
+          ),
+        ],
+      ),
+    );
   }
 
   String _folderLabel(String raw) {

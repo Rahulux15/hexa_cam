@@ -14,6 +14,9 @@ class HexaToast {
     HexaToastType type = HexaToastType.success,
     Duration duration = const Duration(seconds: 2),
     double? progress,
+    /// Extra space above the safe-area bottom (e.g. camera chrome) so the toast
+    /// does not cover primary controls.
+    double bottomExtraInset = 0,
   }) {
     final overlay = Overlay.of(context);
 
@@ -39,7 +42,7 @@ class HexaToast {
     final entry = OverlayEntry(
       builder: (_) => Positioned(
         top: safeTop + 14,
-        bottom: safeBottom + 14,
+        bottom: safeBottom + 14 + bottomExtraInset,
         left: 12,
         right: 12,
         child: IgnorePointer(
