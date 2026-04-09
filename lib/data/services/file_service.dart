@@ -5,6 +5,7 @@ import 'package:gal/gal.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 import 'package:device_info_plus/device_info_plus.dart';
@@ -43,6 +44,28 @@ class FileService {
       bytes: bytes,
       filename: filename,
       folderName: 'reports',
+    );
+  }
+
+  static Future<void> sharePdfToDevice(Uint8List bytes, String filename) async {
+    if (kIsWeb) {
+      final name = _safeFilename(filename, fallbackExtension: '.pdf');
+      await downloadBytesWeb(bytes, name, mimeType: 'application/pdf');
+      return;
+    }
+    final tempDir = await getTemporaryDirectory();
+    final safeName = _safeFilename(filename, fallbackExtension: '.pdf');
+    final tempPath = p.join(
+      tempDir.path,
+      'share-${DateTime.now().millisecondsSinceEpoch}-$safeName',
+    );
+    final tempFile = File(tempPath);
+    await tempFile.writeAsBytes(bytes, flush: true);
+    await SharePlus.instance.share(
+      ShareParams(
+        files: [XFile(tempFile.path, mimeType: 'application/pdf')],
+        title: safeName,
+      ),
     );
   }
 

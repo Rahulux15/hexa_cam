@@ -103,6 +103,13 @@ class ReportController extends GetxController {
         showMessage('Report downloaded to Downloads', Colors.green);
         return true;
       }
+      if (Platform.isIOS) {
+        onProgress?.call('Opening share options...', 0.5);
+        await FileService.sharePdfToDevice(bytes, filename);
+        onProgress?.call('Opening share options...', 1.0);
+        showMessage('Share opened. Save report to Files on your device.', Colors.green);
+        return true;
+      }
       onProgress?.call('Preparing report download...', 0.2);
       final permissionController = _permissionController;
       final permissionOk = permissionController == null

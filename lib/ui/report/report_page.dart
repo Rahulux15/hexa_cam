@@ -786,15 +786,16 @@ class _ReportPageState extends State<ReportPage> {
       final assetId = FileService.generateAssetId('report');
       await MediaDatabase.saveAsset(assetId, bytes);
 
-      final preview =
-          _items.isNotEmpty ? (_items.first['imageUrl'] as String?) : null;
       final primaryImage = _primaryImage;
+      final previewAssetId = await _storeSavedReportPreviewAsset(primaryImage);
       final report = ReportData(
         id: DateTime.now().millisecondsSinceEpoch.toString(),
         filename: filename,
         timestamp: DateTime.now().toIso8601String(),
         pdfAssetId: assetId,
-        previewImageUrl: preview,
+        previewImageUrl:
+            _items.isNotEmpty ? (_items.first['imageUrl'] as String?) : null,
+        previewImageAssetId: previewAssetId,
         description: 'Annotations: ${primaryImage?.annotations.length ?? 0}',
         lens: primaryImage?.lens,
         formData: ReportFormData(
@@ -941,15 +942,16 @@ class _ReportPageState extends State<ReportPage> {
       final assetId = FileService.generateAssetId('report');
       await MediaDatabase.saveAsset(assetId, bytes);
 
-      final preview =
-          _items.isNotEmpty ? (_items.first['imageUrl'] as String?) : null;
       final primaryImage = _primaryImage;
+      final previewAssetId = await _storeSavedReportPreviewAsset(primaryImage);
       final report = ReportData(
         id: DateTime.now().millisecondsSinceEpoch.toString(),
         filename: filename,
         timestamp: DateTime.now().toIso8601String(),
         pdfAssetId: assetId,
-        previewImageUrl: preview,
+        previewImageUrl:
+            _items.isNotEmpty ? (_items.first['imageUrl'] as String?) : null,
+        previewImageAssetId: previewAssetId,
         description: 'Annotations: ${primaryImage?.annotations.length ?? 0}',
         lens: primaryImage?.lens,
         formData: ReportFormData(
@@ -978,6 +980,19 @@ class _ReportPageState extends State<ReportPage> {
         ? HexaToastType.error
         : HexaToastType.success;
     HexaToast.show(context, text, type: type);
+  }
+
+  Future<String?> _storeSavedReportPreviewAsset(ImageData? image) async {
+    if (image == null) return null;
+    try {
+      final previewBytes = await _collectPdfImageBytes(image);
+      if (previewBytes == null || previewBytes.isEmpty) return null;
+      final previewAssetId = FileService.generateAssetId('report-preview');
+      await MediaDatabase.saveAsset(previewAssetId, previewBytes);
+      return previewAssetId;
+    } catch (_) {
+      return null;
+    }
   }
 
   void _showProgress(String text, double progress) {

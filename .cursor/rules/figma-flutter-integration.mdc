@@ -1,0 +1,31 @@
+---
+description: Figma to Flutter implementation rules for Hexa-cam
+alwaysApply: true
+---
+
+# Figma -> Flutter Rules (Hexa-cam)
+
+- Implement UI in Flutter widgets, not web stacks (no React/Tailwind/CSS output).
+- Preserve `GetX` patterns: route via `GetMaterialApp` and state via existing controllers/providers.
+- Reuse theme tokens from `lib/config/theme.dart` (`AppTheme.*`) before adding new colors/styles.
+- Prefer shared UI in `lib/ui/common/` and keep feature screens in existing feature folders.
+- Keep dark theme consistency (`AppTheme.darkTheme`) unless a task explicitly adds another theme.
+- Use Material icons first; use `flutter_svg` only when a real SVG asset is required.
+- Keep responsive behavior consistent with current mobile-first layouts and existing tablet/desktop checks.
+- Do not hardcode duplicated design tokens in page widgets when an `AppTheme` token exists.
+- Keep animation timings aligned with theme durations (`transitionFast`, `transitionBase`, `transitionSlow`).
+- For forms/buttons/dialogs, match existing decoration helpers (`panelDecoration`, `softCardDecoration`).
+
+## Project anchors
+
+- App shell: `lib/app.dart`
+- DI/service registry: `lib/state/app_registry.dart`
+- Theme/tokens: `lib/config/theme.dart`
+- Primary feature areas: `lib/features/`, `lib/ui/`, `lib/controllers/`, `lib/data/`
+
+## Done criteria for Figma-driven changes
+
+- New UI compiles in Flutter without introducing alternate UI frameworks.
+- Colors/spacing/typography map to `AppTheme` constants where possible.
+- Shared widgets extracted when the same pattern appears in multiple screens.
+- Existing flows (camera, viewer, report, auth) keep behavior parity unless task says otherwise.

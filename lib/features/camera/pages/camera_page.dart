@@ -59,6 +59,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
   int _rotation = 0;
 
   bool _showColorPickerSection = false;
+  bool _showThicknessSection = false;
   bool _showCalibrationSection = false;
   bool _showCameraSettings = false;
   bool _useFourByThreeViewport = true;
@@ -74,6 +75,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
   String _selectedLens = '4X';
   AnnotationType? _selectedTool;
   Color _drawingColor = const Color(0xFFFF00FF);
+  double _drawingStrokeWidth = 4.0;
 
   final List<Annotation> _annotations = [];
   final List<Annotation> _redoStack = [];
@@ -86,6 +88,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
   final Uuid _uuid = const Uuid();
   Size _lastSourceSize = Size.zero;
   double _pinchStartZoom = 1.0;
+  int _activePreviewPointers = 0;
 
   /// Last [CameraValue.previewSize] seen by [_onCameraPreviewValueChanged] (stream/orientation).
   Size? _previewListenerSize;
@@ -173,6 +176,16 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
     if (Platform.isAndroid) return 'android';
     if (Platform.isIOS) return 'ios';
     return defaultTargetPlatform.name;
+  }
+
+  void _onPreviewPointerDown(PointerDownEvent _) {
+    _activePreviewPointers += 1;
+  }
+
+  void _onPreviewPointerEnd(PointerEvent _) {
+    if (_activePreviewPointers > 0) {
+      _activePreviewPointers -= 1;
+    }
   }
 
   void _logPreviewMetrics(cam.CameraValue value, double uiAspect) {
@@ -830,11 +843,15 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
         : _getFallbackSourceSize();
     final renderSize = _renderSourceSize(_controller!.value, sourceSize);
     _lastSourceSize = renderSize;
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onScaleStart: (_) => _pinchStartZoom = _settings.zoom,
-      onScaleUpdate: (details) => _setZoom(_pinchStartZoom * details.scale),
-      child: ClipRRect(
+    return Listener(
+      onPointerDown: _onPreviewPointerDown,
+      onPointerUp: _onPreviewPointerEnd,
+      onPointerCancel: _onPreviewPointerEnd,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onScaleStart: (_) => _pinchStartZoom = _settings.zoom,
+        onScaleUpdate: (details) => _setZoom(_pinchStartZoom * details.scale),
+        child: ClipRRect(
         borderRadius: BorderRadius.circular(18),
         child: LayoutBuilder(
           builder: (context, constraints) {
@@ -913,10 +930,22 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                                       Positioned.fill(
                                         child: GestureDetector(
                                           behavior: HitTestBehavior.translucent,
-                                          onTapDown: _onTapDown,
-                                          onPanStart: _onPanStart,
-                                          onPanUpdate: _onPanUpdate,
-                                          onPanEnd: _onPanEnd,
+                                          onTapDown: (details) {
+                                            if (_activePreviewPointers > 1) return;
+                                            _onTapDown(details);
+                                          },
+                                          onPanStart: (details) {
+                                            if (_activePreviewPointers > 1) return;
+                                            _onPanStart(details);
+                                          },
+                                          onPanUpdate: (details) {
+                                            if (_activePreviewPointers > 1) return;
+                                            _onPanUpdate(details);
+                                          },
+                                          onPanEnd: (details) {
+                                            if (_activePreviewPointers > 1) return;
+                                            _onPanEnd(details);
+                                          },
                                           child: const SizedBox.expand(),
                                         ),
                                       ),
@@ -938,6 +967,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                                           type: _selectedTool!,
                                           points: _currentPoints,
                                           color: _drawingColor,
+                                          strokeWidth: _drawingStrokeWidth,
                                           timestamp: '',
                                         )
                                       : null,
@@ -1608,6 +1638,15 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                     ),
                     _buildPanelToolButton(
                       isTablet,
+                      Icons.line_weight_rounded,
+                      'Thickness',
+                      _showThicknessSection,
+                      () => setState(
+                        () => _showThicknessSection = !_showThicknessSection,
+                      ),
+                    ),
+                    _buildPanelToolButton(
+                      isTablet,
                       Icons.straighten_rounded,
                       'Calibrate',
                       _showCalibrationSection,
@@ -1659,6 +1698,10 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                 if (_showColorPickerSection) ...[
                   SizedBox(height: isTablet ? 14 : 12),
                   _buildColorPickerSection(isTablet),
+                ],
+                if (_showThicknessSection) ...[
+                  SizedBox(height: isTablet ? 14 : 12),
+                  _buildThicknessSection(isTablet),
                 ],
                 if (_showCalibrationSection) ...[
                   SizedBox(height: isTablet ? 14 : 12),
@@ -1840,6 +1883,61 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildThicknessSection(bool isTablet) {
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.all(isTablet ? 12 : 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFF2B295C),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFF3B427C)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.line_weight_rounded,
+                color: Color(0xFFAFB5D9),
+                size: 16,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Marking Thickness',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: isTablet ? 13 : 12,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const Spacer(),
+              Text(
+                '${_drawingStrokeWidth.toStringAsFixed(1)} px',
+                style: TextStyle(
+                  color: const Color(0xFFD9DCF4),
+                  fontSize: isTablet ? 12 : 11,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+          Slider(
+            min: 2.0,
+            max: 16.0,
+            divisions: 28,
+            value: _drawingStrokeWidth,
+            onChanged: (value) {
+              setState(() {
+                _drawingStrokeWidth = value;
+              });
+            },
+          ),
+        ],
+      ),
     );
   }
 
@@ -2653,6 +2751,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
         type: _selectedTool!,
         points: List<HexaPoint>.from(_currentPoints),
         color: _drawingColor,
+        strokeWidth: _drawingStrokeWidth,
         timestamp: DateTime.now().toIso8601String(),
         measurement: measurement,
       );
@@ -2662,6 +2761,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
           type: createdAnnotation.type,
           points: createdAnnotation.points,
           color: createdAnnotation.color,
+          strokeWidth: createdAnnotation.strokeWidth,
           timestamp: createdAnnotation.timestamp,
           measurement: createdAnnotation.measurement,
         ),
@@ -3290,6 +3390,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
         type: type,
         points: points,
         color: _drawingColor,
+        strokeWidth: _drawingStrokeWidth,
         timestamp: '',
       ),
       pixelsPerUnit: effectiveCalibration?.pixelsPerUnit,
@@ -3665,6 +3766,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                   type: AnnotationType.text,
                   points: [tapPoint],
                   color: _drawingColor,
+                  strokeWidth: _drawingStrokeWidth,
                   timestamp: DateTime.now().toIso8601String(),
                   text: text,
                 );

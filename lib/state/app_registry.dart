@@ -163,6 +163,18 @@ class FoldersController extends GetxController {
     await _saveAndRefresh(immediate: true);
   }
 
+  Future<void> removeReports(String folderId, Set<String> reportIds) async {
+    folders = folders.map((folder) {
+      if (folder.id != folderId) return folder;
+      final existing = [...?folder.reports];
+      if (existing.isEmpty) return folder;
+      return folder.copyWith(
+        reports: existing.where((report) => !reportIds.contains(report.id)).toList(),
+      );
+    }).toList();
+    await _saveAndRefresh(immediate: true);
+  }
+
   Future<void> clearAll() async {
     folders = <Folder>[];
     update();

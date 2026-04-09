@@ -22,6 +22,7 @@ class _FolderDetailPageState extends State<FolderDetailPage> {
   bool _selectionMode = false;
   bool _gridView = true;
   final Set<String> _selectedImages = {};
+  final Set<String> _selectedReports = {};
   Timer? _longPressTimer;
   final ReportController _reportController = Get.put(
     ReportController(),
@@ -112,8 +113,12 @@ class _FolderDetailPageState extends State<FolderDetailPage> {
                         icon: _selectionMode
                             ? Icons.check_box_outlined
                             : Icons.checklist_rounded,
-                        onTap: () =>
-                            setState(() => _selectionMode = !_selectionMode),
+                        onTap: () => setState(() {
+                              _selectionMode = !_selectionMode;
+                              if (!_selectionMode) {
+                                _clearSelection();
+                              }
+                            }),
                         isTab: isTab,
                         active: _selectionMode),
                     SizedBox(width: isTab ? 12 : 8),
@@ -128,7 +133,7 @@ class _FolderDetailPageState extends State<FolderDetailPage> {
               ),
             ),
           ),
-          if (_selectedImages.isNotEmpty)
+          if (_selectedCount > 0)
             Padding(
               padding: EdgeInsets.fromLTRB(pad, 14, pad, 0),
               child: Center(
@@ -144,30 +149,29 @@ class _FolderDetailPageState extends State<FolderDetailPage> {
                         final compact = constraints.maxWidth < 560;
                         if (!compact) {
                           return Row(children: [
-                            Text('${_selectedImages.length} selected',
+                            Text('$_selectedCount selected',
                                 style: const TextStyle(
                                     color: Colors.white,
                                     fontWeight: FontWeight.w700)),
                             const Spacer(),
+                            if (_selectedImages.isNotEmpty)
+                              _selectionChip(
+                                  'Report', AppTheme.primary, _generateReport),
+                            if (_selectedImages.isNotEmpty)
+                              const SizedBox(width: 8),
                             _selectionChip(
-                                'Report', AppTheme.primary, _generateReport),
-                            const SizedBox(width: 8),
-                            _selectionChip(
-                                'Delete', AppTheme.danger, _deleteSelected),
+                                'Delete', AppTheme.danger, () => _deleteSelected()),
                             const SizedBox(width: 8),
                             _selectionChip(
                                 'Cancel',
                                 AppTheme.textMuted,
-                                () => setState(() {
-                                      _selectedImages.clear();
-                                      _selectionMode = false;
-                                    })),
+                                () => setState(_exitSelectionMode)),
                           ]);
                         }
                         return Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text('${_selectedImages.length} selected',
+                            Text('$_selectedCount selected',
                                 style: const TextStyle(
                                     color: Colors.white,
                                     fontWeight: FontWeight.w700)),
@@ -176,17 +180,15 @@ class _FolderDetailPageState extends State<FolderDetailPage> {
                               spacing: 8,
                               runSpacing: 8,
                               children: [
+                                if (_selectedImages.isNotEmpty)
+                                  _selectionChip('Report', AppTheme.primary,
+                                      _generateReport),
                                 _selectionChip(
-                                    'Report', AppTheme.primary, _generateReport),
-                                _selectionChip(
-                                    'Delete', AppTheme.danger, _deleteSelected),
+                                    'Delete', AppTheme.danger, () => _deleteSelected()),
                                 _selectionChip(
                                     'Cancel',
                                     AppTheme.textMuted,
-                                    () => setState(() {
-                                          _selectedImages.clear();
-                                          _selectionMode = false;
-                                        })),
+                                    () => setState(_exitSelectionMode)),
                               ],
                             ),
                           ],
@@ -239,12 +241,18 @@ class _FolderDetailPageState extends State<FolderDetailPage> {
                                   fontWeight: FontWeight.w700)),
                           SizedBox(height: isTab ? 14 : 12),
                           ...folder.reports!.map((report) => GestureDetector(
-                                onTap: () => _openSavedReport(report),
+                                onTap: () => _onReportTap(report),
+                                onLongPressStart: (_) => _queueReportSelection(report),
+                                onLongPressEnd: (_) => _longPressTimer?.cancel(),
                                 child: Container(
                                   margin: const EdgeInsets.only(bottom: 12),
                                   padding: const EdgeInsets.all(16),
                                   decoration: AppTheme.softCardDecoration(
-                                      borderRadius: BorderRadius.circular(18)),
+                                    borderRadius: BorderRadius.circular(18),
+                                    border: _selectedReports.contains(report.id)
+                                        ? AppTheme.primaryLight
+                                        : const Color(0xFF343B7A),
+                                  ),
                                   child: Row(children: [
                                     Container(
                                       width: 72,
@@ -315,11 +323,21 @@ class _FolderDetailPageState extends State<FolderDetailPage> {
                                         ],
                                       ),
                                     ),
-                                    IconButton(
-                                      onPressed: () => _downloadReport(report),
-                                      icon: const Icon(Icons.download_outlined,
-                                          color: AppTheme.textMuted),
-                                    ),
+                                    if (_selectionMode)
+                                      Icon(
+                                        _selectedReports.contains(report.id)
+                                            ? Icons.check_circle_rounded
+                                            : Icons.radio_button_unchecked_rounded,
+                                        color: _selectedReports.contains(report.id)
+                                            ? AppTheme.primary
+                                            : AppTheme.textMuted,
+                                      )
+                                    else
+                                      IconButton(
+                                        onPressed: () => _downloadReport(report),
+                                        icon: const Icon(Icons.download_outlined,
+                                            color: AppTheme.textMuted),
+                                      ),
                                   ]),
                                 ),
                               )),
@@ -727,6 +745,15 @@ class _FolderDetailPageState extends State<FolderDetailPage> {
     });
   }
 
+  void _queueReportSelection(ReportData report) {
+    _longPressTimer = Timer(const Duration(milliseconds: 400), () {
+      setState(() {
+        _selectionMode = true;
+        _selectedReports.add(report.id);
+      });
+    });
+  }
+
   void _onMediaTap(ImageData image) {
     if (_selectionMode) {
       setState(() {
@@ -741,6 +768,23 @@ class _FolderDetailPageState extends State<FolderDetailPage> {
     Get.toNamed<void>('/image/${widget.folderId}/${image.id}');
   }
 
+  void _onReportTap(ReportData report) {
+    if (_selectionMode) {
+      setState(() {
+        if (_selectedReports.contains(report.id)) {
+          _selectedReports.remove(report.id);
+        } else {
+          _selectedReports.add(report.id);
+        }
+        if (_selectedCount == 0) {
+          _selectionMode = false;
+        }
+      });
+      return;
+    }
+    _openSavedReport(report);
+  }
+
   String _formatTimestamp(String value) {
     final parsed = DateTime.tryParse(value);
     if (parsed == null) return value;
@@ -750,13 +794,43 @@ class _FolderDetailPageState extends State<FolderDetailPage> {
     return '${parsed.month}/${parsed.day}/${parsed.year}, $hour:$minute:$meridiem';
   }
 
-  void _deleteSelected() {
-    foldersController
-        .removeImages(widget.folderId, _selectedImages);
-    setState(() {
-      _selectedImages.clear();
-      _selectionMode = false;
-    });
+  int get _selectedCount => _selectedImages.length + _selectedReports.length;
+
+  void _clearSelection() {
+    _selectedImages.clear();
+    _selectedReports.clear();
+  }
+
+  void _exitSelectionMode() {
+    _clearSelection();
+    _selectionMode = false;
+  }
+
+  Future<void> _deleteSelected() async {
+    final folder = _getFolder(foldersController.folders);
+    final selectedReports = folder == null
+        ? const <ReportData>[]
+        : [...?(folder.reports)]
+            .where((report) => _selectedReports.contains(report.id))
+            .toList();
+
+    if (_selectedImages.isNotEmpty) {
+      await foldersController.removeImages(widget.folderId, _selectedImages);
+    }
+    if (_selectedReports.isNotEmpty) {
+      await foldersController.removeReports(widget.folderId, _selectedReports);
+      for (final report in selectedReports) {
+        if (report.pdfAssetId != null && report.pdfAssetId!.isNotEmpty) {
+          await MediaDatabase.deleteAsset(report.pdfAssetId!);
+        }
+        if (report.previewImageAssetId != null &&
+            report.previewImageAssetId!.isNotEmpty) {
+          await MediaDatabase.deleteAsset(report.previewImageAssetId!);
+        }
+      }
+    }
+    if (!mounted) return;
+    setState(_exitSelectionMode);
   }
 
   void _generateReport() {

@@ -108,6 +108,7 @@ class ViewerScreenState extends State<ViewerScreen> {
   ViewerDrawTool? _tool;
 
   Color _drawingColor = const Color(0xFFFF00FF);
+  double _drawingStrokeWidth = 4.0;
   bool _showColorRow = false;
   bool _showToolsPanel = false;
 
@@ -487,6 +488,7 @@ class ViewerScreenState extends State<ViewerScreen> {
       points: [source],
       text: text,
       color: _drawingColor,
+      strokeWidth: _drawingStrokeWidth,
       timestamp: DateTime.now().toIso8601String(),
     );
     setState(() => _annotations.add(ann));
@@ -627,6 +629,7 @@ class ViewerScreenState extends State<ViewerScreen> {
       type: type,
       points: _currentPoints,
       color: _drawingColor,
+      strokeWidth: _drawingStrokeWidth,
       timestamp: '',
     );
     final measurement = _measurementFor(preview);
@@ -635,6 +638,7 @@ class ViewerScreenState extends State<ViewerScreen> {
       type: type,
       points: List.from(_currentPoints),
       color: _drawingColor,
+      strokeWidth: _drawingStrokeWidth,
       timestamp: DateTime.now().toIso8601String(),
       measurement: measurement != null && measurement.isNotEmpty
           ? measurement
@@ -774,6 +778,7 @@ class ViewerScreenState extends State<ViewerScreen> {
                                             type: _annotationType!,
                                             points: _currentPoints,
                                             color: _drawingColor,
+                                            strokeWidth: _drawingStrokeWidth,
                                             timestamp: '',
                                             measurement: _measurementFor(
                                               Annotation(
@@ -781,6 +786,7 @@ class ViewerScreenState extends State<ViewerScreen> {
                                                 type: _annotationType!,
                                                 points: _currentPoints,
                                                 color: _drawingColor,
+                                                strokeWidth: _drawingStrokeWidth,
                                                 timestamp: '',
                                               ),
                                             ),
@@ -938,6 +944,8 @@ class ViewerScreenState extends State<ViewerScreen> {
                           );
                         },
                       ),
+                      const SizedBox(height: 12),
+                      _buildThicknessControl(context),
                       const SizedBox(height: 12),
                       _buildToolBottomRow(context),
                     ],
@@ -1101,6 +1109,55 @@ class ViewerScreenState extends State<ViewerScreen> {
           }),
         ),
       ],
+    );
+  }
+
+  Widget _buildThicknessControl(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1E2140),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white12),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.line_weight_rounded, color: Colors.white70, size: 18),
+          const SizedBox(width: 8),
+          const Text(
+            'Thickness',
+            style: TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w700,
+              fontSize: 12,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Slider(
+              min: 2.0,
+              max: 16.0,
+              divisions: 28,
+              value: _drawingStrokeWidth,
+              onChanged: _locked
+                  ? null
+                  : (value) => setState(() => _drawingStrokeWidth = value),
+            ),
+          ),
+          SizedBox(
+            width: 52,
+            child: Text(
+              '${_drawingStrokeWidth.toStringAsFixed(1)} px',
+              textAlign: TextAlign.right,
+              style: const TextStyle(
+                color: Colors.white70,
+                fontWeight: FontWeight.w600,
+                fontSize: 11,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
