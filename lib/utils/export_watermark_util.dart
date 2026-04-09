@@ -1,7 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:image/image.dart' as img;
 
-/// Composites [logoBytes] onto [imageBytes] (bottom-right), ~10% effective opacity.
+/// Composites [logoBytes] onto [imageBytes] (bottom-right).
+/// Uses moderate alpha so the mark is visible on exports (was ~10% and often invisible).
 /// On any failure returns `null` so callers can fall back to original bytes.
 Uint8List? applyReportLogoWatermark(Uint8List imageBytes, Uint8List logoBytes) {
   try {
@@ -11,7 +12,7 @@ Uint8List? applyReportLogoWatermark(Uint8List imageBytes, Uint8List logoBytes) {
 
     final targetW = (original.width * 0.18).round().clamp(1, 512);
     final scaled = img.copyResize(logo, width: targetW);
-    _multiplyAlpha(scaled, 0.1);
+    _multiplyAlpha(scaled, 0.42);
 
     final margin = 16;
     final dstX = original.width - scaled.width - margin;

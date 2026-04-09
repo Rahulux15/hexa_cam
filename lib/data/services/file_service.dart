@@ -37,6 +37,11 @@ class FileService {
     }
   }
 
+  /// Same logic as gallery/share download — for PDF stills and other callers.
+  static Future<Uint8List> applyWatermarkForExport(Uint8List bytes) async {
+    return _encodeBytesForExport(bytes);
+  }
+
   /// Returns true when the image was written directly (web download, Android/iOS
   /// gallery/Photos). On iOS, false means the share sheet was used as fallback.
   static Future<bool> saveToDevice(

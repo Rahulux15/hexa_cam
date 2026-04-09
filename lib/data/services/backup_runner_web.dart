@@ -4,6 +4,7 @@ import 'package:archive/archive.dart';
 import 'package:flutter/foundation.dart';
 
 import '../../config/constants.dart';
+import 'backup_media_export.dart';
 import 'backup_result.dart';
 import 'database_service.dart';
 import 'storage_service.dart';
@@ -35,6 +36,8 @@ Future<BackupResult> runBackup(StorageService storage) async {
     archive.addFile(
       ArchiveFile('web_media.json', webMediaBytes.length, webMediaBytes),
     );
+
+    await appendHumanReadableExportToArchive(archive, foldersData);
 
     final zipBytes = ZipEncoder().encode(archive);
     if (zipBytes == null) {

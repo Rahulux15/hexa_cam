@@ -14,7 +14,6 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../../config/constants.dart';
 import '../../config/theme.dart';
 import '../../data/models/folder.dart';
 import '../../data/services/export_prefs.dart';
@@ -53,27 +52,10 @@ class _ReportPageState extends State<ReportPage> {
   final _locationController = TextEditingController();
   List<Map<String, dynamic>> _items = [];
   Timer? _progressToastDebounce;
-  Timer? _reportFormDebounce;
-  bool _reportFormListenersAttached = false;
-
-  late final VoidCallback _onReportFormChanged;
-
-  /// Saved report preview passes `formData`; new report flows do not.
-  bool get _reportFormReadOnly {
-    final fd = widget.reportData?['formData'];
-    return fd != null && fd is Map;
-  }
 
   @override
   void initState() {
     super.initState();
-    _onReportFormChanged = () {
-      if (_reportFormReadOnly) return;
-      _reportFormDebounce?.cancel();
-      _reportFormDebounce = Timer(const Duration(milliseconds: 500), () {
-        unawaited(_persistReportFormDefaults());
-      });
-    };
     if (widget.reportData != null && widget.reportData!['images'] != null) {
       _items =
           (widget.reportData!['images'] as List).cast<Map<String, dynamic>>();
@@ -89,64 +71,8 @@ class _ReportPageState extends State<ReportPage> {
       _phoneController.text = reportForm.phone;
       _locationController.text = reportForm.location;
     }
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      if (_reportFormReadOnly) {
-        if (mounted) setState(() {});
-        return;
-      }
-      await _loadReportFormDefaultsFromStorage();
-      await _hydrateReportFieldsFromPrefs(notify: true);
-      _attachReportFormListeners();
-    });
-  }
-
-  Future<void> _loadReportFormDefaultsFromStorage() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final raw = prefs.getString(AppConstants.keyReportFormDefaults);
-      if (raw == null || raw.isEmpty) return;
-      final decoded = jsonDecode(raw);
-      if (decoded is! Map) return;
-      final map = Map<String, dynamic>.from(decoded);
-      void setIf(String key, TextEditingController c) {
-        final v = map[key];
-        if (v is String && v.trim().isNotEmpty) c.text = v;
-      }
-
-      setIf('organizationName', _orgController);
-      setIf('fullName', _nameController);
-      setIf('email', _emailController);
-      setIf('phone', _phoneController);
-      setIf('location', _locationController);
-    } catch (_) {}
-  }
-
-  Future<void> _persistReportFormDefaults() async {
-    if (_reportFormReadOnly) return;
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final data = ReportFormData(
-        organizationName: _orgController.text,
-        fullName: _nameController.text,
-        email: _emailController.text,
-        phone: _phoneController.text,
-        location: _locationController.text,
-      ).toJson();
-      await prefs.setString(
-        AppConstants.keyReportFormDefaults,
-        jsonEncode(data),
-      );
-    } catch (_) {}
-  }
-
-  void _attachReportFormListeners() {
-    if (_reportFormListenersAttached || _reportFormReadOnly) return;
-    _reportFormListenersAttached = true;
-    _orgController.addListener(_onReportFormChanged);
-    _nameController.addListener(_onReportFormChanged);
-    _emailController.addListener(_onReportFormChanged);
-    _phoneController.addListener(_onReportFormChanged);
-    _locationController.addListener(_onReportFormChanged);
+    WidgetsBinding.instance
+        .addPostFrameCallback((_) => _hydrateReportFieldsFromPrefs(notify: true));
   }
 
   /// Fills empty report fields from login / settings prefs (name, email; optional user_phone / user_address).
@@ -171,17 +97,6 @@ class _ReportPageState extends State<ReportPage> {
   @override
   void dispose() {
     _progressToastDebounce?.cancel();
-    _reportFormDebounce?.cancel();
-    if (_reportFormListenersAttached) {
-      _orgController.removeListener(_onReportFormChanged);
-      _nameController.removeListener(_onReportFormChanged);
-      _emailController.removeListener(_onReportFormChanged);
-      _phoneController.removeListener(_onReportFormChanged);
-      _locationController.removeListener(_onReportFormChanged);
-    }
-    if (!_reportFormReadOnly) {
-      unawaited(_persistReportFormDefaults());
-    }
     _orgController.dispose();
     _nameController.dispose();
     _emailController.dispose();
@@ -242,7 +157,6 @@ class _ReportPageState extends State<ReportPage> {
                                   child: ResponsiveActionButton(
                                     actionKey: 'report_download',
                                     asyncController: _asyncActions,
-                                    showSpinnerWhenBusy: false,
                                     onPressed: _downloadReport,
                                     style: ElevatedButton.styleFrom(
                                       backgroundColor: const Color(0xFF232651),
@@ -275,7 +189,6 @@ class _ReportPageState extends State<ReportPage> {
                                   child: ResponsiveActionButton(
                                     actionKey: 'report_save',
                                     asyncController: _asyncActions,
-                                    showSpinnerWhenBusy: false,
                                     onPressed: _saveReport,
                                     style: ElevatedButton.styleFrom(
                                       backgroundColor: Colors.transparent,
@@ -315,7 +228,6 @@ class _ReportPageState extends State<ReportPage> {
                                 child: ResponsiveActionButton(
                                   actionKey: 'report_download',
                                   asyncController: _asyncActions,
-                                  showSpinnerWhenBusy: false,
                                   onPressed: _downloadReport,
                                   style: ElevatedButton.styleFrom(
                                     backgroundColor: const Color(0xFF232651),
@@ -349,7 +261,6 @@ class _ReportPageState extends State<ReportPage> {
                                 child: ResponsiveActionButton(
                                   actionKey: 'report_save',
                                   asyncController: _asyncActions,
-                                  showSpinnerWhenBusy: false,
                                   onPressed: _saveReport,
                                   style: ElevatedButton.styleFrom(
                                     backgroundColor: Colors.transparent,
@@ -590,6 +501,20 @@ class _ReportPageState extends State<ReportPage> {
                                       ),
                                     ),
                               ],
+                              if (annotations.isEmpty &&
+                                  image != null &&
+                                  image.isMarkingsBaked == true) ...[
+                                SizedBox(height: isTab ? 20 : 16),
+                                Text(
+                                  'Markings are embedded in the marked image above '
+                                  '(saved as one raster). There is no separate line-by-line list for this capture.',
+                                  style: const TextStyle(
+                                    color: Color(0xFFAFC0E4),
+                                    height: 1.4,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ],
                             ],
                           ),
                         ),
@@ -751,7 +676,6 @@ class _ReportPageState extends State<ReportPage> {
         const SizedBox(height: 12),
         TextField(
           controller: field.controller,
-          enabled: !_reportFormReadOnly,
           style: const TextStyle(color: Colors.white),
           decoration: InputDecoration(
             hintText: field.hint,
@@ -929,6 +853,9 @@ class _ReportPageState extends State<ReportPage> {
                     '${(entry.value.measurement ?? '').isNotEmpty ? ' - ${_pdfSafeText(entry.value.measurement!, forceAsciiUnits: asciiMeasurementFallback)}' : ''}',
               )
               .toList(),
+          // Baked file shows markings but DB may have no annotation rows for PDF text.
+          'embeddedMarkingsInImageOnly':
+              image.annotations.isEmpty && image.isMarkingsBaked == true,
         };
       }),
     };
@@ -992,7 +919,6 @@ class _ReportPageState extends State<ReportPage> {
   Future<void> _downloadReport() async {
     if (!_validateForm()) return;
     try {
-      _showProgress('Generating report…', 0, indeterminate: true);
       final artifacts = await _buildReportArtifacts();
       final bytes = artifacts.pdfBytes;
       final filename = 'report-${DateTime.now().millisecondsSinceEpoch}.pdf';
@@ -1006,7 +932,6 @@ class _ReportPageState extends State<ReportPage> {
         onProgress: _showProgress,
       );
       if (!ok) return;
-      await _persistReportFormDefaults();
 
       final assetId = FileService.generateAssetId('report');
       await MediaDatabase.saveAsset(assetId, bytes);
@@ -1165,8 +1090,11 @@ class _ReportPageState extends State<ReportPage> {
     }
   }
 
-  Future<Uint8List> _optimizePdfImageBytesAsync(Uint8List bytes) =>
-      compute(_reportPdfOptimizeImageBytes, bytes);
+  Future<Uint8List> _optimizePdfImageBytesAsync(Uint8List bytes) async {
+    final optimized = await compute(_reportPdfOptimizeImageBytes, bytes);
+    if (!await ExportPrefs.watermarkEnabled()) return optimized;
+    return FileService.applyWatermarkForExport(optimized);
+  }
 
   double? _imageAspectFromBytes(Uint8List? bytes) {
     if (bytes == null || bytes.isEmpty) return null;
@@ -1178,7 +1106,6 @@ class _ReportPageState extends State<ReportPage> {
   Future<void> _saveReport() async {
     if (!_validateForm()) return;
     try {
-      _showProgress('Generating report…', 0, indeterminate: true);
       final artifacts = await _buildReportArtifacts();
       final bytes = artifacts.pdfBytes;
       final filename = 'report-${DateTime.now().millisecondsSinceEpoch}.pdf';
@@ -1191,8 +1118,6 @@ class _ReportPageState extends State<ReportPage> {
         onProgress: _showProgress,
       );
       if (!ok) return;
-      await _persistReportFormDefaults();
-
       final assetId = FileService.generateAssetId('report');
       await MediaDatabase.saveAsset(assetId, bytes);
 
@@ -1233,7 +1158,6 @@ class _ReportPageState extends State<ReportPage> {
 
   void _showMessage(String text, Color backgroundColor) {
     if (!mounted) return;
-    _progressToastDebounce?.cancel();
     final type = backgroundColor == AppTheme.danger
         ? HexaToastType.error
         : HexaToastType.success;
@@ -1257,32 +1181,9 @@ class _ReportPageState extends State<ReportPage> {
     }
   }
 
-  void _showProgress(String text, double progress, {bool indeterminate = false}) {
+  void _showProgress(String text, double progress) {
     if (!mounted) return;
-    if (indeterminate) {
-      _progressToastDebounce?.cancel();
-      HexaToast.show(
-        context,
-        text,
-        type: HexaToastType.info,
-        indeterminateProgress: true,
-        duration: const Duration(seconds: 30),
-      );
-      return;
-    }
-    final p = progress.clamp(0.0, 1.0);
-    // 100% must not be debounced: a delayed update could overwrite the success toast.
-    if (p >= 1.0) {
-      _progressToastDebounce?.cancel();
-      HexaToast.show(
-        context,
-        text,
-        type: HexaToastType.info,
-        progress: 1.0,
-        duration: const Duration(milliseconds: 450),
-      );
-      return;
-    }
+    // Avoid resetting the overlay on every tick (was 900ms + replace = flicker / "stuck" feel).
     _progressToastDebounce?.cancel();
     _progressToastDebounce = Timer(const Duration(milliseconds: 160), () {
       if (!mounted) return;
@@ -1290,7 +1191,7 @@ class _ReportPageState extends State<ReportPage> {
         context,
         text,
         type: HexaToastType.info,
-        progress: p,
+        progress: progress.clamp(0.0, 1.0),
         duration: const Duration(seconds: 30),
       );
     });
@@ -1629,7 +1530,10 @@ Future<Uint8List> _generateReportPdfInBackground(Map<String, dynamic> payload) a
                   pw.SizedBox(height: 8),
                   if (annotations.isEmpty)
                     pw.Text(
-                      'No markings available',
+                      (section['embeddedMarkingsInImageOnly'] == true)
+                          ? 'Markings are embedded in the image above (rasterized). '
+                              'No separate line-by-line list was stored for this capture.'
+                          : 'No markings available',
                       style: pw.TextStyle(fontSize: 9, color: PdfColors.grey700),
                     )
                   else

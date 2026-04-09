@@ -23,7 +23,7 @@ class HexaCamApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GetMaterialApp(
-      title: 'HEXA-CAM -QUASMO',
+      title: 'Hexa-cam',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.darkTheme,
       scrollBehavior: const _AppScrollBehavior(),

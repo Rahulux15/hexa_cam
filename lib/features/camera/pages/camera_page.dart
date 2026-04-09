@@ -16,6 +16,7 @@ import '../../../data/models/image_data.dart';
 import '../../../data/models/point.dart';
 import '../../../data/models/stored_calibration.dart';
 import '../../../data/services/database_service.dart';
+import '../../../data/services/export_prefs.dart';
 import '../../../data/services/file_service.dart';
 import '../../../data/services/video_export_service.dart';
 import '../../../data/services/video_thumbnail_service.dart';
@@ -32,7 +33,8 @@ import '../../../utils/measurement_calculator.dart';
 import '../../../utils/calibration_guard.dart';
 import '../../../utils/responsive.dart';
 import '../../../ui/common/hexa_toast.dart';
-import '../../../ui/common/save_dialog.dart'; 
+import '../../../ui/common/save_dialog.dart';
+import '../../../ui/viewer/viewer_hit_test.dart';
 
 class CameraPage extends StatefulWidget {
   final String folderId;
@@ -91,6 +93,8 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
   double _pinchStartZoom = 1.0;
   /// True if this scale gesture used 2+ fingers (pinch); skip pan end / use zoom only.
   bool _previewScaleWasMultiTouch = false;
+  /// Ensures [_onPanStart] runs once per gesture (some platforms delay [onScaleStart]).
+  bool _previewScalePanDispatched = false;
   int _activePreviewPointers = 0;
   HexaPoint? _focusIndicatorPoint;
   bool _focusIndicatorSuccess = true;
@@ -143,9 +147,6 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
   }
 
   CameraSettings _settings = const CameraSettings();
-  /// Drives preview color matrix without rebuilding the whole camera page (avoids freezing on slider drag).
-  final ValueNotifier<CameraSettings> _cameraGradeNotifier =
-      ValueNotifier(const CameraSettings());
   double _maxSupportedZoom = AppConstants.maxZoom;
 
   /// Web and devices without optical zoom: scale preview + overlay together.
@@ -508,7 +509,6 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                   ),
                 );
               });
-              _cameraGradeNotifier.value = _settings;
               _attachCameraListener();
               break;
             } catch (e) {
@@ -567,7 +567,6 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
 
   @override
   void dispose() {
-    _cameraGradeNotifier.dispose();
     WidgetsBinding.instance.removeObserver(this);
     _focusIndicatorTimer?.cancel();
     _manualOverrideController.dispose();
@@ -710,11 +709,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                 padding: EdgeInsets.symmetric(horizontal: isTablet ? 80 : 24),
                 child: ConstrainedBox(
                   constraints: BoxConstraints(maxWidth: isTablet ? 520 : 420),
-                  child: StatefulBuilder(
-                    builder: (context, setModalState) {
-                      return _buildCameraSettingsPanel(isTablet, setModalState);
-                    },
-                  ),
+                  child: _buildCameraSettingsPanel(isTablet),
                 ),
               ),
             ),
@@ -945,17 +940,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                                   child: Stack(
                                     fit: StackFit.expand,
                                     children: [
-                                      RepaintBoundary(
-                                        child: ValueListenableBuilder<
-                                            CameraSettings>(
-                                          valueListenable: _cameraGradeNotifier,
-                                          builder: (context, gradeSettings, _) {
-                                            return _buildCameraPreviewWithOptionalFilterFor(
-                                              gradeSettings,
-                                            );
-                                          },
-                                        ),
-                                      ),
+                                      _buildCameraPreviewWithOptionalFilter(),
                                       if (uiStateController.measurementMode)
                                         IgnorePointer(
                                           child: CustomPaint(
@@ -965,80 +950,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                                         ),
                                       // Keep gesture capture in source coordinates (so existing transforms stay correct).
                                       Positioned.fill(
-                                        child: GestureDetector(
-                                          behavior: HitTestBehavior.translucent,
-                                          // Pinch must live on the same detector as pan (not a parent):
-                                          // nested scale+pan recognizers fight the arena on Android/iOS.
-                                          // Pan + pinch must share one scale recognizer (not pan+scale).
-                                          onScaleStart: (details) {
-                                            _pinchStartZoom = _settings.zoom;
-                                            _previewScaleWasMultiTouch = false;
-                                            if (details.pointerCount == 1 &&
-                                                _activePreviewPointers <= 1) {
-                                              _onPanStart(
-                                                DragStartDetails(
-                                                  globalPosition:
-                                                      details.focalPoint,
-                                                  localPosition:
-                                                      details.localFocalPoint,
-                                                ),
-                                              );
-                                            }
-                                          },
-                                          onScaleUpdate: (details) {
-                                            if (details.pointerCount >= 2) {
-                                              _previewScaleWasMultiTouch = true;
-                                              if (_isDrawing) {
-                                                setState(() {
-                                                  _currentPoints = [];
-                                                  _isDrawing = false;
-                                                  _lastDrawPoint = null;
-                                                });
-                                              }
-                                              if (_moveMode &&
-                                                  _activeAnnotationIndex !=
-                                                      null) {
-                                                setState(() {
-                                                  _activeAnnotationIndex = null;
-                                                  _moveStartCursor = null;
-                                                  _moveStartPoints = null;
-                                                });
-                                              }
-                                              _setZoom(
-                                                _pinchStartZoom * details.scale,
-                                              );
-                                              return;
-                                            }
-                                            if (_activePreviewPointers > 1) {
-                                              return;
-                                            }
-                                            _onPanUpdate(
-                                              DragUpdateDetails(
-                                                globalPosition:
-                                                    details.focalPoint,
-                                                localPosition:
-                                                    details.localFocalPoint,
-                                                delta: details.focalPointDelta,
-                                              ),
-                                            );
-                                          },
-                                          onScaleEnd: (_) {
-                                            if (_previewScaleWasMultiTouch) {
-                                              return;
-                                            }
-                                            if (_activePreviewPointers > 1) {
-                                              return;
-                                            }
-                                            _onPanEnd(DragEndDetails());
-                                          },
-                                          onTapDown: (details) {
-                                            if (_activePreviewPointers > 1) {
-                                              return;
-                                            }
-                                            _onTapDown(details);
-                                          },
-                                          child: const SizedBox.expand(),
-                                        ),
+                                        child: _buildPreviewGestureOverlay(),
                                       ),
                                       if (_focusIndicatorPoint != null)
                                         IgnorePointer(
@@ -1345,6 +1257,9 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
           icon: Icons.draw_outlined,
           onTap: () => _handleSideAction(CameraSideAction.pen),
           active: _viewMode == CameraViewMode.toolsExpanded,
+          semanticLabel: _isLocked
+              ? 'Drawing tools: tap to open, then tap Lock to unlock'
+              : 'Drawing tools',
         ),
       ],
     );
@@ -1391,6 +1306,9 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
               icon: Icons.draw_outlined,
               onTap: () => _handleSideAction(CameraSideAction.pen),
               active: _viewMode == CameraViewMode.toolsExpanded,
+              semanticLabel: _isLocked
+                  ? 'Drawing tools: tap to open, then tap Lock to unlock'
+                  : 'Drawing tools',
             ),
           ],
         ),
@@ -2298,10 +2216,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
     );
   }
 
-  Widget _buildCameraSettingsPanel(
-    bool isTablet,
-    void Function(void Function()) setModalState,
-  ) {
+  Widget _buildCameraSettingsPanel(bool isTablet) {
     return Container(
       padding: EdgeInsets.all(isTablet ? 18 : 14),
       decoration: BoxDecoration(
@@ -2324,7 +2239,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
               ),
               const SizedBox(width: 10),
               TextButton.icon(
-                onPressed: () => _resetCameraSettings(setModalState),
+                onPressed: _resetCameraSettings,
                 style: TextButton.styleFrom(
                   backgroundColor: Colors.white.withValues(alpha: 0.08),
                   foregroundColor: Colors.white,
@@ -2355,7 +2270,6 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
               children: [
                 _lightPresetChip(
                   isTablet,
-                  setModalState,
                   'Bright field',
                   const CameraSettings(
                     exposure: 100,
@@ -2366,7 +2280,6 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                 ),
                 _lightPresetChip(
                   isTablet,
-                  setModalState,
                   'Low light',
                   const CameraSettings(
                     exposure: 120,
@@ -2377,7 +2290,6 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                 ),
                 _lightPresetChip(
                   isTablet,
-                  setModalState,
                   'Default',
                   const CameraSettings(),
                 ),
@@ -2392,11 +2304,8 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
             min: 25,
             max: 200,
             value: _settings.exposure,
-            onChanged: (value) {
-              _settings = _settings.copyWith(exposure: value);
-              _cameraGradeNotifier.value = _settings;
-              setModalState(() {});
-            },
+            onChanged: (value) =>
+                setState(() => _settings = _settings.copyWith(exposure: value)),
           ),
           _buildSettingSlider(
             icon: Icons.blur_circular_rounded,
@@ -2405,11 +2314,8 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
             min: 100,
             max: 1600,
             value: _settings.iso,
-            onChanged: (value) {
-              _settings = _settings.copyWith(iso: value);
-              _cameraGradeNotifier.value = _settings;
-              setModalState(() {});
-            },
+            onChanged: (value) =>
+                setState(() => _settings = _settings.copyWith(iso: value)),
           ),
           _buildSettingSlider(
             icon: Icons.thermostat_outlined,
@@ -2418,11 +2324,9 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
             min: 2500,
             max: 9000,
             value: _settings.temperature,
-            onChanged: (value) {
-              _settings = _settings.copyWith(temperature: value);
-              _cameraGradeNotifier.value = _settings;
-              setModalState(() {});
-            },
+            onChanged: (value) => setState(
+              () => _settings = _settings.copyWith(temperature: value),
+            ),
           ),
           _buildSettingSlider(
             icon: Icons.invert_colors_on_outlined,
@@ -2431,34 +2335,24 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
             min: -100,
             max: 100,
             value: _settings.tint,
-            onChanged: (value) {
-              _settings = _settings.copyWith(tint: value);
-              _cameraGradeNotifier.value = _settings;
-              setModalState(() {});
-            },
+            onChanged: (value) =>
+                setState(() => _settings = _settings.copyWith(tint: value)),
           ),
         ],
       ),
     );
   }
 
-  Widget _lightPresetChip(
-    bool isTablet,
-    void Function(void Function()) setModalState,
-    String label,
-    CameraSettings preset,
-  ) {
+  Widget _lightPresetChip(bool isTablet, String label, CameraSettings preset) {
     return TextButton(
-      onPressed: () {
+      onPressed: () => setState(() {
         _settings = _settings.copyWith(
           exposure: preset.exposure,
           iso: preset.iso,
           temperature: preset.temperature,
           tint: preset.tint,
         );
-        _cameraGradeNotifier.value = _settings;
-        setModalState(() {});
-      },
+      }),
       style: TextButton.styleFrom(
         backgroundColor: Colors.white.withValues(alpha: 0.08),
         foregroundColor: Colors.white,
@@ -2535,12 +2429,10 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
     );
   }
 
-  void _resetCameraSettings(void Function(void Function())? setModalState) {
+  void _resetCameraSettings() {
     setState(() {
       _settings = const CameraSettings();
     });
-    _cameraGradeNotifier.value = _settings;
-    setModalState?.call(() {});
   }
 
   void _selectDrawingTool(AnnotationType tool) {
@@ -2560,13 +2452,8 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
   }
 
   void _toggleToolsPanel() {
-    if (_isLocked) {
-      _showMessage(
-        'Unlock to open drawing tools',
-        backgroundColor: AppTheme.danger,
-      );
-      return;
-    }
+    // Do not block opening while locked: the Lock control lives inside this panel.
+    // Blocking here created a dead-end ("Unlock to open drawing tools" with no way to open).
     setState(() {
       _viewMode = _viewMode == CameraViewMode.defaultOpen
           ? CameraViewMode.toolsExpanded
@@ -2802,22 +2689,103 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
     );
   }
 
-  /// When every slider matches app defaults, show the platform preview without a color matrix
-  /// so the feed matches the device camera (no extra grading until the user adjusts settings).
-  static bool _previewUsesPassthrough(CameraSettings s) =>
-      (s.exposure - AppConstants.defaultExposure).abs() < 0.01 &&
-      (s.iso - AppConstants.defaultIso).abs() < 0.01 &&
-      (s.temperature - AppConstants.defaultTemperature).abs() < 0.5 &&
-      (s.tint - AppConstants.defaultTint).abs() < 0.01;
+  /// When every slider matches app defaults, use an identity color matrix so the preview
+  /// matches the device camera (no grading). Kept inside [ColorFiltered] anyway so the
+  /// widget tree does not swap between wrapped/unwrapped [CameraPreview] when presets
+  /// toggle — that swap was freezing the preview (Android, iOS, web). This path is shared
+  /// across all platforms; there is no web-only preview branch here.
+  bool get _previewUsesDeviceColorPassthrough =>
+      (_settings.exposure - AppConstants.defaultExposure).abs() < 0.01 &&
+      (_settings.iso - AppConstants.defaultIso).abs() < 0.01 &&
+      (_settings.temperature - AppConstants.defaultTemperature).abs() < 0.5 &&
+      (_settings.tint - AppConstants.defaultTint).abs() < 0.01;
 
-  Widget _buildCameraPreviewWithOptionalFilterFor(CameraSettings gradeSettings) {
-    final w = cam.CameraPreview(_controller!);
-    if (_previewUsesPassthrough(gradeSettings)) {
-      return w;
-    }
+  static const List<double> _previewColorMatrixIdentity = <double>[
+    1, 0, 0, 0, 0,
+    0, 1, 0, 0, 0,
+    0, 0, 1, 0, 0,
+    0, 0, 0, 1, 0,
+  ];
+
+  Widget _buildCameraPreviewWithOptionalFilter() {
     return ColorFiltered(
-      colorFilter: ColorFilter.matrix(cameraPreviewColorMatrix(gradeSettings)),
-      child: w,
+      colorFilter: _previewUsesDeviceColorPassthrough
+          ? const ColorFilter.matrix(_previewColorMatrixIdentity)
+          : ColorFilter.matrix(cameraPreviewColorMatrix(_settings)),
+      child: cam.CameraPreview(_controller!),
+    );
+  }
+
+  /// One [GestureDetector]: only `onScale*` + tap (Flutter forbids pan+scale together).
+  /// Works across iOS/Android/Web: pinch zoom, one-finger draw/move, tap-to-focus.
+  Widget _buildPreviewGestureOverlay() {
+    const child = SizedBox.expand();
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onScaleStart: (details) {
+        _pinchStartZoom = _settings.zoom;
+        _previewScaleWasMultiTouch = false;
+        _previewScalePanDispatched = false;
+        if (_activePreviewPointers <= 1) {
+          _onPanStart(
+            DragStartDetails(
+              globalPosition: details.focalPoint,
+              localPosition: details.localFocalPoint,
+            ),
+          );
+          _previewScalePanDispatched = true;
+        }
+      },
+      onScaleUpdate: (details) {
+        if (details.pointerCount >= 2) {
+          _previewScaleWasMultiTouch = true;
+          if (_isDrawing) {
+            setState(() {
+              _currentPoints = [];
+              _isDrawing = false;
+              _lastDrawPoint = null;
+            });
+          }
+          if (_moveMode && _activeAnnotationIndex != null) {
+            setState(() {
+              _activeAnnotationIndex = null;
+              _moveStartCursor = null;
+              _moveStartPoints = null;
+            });
+          }
+          _setZoom(_pinchStartZoom * details.scale);
+          return;
+        }
+        if (_activePreviewPointers > 1) return;
+        if (!_previewScalePanDispatched) {
+          _onPanStart(
+            DragStartDetails(
+              globalPosition: details.focalPoint,
+              localPosition: details.localFocalPoint,
+            ),
+          );
+          _previewScalePanDispatched = true;
+        }
+        _onPanUpdate(
+          DragUpdateDetails(
+            globalPosition: details.focalPoint,
+            localPosition: details.localFocalPoint,
+            delta: details.focalPointDelta,
+          ),
+        );
+      },
+      onScaleEnd: (_) {
+        if (_previewScaleWasMultiTouch) {
+          return;
+        }
+        if (_activePreviewPointers > 1) return;
+        _onPanEnd(DragEndDetails());
+      },
+      onTapDown: (details) {
+        if (_activePreviewPointers > 1) return;
+        _onTapDown(details);
+      },
+      child: child,
     );
   }
 
@@ -3445,6 +3413,28 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
         }
       }
 
+      if (isVideo &&
+          exportToDevice &&
+          !kIsWeb &&
+          await ExportPrefs.watermarkEnabled()) {
+        final wmPath = await VideoExportService.overlayWatermarkOnVideo(
+          sourceVideoPath: mediaSourcePath,
+          outputFilename: preferredName,
+        );
+        if (wmPath != null && await File(wmPath).exists()) {
+          try {
+            await File(wmPath).copy(mediaSourcePath);
+          } catch (_) {
+            final b = await File(wmPath).readAsBytes();
+            await File(mediaSourcePath).writeAsBytes(b, flush: true);
+          }
+          try {
+            await File(wmPath).delete();
+          } catch (_) {}
+          finalBytes = await FileService.readBytes(mediaSourcePath);
+        }
+      }
+
       await MediaDatabase.saveAsset(mediaId, finalBytes);
       String? thumbnailId = isVideo ? null : mediaId;
       if (!isVideo && annotations.isNotEmpty) {
@@ -3827,7 +3817,6 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
     setState(() {
       _settings = _settings.copyWith(zoom: zoom);
     });
-    _cameraGradeNotifier.value = _settings;
   }
 
   Future<void> _togglePauseMode() async {
@@ -4153,9 +4142,13 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
       return;
     }
     setState(() {
+      final turningMoveOn = !_moveMode;
       _moveMode = !_moveMode;
       _selectedTool = null;
       _eraserMode = false;
+      if (turningMoveOn && _viewMode == CameraViewMode.toolsExpanded) {
+        _viewMode = CameraViewMode.defaultOpen;
+      }
     });
   }
 
@@ -4168,9 +4161,13 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
       return;
     }
     setState(() {
+      final turningEraserOn = !_eraserMode;
       _eraserMode = !_eraserMode;
       _selectedTool = null;
       _moveMode = false;
+      if (turningEraserOn && _viewMode == CameraViewMode.toolsExpanded) {
+        _viewMode = CameraViewMode.defaultOpen;
+      }
     });
   }
 
@@ -4519,22 +4516,19 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
     });
   }
 
+  /// Uses [annotationHitDistance] (segments, strokes, shapes) — not just vertices.
+  /// Vertex-only hit tests missed lines (two-pointer distance) and freehand paths.
   int? _findClosestAnnotationIndex(
     HexaPoint point, {
     required double maxDistance,
   }) {
     int? closestIndex;
-    double closestDistance = maxDistance;
+    var closestDistance = maxDistance;
     for (var i = 0; i < _annotations.length; i++) {
-      final annotation = _annotations[i];
-      for (final p in annotation.points) {
-        final dx = p.x - point.x;
-        final dy = p.y - point.y;
-        final dist = math.sqrt(dx * dx + dy * dy);
-        if (dist <= closestDistance) {
-          closestDistance = dist;
-          closestIndex = i;
-        }
+      final d = annotationHitDistance(point, _annotations[i]);
+      if (d < closestDistance) {
+        closestDistance = d;
+        closestIndex = i;
       }
     }
     return closestIndex;

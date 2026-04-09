@@ -149,29 +149,12 @@ class _SplashPageState extends State<SplashPage> with TickerProviderStateMixin {
                     builder: (context, _) {
                       return Transform.scale(
                         scale: _scaleAnimation.value,
-                        child: Container(
-                          width: 164,
-                          height: 164,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            boxShadow: [
-                              BoxShadow(
-                                color: const Color(0xFF8F5CFF)
-                                    .withValues(alpha: 0.28 + (_scaleController.value * 0.22)),
-                                blurRadius: 34,
-                                spreadRadius: 2,
-                              ),
-                            ],
-                          ),
-                          child: Center(
-                            child: SizedBox(
-                              width: 150,
-                              height: 150,
-                              child: Image.asset(
-                                'assets/images/logo_quasmo.png',
-                                fit: BoxFit.contain,
-                              ),
-                            ),
+                        child: SizedBox(
+                          width: 150,
+                          height: 150,
+                          child: Image.asset(
+                            'assets/images/logo.png',
+                            fit: BoxFit.contain,
                           ),
                         ),
                       );

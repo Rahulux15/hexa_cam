@@ -8,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
 
 import '../../config/constants.dart';
+import 'backup_media_export.dart';
 import 'backup_result.dart';
 import 'storage_service.dart';
 
@@ -40,6 +41,8 @@ Future<BackupResult> runBackup(StorageService storage) async {
         ArchiveFile('hexacam-media.db', dbBytes.length, dbBytes),
       );
     }
+
+    await appendHumanReadableExportToArchive(archive, foldersData);
 
     final zipBytes = ZipEncoder().encode(archive);
     if (zipBytes == null) {

@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
@@ -184,6 +184,124 @@ class VideoExportService {
     ];
     if (await _runFfmpeg(mpeg4NoAudio)) return outputPath;
 
+    return null;
+  }
+
+  /// Overlays [assets/images/report_logo.png] on bottom-right (matches still export).
+  /// Returns path to a new temp MP4, or null on failure / web.
+  static Future<String?> overlayWatermarkOnVideo({
+    required String sourceVideoPath,
+    required String outputFilename,
+  }) async {
+    if (kIsWeb) return null;
+    final inputPath = sourceVideoPath.startsWith('file://')
+        ? sourceVideoPath.replaceFirst('file://', '')
+        : sourceVideoPath;
+    final inputFile = File(inputPath);
+    if (!await inputFile.exists()) return null;
+
+    final logoData = await rootBundle.load('assets/images/report_logo.png');
+    final tempDir = await getTemporaryDirectory();
+    final logoPath = p.join(
+      tempDir.path,
+      'wm-logo-${DateTime.now().millisecondsSinceEpoch}.png',
+    );
+    await File(logoPath).writeAsBytes(logoData.buffer.asUint8List());
+
+    final outputPath =
+        p.join(tempDir.path, _safeOutputName('wm-$outputFilename'));
+
+    const filterComplex =
+        '[1:v]scale=200:-1[lg];[0:v][lg]overlay=W-w-16:H-h-16:format=auto[outv]';
+
+    final withAudioCopy = <String>[
+      '-y',
+      '-i',
+      inputPath,
+      '-i',
+      logoPath,
+      '-filter_complex',
+      filterComplex,
+      '-map',
+      '[outv]',
+      '-map',
+      '0:a?',
+      '-c:v',
+      'libx264',
+      '-preset',
+      'medium',
+      '-crf',
+      '18',
+      '-pix_fmt',
+      'yuv420p',
+      '-c:a',
+      'copy',
+      outputPath,
+    ];
+    try {
+      if (await _runFfmpeg(withAudioCopy) && await File(outputPath).exists()) {
+        return outputPath;
+      }
+
+      final withAac = <String>[
+        '-y',
+        '-i',
+        inputPath,
+        '-i',
+        logoPath,
+        '-filter_complex',
+        filterComplex,
+        '-map',
+        '[outv]',
+        '-map',
+        '0:a?',
+        '-c:v',
+        'libx264',
+        '-preset',
+        'medium',
+        '-crf',
+        '18',
+        '-pix_fmt',
+        'yuv420p',
+        '-c:a',
+        'aac',
+        '-b:a',
+        '192k',
+        outputPath,
+      ];
+      if (await _runFfmpeg(withAac) && await File(outputPath).exists()) {
+        return outputPath;
+      }
+
+      final noAudio = <String>[
+        '-y',
+        '-i',
+        inputPath,
+        '-i',
+        logoPath,
+        '-filter_complex',
+        filterComplex,
+        '-map',
+        '[outv]',
+        '-an',
+        '-c:v',
+        'libx264',
+        '-preset',
+        'medium',
+        '-crf',
+        '18',
+        '-pix_fmt',
+        'yuv420p',
+        outputPath,
+      ];
+      if (await _runFfmpeg(noAudio) && await File(outputPath).exists()) {
+        return outputPath;
+      }
+    } finally {
+      try {
+        await File(logoPath).delete();
+      } catch (_) {}
+    }
     return null;
   }
 

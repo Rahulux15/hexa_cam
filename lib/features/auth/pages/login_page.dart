@@ -19,7 +19,6 @@ class LoginPage extends StatefulWidget {
 class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
   final AuthController authController = Get.find<AuthController>();
 
-  late AnimationController _glowController;
   late AnimationController _entryController;
   late Animation<double> _entryOpacity;
   late Animation<Offset> _entryOffset;
@@ -32,10 +31,6 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
   void initState() {
     super.initState();
 
-    _glowController = AnimationController(
-      duration: const Duration(seconds: 2),
-      vsync: this,
-    )..repeat(reverse: true);
     _entryController = AnimationController(
       duration: const Duration(milliseconds: 850),
       vsync: this,
@@ -81,7 +76,6 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
 
   @override
   void dispose() {
-    _glowController.dispose();
     _entryController.dispose();
     for (final p in _particles) {
       p.controller.dispose();
@@ -198,65 +192,36 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                                   padding: EdgeInsets.all(isTab ? 30.0 : 22.0),
                                   child: Column(
                                     children: [
-                                      // Logo
                                       Center(
-                                        child: AnimatedBuilder(
-                                          animation: _glowController,
-                                          builder: (context, _) => Column(
-                                            children: [
-                                              Container(
-                                                width: logoSize + 14,
-                                                height: logoSize + 14,
-                                                decoration: BoxDecoration(
-                                                  shape: BoxShape.circle,
-                                                  boxShadow: [
-                                                    BoxShadow(
-                                                      color:
-                                                          const Color(
-                                                            0xFF8F5CFF,
-                                                          ).withValues(
-                                                            alpha:
-                                                                0.15 +
-                                                                (_glowController
-                                                                        .value *
-                                                                    0.23),
-                                                          ),
-                                                      blurRadius: 28,
-                                                      spreadRadius: 1,
-                                                    ),
-                                                  ],
-                                                ),
-                                                child: Center(
-                                                  child: SizedBox(
-                                                    width: logoSize,
-                                                    height: logoSize,
-                                                    child: Image.asset(
-                                                      'assets/images/logo_quasmo.png',
-                                                      fit: BoxFit.contain,
-                                                    ),
-                                                  ),
-                                                ),
+                                        child: Column(
+                                          children: [
+                                            SizedBox(
+                                              width: logoSize,
+                                              height: logoSize,
+                                              child: Image.asset(
+                                                'assets/images/app_logo.png',
+                                                fit: BoxFit.contain,
                                               ),
-                                              const SizedBox(height: 10),
-                                              const Text(
-                                                "Hexa-Cam",
-                                                style: TextStyle(
-                                                  fontSize: 16,
-                                                  fontWeight: FontWeight.bold,
-                                                  color: Colors.white,
-                                                ),
+                                            ),
+                                            const SizedBox(height: 10),
+                                            const Text(
+                                              "Hexa-Cam",
+                                              style: TextStyle(
+                                                fontSize: 16,
+                                                fontWeight: FontWeight.bold,
+                                                color: Colors.white,
                                               ),
-                                              const SizedBox(height: 3),
-                                              const Text(
-                                                "Scientific Imaging & Microscopy",
-                                                textAlign: TextAlign.center,
-                                                style: TextStyle(
-                                                  color: Colors.white60,
-                                                  fontSize: 11,
-                                                ),
+                                            ),
+                                            const SizedBox(height: 3),
+                                            const Text(
+                                              "Scientific Imaging & Microscopy",
+                                              textAlign: TextAlign.center,
+                                              style: TextStyle(
+                                                color: Colors.white60,
+                                                fontSize: 11,
                                               ),
-                                            ],
-                                          ),
+                                            ),
+                                          ],
                                         ),
                                       ),
 

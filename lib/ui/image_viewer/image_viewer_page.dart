@@ -9,6 +9,7 @@ import '../../data/models/annotation.dart';
 import '../../data/models/folder.dart';
 import '../../data/models/image_data.dart';
 import '../../data/services/database_service.dart';
+import '../../data/services/export_prefs.dart';
 import '../../data/services/file_service.dart';
 import '../../data/services/video_export_service.dart';
 import '../../state/app_registry.dart';
@@ -37,6 +38,7 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
   ImageData? _image;
   VideoPlayerController? _videoController;
   List<Annotation> _annotations = [];
+  final bool _showMeasurements = false;
   bool _showMarkings = true;
   int _rotation = 0;
   bool _flipH = false;
@@ -152,8 +154,7 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
                 initialAnnotations: _annotations,
                 hiddenAnnotationIds: _effectiveHiddenAnnotationIds(),
                 showFab: false,
-                // Must match markings visibility: distance/area labels use calibration when set.
-                showMeasurements: _showMarkings,
+                showMeasurements: _showMeasurements,
                 onAnnotationsChanged: (list) {
                   _annotations = list;
                   _schedulePersistAnnotations();
@@ -264,7 +265,6 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
                 child: ViewerScreen(
                   padding: EdgeInsets.zero,
                   showFab: true,
-                  showMeasurements: _showMarkings,
                   image: image,
                   videoController: _videoController,
                   rotation: _rotation,
@@ -491,6 +491,21 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
               'Could not burn markings into video; saving original file.',
               AppTheme.danger,
             );
+          }
+        }
+        if (await ExportPrefs.watermarkEnabled()) {
+          final wmPath = await VideoExportService.overlayWatermarkOnVideo(
+            sourceVideoPath: pathToExport,
+            outputFilename: image.filename ??
+                'hexa-cam-${DateTime.now().millisecondsSinceEpoch}.mp4',
+          );
+          if (wmPath != null && await File(wmPath).exists()) {
+            if (pathToExport != videoPath) {
+              try {
+                await File(pathToExport).delete();
+              } catch (_) {}
+            }
+            pathToExport = wmPath;
           }
         }
         exportDirectToGallery = await FileService.saveVideoToDevice(
@@ -843,9 +858,10 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
     return _annotations
         .where((annotation) => bakedIds == null || !bakedIds.contains(annotation.id))
         .map((annotation) {
-      final text = _measurementFor(annotation);
-      if (text == null || text.trim().isEmpty) return annotation;
-      return annotation.copyWith(measurement: text);
+      if (annotation.type == AnnotationType.twoPointer) {
+        return annotation.copyWith(measurement: _measurementFor(annotation));
+      }
+      return annotation;
     }).toList();
   }
 

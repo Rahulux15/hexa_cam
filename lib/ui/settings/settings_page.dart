@@ -242,7 +242,7 @@ class _SettingsPageState extends State<SettingsPage> {
             : _buildTile(
                 Icons.folder_zip_outlined,
                 'Backup data to ZIP',
-                'Documents/HexaCamBackups (folders + media DB)',
+                'HexaCamBackups: app data + Media/ (photos, videos, PDFs by folder)',
                 _runBackup,
               ),
         _buildTile(

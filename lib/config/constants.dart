@@ -53,7 +53,5 @@ class AppConstants {
   static const String keyExportPdfProvenance = 'hexacam_export_pdf_provenance';
   static const String keyLastSeenReleaseNotesVersion =
       'hexacam_last_seen_release_notes';
-  /// Last "Report Details" form values for prefill on new reports (JSON map).
-  static const String keyReportFormDefaults = 'hexacam_report_form_defaults_v1';
   static const String demoEmail = 'test@hexacam.com';
 }
