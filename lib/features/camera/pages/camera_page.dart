@@ -3400,7 +3400,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
     String description = '',
   }) async {
     try {
-      final annotations = _annotationsForSave();
+      var annotations = _annotationsForSave();
       final mediaId = FileService.generateAssetId(isVideo ? 'video' : 'image');
       String mediaSourcePath;
       late final Uint8List rawBytes;
@@ -3419,6 +3419,19 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
         rawBytes = await FileService.readBytes(mediaSourcePath);
       }
 
+      Size? annotationSourceSize =
+          _lastSourceSize.width > 0 && _lastSourceSize.height > 0
+              ? _lastSourceSize
+              : null;
+      final normalized = await _normalizeAnnotationsForCapturedMedia(
+        annotations: annotations,
+        isVideo: isVideo,
+        videoPath: isVideo ? mediaSourcePath : null,
+        stillBytes: isVideo ? null : rawBytes,
+      );
+      annotations = normalized.$1;
+      annotationSourceSize = normalized.$2 ?? annotationSourceSize;
+
       Uint8List finalBytes = rawBytes;
       final shouldBakeStillForExport =
           exportToDevice && annotations.isNotEmpty && !isVideo;
@@ -3429,10 +3442,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
           mirrorX: _mirror || _flipH,
           mirrorY: _flipV,
           rotation: _rotation,
-          annotationSourceSize:
-              _lastSourceSize.width > 0 && _lastSourceSize.height > 0
-                  ? _lastSourceSize
-                  : null,
+          annotationSourceSize: annotationSourceSize,
         );
         finalBytes = kIsWeb
             ? compressMarkedStillForStore(finalBytes)
@@ -3510,10 +3520,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                     mirrorX: _mirror || _flipH,
                     mirrorY: _flipV,
                     rotation: _rotation,
-                    annotationSourceSize:
-                        _lastSourceSize.width > 0 && _lastSourceSize.height > 0
-                            ? _lastSourceSize
-                            : null,
+                    annotationSourceSize: annotationSourceSize,
                   );
             thumbnailId = FileService.generateAssetId('thumb');
             await MediaDatabase.saveAsset(thumbnailId, thumbWithMarks);
@@ -3532,10 +3539,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                     mirrorX: _mirror || _flipH,
                     mirrorY: _flipV,
                     rotation: _rotation,
-                    annotationSourceSize:
-                        _lastSourceSize.width > 0 && _lastSourceSize.height > 0
-                            ? _lastSourceSize
-                            : null,
+                    annotationSourceSize: annotationSourceSize,
                   );
             thumbnailId = FileService.generateAssetId('thumb');
             await MediaDatabase.saveAsset(thumbnailId, thumbWithMarks);
@@ -3558,9 +3562,8 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
         mirrored: _mirror || _flipH,
         showCalibrationStamp: _stampEnabled,
         type: isVideo ? MediaType.video : MediaType.image,
-        sourceWidth: _lastSourceSize.width > 0 ? _lastSourceSize.width : null,
-        sourceHeight:
-            _lastSourceSize.height > 0 ? _lastSourceSize.height : null,
+        sourceWidth: annotationSourceSize?.width,
+        sourceHeight: annotationSourceSize?.height,
         isMarkingsBaked: shouldBakeStillForExport,
       );
 
@@ -3603,16 +3606,16 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
       _showMessage(
         exportToDevice
             ? (isVideo
-                ? (Platform.isIOS
-                    ? (exportedDirectToGallery
+                ? (exportedDirectToGallery
+                    ? (Platform.isIOS
                         ? 'Video saved to Photos'
-                        : 'Share opened — save video to Photos or Files')
-                    : 'Video downloaded to Gallery')
-                : (Platform.isIOS
-                    ? (exportedDirectToGallery
+                        : 'Video downloaded to Gallery')
+                    : 'Share opened — save video to Files, Photos, or Downloads')
+                : (exportedDirectToGallery
+                    ? (Platform.isIOS
                         ? 'Image saved to Photos'
-                        : 'Share opened — save image to Photos or Files')
-                    : 'Image downloaded to Gallery'))
+                        : 'Image downloaded to Gallery')
+                    : 'Share opened — save image to Files, Photos, or Downloads'))
             : (isVideo
                 ? 'Saved video to ${_folderLabel(_displayFolderName())}'
                 : 'Saved image to ${_folderLabel(_displayFolderName())}'),
@@ -3766,14 +3769,26 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
     required bool isVideo,
     required String defaultName,
   }) async {
-    final annotations = _annotationsForSave();
+    var annotations = _annotationsForSave();
     String? mediaId;
     String? thumbnailId;
+    Size? annotationSourceSize =
+        _lastSourceSize.width > 0 && _lastSourceSize.height > 0
+            ? _lastSourceSize
+            : null;
     try {
       final bytes = kIsWeb
           ? await cam.XFile(filePath).readAsBytes()
           : await FileService.readBytes(filePath);
       if (bytes.isNotEmpty) {
+        final normalized = await _normalizeAnnotationsForCapturedMedia(
+          annotations: annotations,
+          isVideo: isVideo,
+          videoPath: isVideo ? filePath : null,
+          stillBytes: isVideo ? null : bytes,
+        );
+        annotations = normalized.$1;
+        annotationSourceSize = normalized.$2 ?? annotationSourceSize;
         mediaId = FileService.generateAssetId(isVideo ? 'video' : 'image');
         await MediaDatabase.saveAsset(mediaId, bytes);
         if (!isVideo) {
@@ -3795,10 +3810,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                   mirrorX: _mirror || _flipH,
                   mirrorY: _flipV,
                   rotation: _rotation,
-                  annotationSourceSize:
-                      _lastSourceSize.width > 0 && _lastSourceSize.height > 0
-                          ? _lastSourceSize
-                          : null,
+                  annotationSourceSize: annotationSourceSize,
                 );
           thumbnailId = FileService.generateAssetId('thumb');
           await MediaDatabase.saveAsset(thumbnailId, thumbWithMarks);
@@ -3817,10 +3829,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                   mirrorX: _mirror || _flipH,
                   mirrorY: _flipV,
                   rotation: _rotation,
-                  annotationSourceSize:
-                      _lastSourceSize.width > 0 && _lastSourceSize.height > 0
-                          ? _lastSourceSize
-                          : null,
+                  annotationSourceSize: annotationSourceSize,
                 );
           thumbnailId = FileService.generateAssetId('thumb');
           await MediaDatabase.saveAsset(thumbnailId, thumbWithMarks);
@@ -3841,10 +3850,54 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
       mirrored: _mirror || _flipH,
       showCalibrationStamp: _stampEnabled,
       type: isVideo ? MediaType.video : MediaType.image,
-      sourceWidth: _lastSourceSize.width > 0 ? _lastSourceSize.width : null,
-      sourceHeight: _lastSourceSize.height > 0 ? _lastSourceSize.height : null,
+      sourceWidth: annotationSourceSize?.width,
+      sourceHeight: annotationSourceSize?.height,
       isMarkingsBaked: false,
     );
+  }
+
+  Future<(List<Annotation>, Size?)> _normalizeAnnotationsForCapturedMedia({
+    required List<Annotation> annotations,
+    required bool isVideo,
+    String? videoPath,
+    Uint8List? stillBytes,
+  }) async {
+    if (annotations.isEmpty) return (annotations, null);
+    final sourceSize =
+        _lastSourceSize.width > 0 && _lastSourceSize.height > 0
+            ? _lastSourceSize
+            : null;
+    if (sourceSize == null) return (annotations, null);
+    if (isVideo) {
+      final path = videoPath;
+      if (path == null || path.isEmpty) return (annotations, sourceSize);
+      final targetSize = await VideoExportService.getVideoDimensions(path);
+      if (targetSize == null ||
+          targetSize.width <= 0 ||
+          targetSize.height <= 0) {
+        return (annotations, sourceSize);
+      }
+      final normalized = MarkedMediaRenderer.normalizeAnnotationsToTarget(
+        annotations: annotations,
+        annotationSourceSize: sourceSize,
+        targetSize: targetSize,
+      );
+      return (normalized, targetSize);
+    }
+    final bytes = stillBytes;
+    if (bytes == null || bytes.isEmpty) return (annotations, sourceSize);
+    final targetSize = await MarkedMediaRenderer.decodeImageSize(bytes);
+    if (targetSize == null ||
+        targetSize.width <= 0 ||
+        targetSize.height <= 0) {
+      return (annotations, sourceSize);
+    }
+    final normalized = MarkedMediaRenderer.normalizeAnnotationsToTarget(
+      annotations: annotations,
+      annotationSourceSize: sourceSize,
+      targetSize: targetSize,
+    );
+    return (normalized, targetSize);
   }
 
   Future<void> _setZoom(double value) async {

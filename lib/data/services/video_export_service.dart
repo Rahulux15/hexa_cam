@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
+import 'package:video_player/video_player.dart';
 
 import 'package:ffmpeg_kit_flutter_new_full/ffmpeg_kit.dart';
 import 'package:ffmpeg_kit_flutter_new_full/return_code.dart';
@@ -15,6 +16,30 @@ import '../../utils/marked_media_renderer.dart';
 /// main isolate. A Dart [Isolate] cannot host `ffmpeg_kit` without a separate
 /// helper process; use UI-level progress (e.g. loading overlays) for long jobs.
 class VideoExportService {
+  /// Returns decoded video frame size (after container/orientation handling).
+  static Future<Size?> getVideoDimensions(String sourcePath) async {
+    if (kIsWeb) return null;
+    final inputPath = sourcePath.startsWith('file://')
+        ? sourcePath.replaceFirst('file://', '')
+        : sourcePath;
+    final inputFile = File(inputPath);
+    if (!await inputFile.exists()) return null;
+    VideoPlayerController? controller;
+    try {
+      controller = VideoPlayerController.file(inputFile);
+      await controller.initialize();
+      final size = controller.value.size;
+      if (size.width <= 0 || size.height <= 0) return null;
+      return size;
+    } catch (_) {
+      return null;
+    } finally {
+      try {
+        await controller?.dispose();
+      } catch (_) {}
+    }
+  }
+
   static Future<Uint8List?> extractVideoThumbnailBytes({
     required String sourcePath,
     int timeMs = 120,

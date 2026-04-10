@@ -542,16 +542,16 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
       if (!mounted) return;
       _showMessage(
         image.type == MediaType.video
-            ? (Platform.isIOS
-                ? (exportDirectToGallery
+            ? (exportDirectToGallery
+                ? (Platform.isIOS
                     ? 'Video saved to Photos'
-                    : 'Share opened — save video to Photos or Files')
-                : 'Video downloaded to Gallery')
-            : (Platform.isIOS
-                ? (exportDirectToGallery
+                    : 'Video downloaded to Gallery')
+                : 'Share opened — save video to Files, Photos, or Downloads')
+            : (exportDirectToGallery
+                ? (Platform.isIOS
                     ? 'Image saved to Photos'
-                    : 'Share opened — save image to Photos or Files')
-                : 'Image downloaded to Gallery'),
+                    : 'Image downloaded to Gallery')
+                : 'Share opened — save image to Files, Photos, or Downloads'),
         AppTheme.success,
       );
     } catch (error) {

@@ -124,10 +124,21 @@ class FileService {
         ? 'hexacam-${DateTime.now().millisecondsSinceEpoch}'
         : sanitized;
     logDebug('FileService.saveToDevice gallery write name=$name');
-    await _ensureGalleryExportPermissions(isVideo: false);
-    await Gal.putImageBytes(bytes, name: name);
-    logDebug('FileService.saveToDevice gallery write done');
-    return true;
+    try {
+      await _ensureGalleryExportPermissions(isVideo: false);
+      await Gal.putImageBytes(bytes, name: name);
+      logDebug('FileService.saveToDevice gallery write done');
+      return true;
+    } catch (e) {
+      // Android/iOS parity: if direct gallery write fails, open share sheet.
+      logDebug('FileService.saveToDevice gallery failed, using share: $e');
+      await shareImageToDevice(
+        bytes,
+        filename,
+        sharePositionOrigin: sharePositionOrigin,
+      );
+      return false;
+    }
   }
 
   static Future<void> savePdfToDevice(Uint8List bytes, String filename) async {
@@ -216,10 +227,20 @@ class FileService {
       return false;
     }
     logDebug('FileService.saveVideoToDevice gallery write path=$videoPath');
-    await _ensureGalleryExportPermissions(isVideo: true);
-    await Gal.putVideo(videoPath);
-    logDebug('FileService.saveVideoToDevice gallery write done');
-    return true;
+    try {
+      await _ensureGalleryExportPermissions(isVideo: true);
+      await Gal.putVideo(videoPath);
+      logDebug('FileService.saveVideoToDevice gallery write done');
+      return true;
+    } catch (e) {
+      logDebug('FileService.saveVideoToDevice gallery failed, using share: $e');
+      await shareVideoToDevice(
+        videoPath,
+        filename,
+        sharePositionOrigin: sharePositionOrigin,
+      );
+      return false;
+    }
   }
 
   static Future<void> shareImageToDevice(

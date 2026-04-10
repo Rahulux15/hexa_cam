@@ -80,13 +80,14 @@ class AnnotationPainter extends CustomPainter {
         break;
       case AnnotationType.text:
         if (ann.text != null) {
-          final shortSide =
-              sourceSize.shortestSide <= 0 ? 1.0 : sourceSize.shortestSide;
+          final textScale = sqrt(uiTextScale.clamp(0.8, 4.0));
           final fontSize =
-              (shortSide * 0.0195 * uiTextScale).clamp(16.0, 220.0).toDouble();
+              (10.0 + (strokeWidth * 0.9) + ((textScale - 1.0) * 6.0))
+                  .clamp(14.0, 92.0)
+                  .toDouble();
           final anchor = points[0];
-          final maxW = shortSide * 0.55;
-          final strokeW = (2.25 * lineWidthScale).clamp(2.0, 14.0);
+          final maxW = (canvasSize.width * 0.55).clamp(120.0, 820.0).toDouble();
+          final strokeW = (1.4 + (strokeWidth * 0.12)).clamp(1.4, 6.0).toDouble();
           final lum = ann.color.computeLuminance();
           final fillColor = lum > 0.52 ? const Color(0xFF121212) : Colors.white;
           final strokeColor =
@@ -287,10 +288,9 @@ class AnnotationPainter extends CustomPainter {
     AnnotationType type,
   ) {
     if (points.isEmpty) return;
-    final shortSide =
-        sourceSize.shortestSide <= 0 ? 1.0 : sourceSize.shortestSide;
-    final mFont = (shortSide * 0.0105 * uiTextScale).clamp(14.0, 160.0);
-    final strokeW = (2.25 * lineWidthScale).clamp(2.0, 14.0);
+    final textScale = sqrt(uiTextScale.clamp(0.8, 4.0));
+    final mFont = (12.0 + ((textScale - 1.0) * 8.0)).clamp(12.0, 44.0).toDouble();
+    final strokeW = (1.35 + ((textScale - 1.0) * 1.15)).clamp(1.35, 4.2).toDouble();
 
     final lum = annotationColor.computeLuminance();
     final fillColor = lum > 0.52 ? const Color(0xFF121212) : Colors.white;

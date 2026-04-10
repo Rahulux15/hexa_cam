@@ -72,6 +72,11 @@ class ReportController extends GetxController {
     required ImageData image,
     required Uint8List baseBytes,
   }) async {
+    // Video reports use extracted still thumbnails. Those are produced in
+    // capture/viewer flows and may already include markings; avoid reburn.
+    if (image.type == MediaType.video) {
+      return baseBytes;
+    }
     if (image.annotations.isEmpty || image.isMarkingsBaked == true) {
       return baseBytes;
     }

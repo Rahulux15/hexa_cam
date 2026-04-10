@@ -10,9 +10,18 @@ import '../data/models/point.dart';
 import 'annotation_painter.dart';
 
 class MarkedMediaRenderer {
-  // WYSIWYG export: geometry is normalized to target pixels, so keep
-  // painter-level scaling neutral.
-  static double _exportUiScale(Size sourceSize) => 1.0;
+  // Exports are usually downscaled in folder cards / reports. Use a stronger
+  // line scale so burned markings do not become too thin after resize.
+  static double _exportLineScale(Size sourceSize) {
+    final shortSide = sourceSize.shortestSide <= 0 ? 1.0 : sourceSize.shortestSide;
+    return (shortSide / 900.0).clamp(1.25, 3.0).toDouble();
+  }
+
+  // Keep text growth gentler than line growth to avoid oversized labels.
+  static double _exportTextScale(Size sourceSize) {
+    final line = _exportLineScale(sourceSize);
+    return sqrt(line).clamp(1.05, 1.75).toDouble();
+  }
 
   static Future<Uint8List> renderAnnotationOverlay({
     required Size sourceSize,
@@ -21,7 +30,8 @@ class MarkedMediaRenderer {
     required bool mirrorY,
     required int rotation,
   }) async {
-    final exportScale = _exportUiScale(sourceSize);
+    final lineScale = _exportLineScale(sourceSize);
+    final textScale = _exportTextScale(sourceSize);
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder);
     final painter = AnnotationPainter(
@@ -33,8 +43,8 @@ class MarkedMediaRenderer {
       mirrorY: mirrorY,
       zoom: 1,
       rotation: rotation,
-      lineWidthScale: exportScale,
-      uiTextScale: exportScale,
+      lineWidthScale: lineScale,
+      uiTextScale: textScale,
     );
     painter.paint(canvas, sourceSize);
     final outImage = await recorder.endRecording().toImage(
@@ -55,12 +65,13 @@ class MarkedMediaRenderer {
   }) async {
     final image = await _decodeImage(baseImageBytes);
     final sourceSize = Size(image.width.toDouble(), image.height.toDouble());
-    final normalizedAnnotations = _normalizeAnnotationsToTarget(
+    final normalizedAnnotations = normalizeAnnotationsToTarget(
       annotations: annotations,
       annotationSourceSize: annotationSourceSize,
       targetSize: sourceSize,
     );
-    final exportScale = _exportUiScale(sourceSize);
+    final lineScale = _exportLineScale(sourceSize);
+    final textScale = _exportTextScale(sourceSize);
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder);
 
@@ -90,8 +101,8 @@ class MarkedMediaRenderer {
       mirrorY: mirrorY,
       zoom: 1,
       rotation: rotation,
-      lineWidthScale: exportScale,
-      uiTextScale: exportScale,
+      lineWidthScale: lineScale,
+      uiTextScale: textScale,
     );
     painter.paint(canvas, sourceSize);
 
@@ -101,7 +112,7 @@ class MarkedMediaRenderer {
     return outData!.buffer.asUint8List();
   }
 
-  static List<Annotation> _normalizeAnnotationsToTarget({
+  static List<Annotation> normalizeAnnotationsToTarget({
     required List<Annotation> annotations,
     required Size? annotationSourceSize,
     required Size targetSize,
@@ -121,19 +132,30 @@ class MarkedMediaRenderer {
     if ((sx - 1.0).abs() < 0.001 && (sy - 1.0).abs() < 0.001) {
       return annotations;
     }
-    final raw = annotations;
     final direct = _scaleAnnotations(annotations, sx: sx, sy: sy);
     final swapped = _scaleAnnotations(
       annotations,
       sx: swappedSx,
       sy: swappedSy,
     );
-    final rawScore = _placementScore(raw, targetSize);
+
+    // Prefer deterministic aspect-ratio matching to avoid drift between
+    // preview/save/report when only one axis differs or metadata swaps axes.
+    final targetAspect = targetSize.width / targetSize.height;
+    final srcAspect = src.width / src.height;
+    final swappedAspect = src.height / src.width;
+    final directAspectErr = (srcAspect - targetAspect).abs();
+    final swappedAspectErr = (swappedAspect - targetAspect).abs();
+
     final directScore = _placementScore(direct, targetSize);
     final swappedScore = _placementScore(swapped, targetSize);
-    if (rawScore >= directScore && rawScore >= swappedScore) {
-      return raw;
+
+    // If one mapping clearly fits aspect better, use it.
+    if ((directAspectErr - swappedAspectErr).abs() > 0.015) {
+      return directAspectErr < swappedAspectErr ? direct : swapped;
     }
+
+    // Otherwise choose the mapping that keeps more points in-bounds.
     return swappedScore > directScore ? swapped : direct;
   }
 
@@ -205,5 +227,13 @@ class MarkedMediaRenderer {
     final completer = Completer<ui.Image>();
     ui.decodeImageFromList(bytes, completer.complete);
     return completer.future;
+  }
+
+  /// Decodes raster dimensions (without rendering annotations).
+  static Future<Size?> decodeImageSize(Uint8List bytes) async {
+    if (bytes.isEmpty) return null;
+    final image = await _decodeImage(bytes);
+    if (image.width <= 0 || image.height <= 0) return null;
+    return Size(image.width.toDouble(), image.height.toDouble());
   }
 }

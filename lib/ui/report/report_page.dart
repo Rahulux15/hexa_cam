@@ -543,9 +543,12 @@ class _ReportPageState extends State<ReportPage> {
     return MediaImage(
       source: image.imageUrl,
       mediaId: previewMediaId,
-      annotations: image.annotations,
-      burnAnnotationsIntoPreview:
-          image.annotations.isNotEmpty && image.isMarkingsBaked != true,
+      // Video thumbnails are prepared in capture/viewer flows; reburning here
+      // causes doubled overlays in mirror/flip scenarios.
+      annotations: image.type == MediaType.video ? const [] : image.annotations,
+      burnAnnotationsIntoPreview: image.type == MediaType.video
+          ? false
+          : (image.annotations.isNotEmpty && image.isMarkingsBaked != true),
       mirrorX: image.mirrored ?? false,
       rotation: image.rotation ?? 0,
       annotationSourceSize: (image.sourceWidth != null &&
@@ -989,6 +992,11 @@ class _ReportPageState extends State<ReportPage> {
       for (final assetId in assetCandidates) {
         final bytes = await MediaDatabase.getAsset(assetId);
         if (bytes == null || bytes.isEmpty) continue;
+        // Video path: use thumbnail as-is. It may already include burned marks
+        // from capture/viewer and reburning causes duplicate overlays.
+        if (image.type == MediaType.video) {
+          return await _optimizePdfImageBytesAsync(bytes);
+        }
         if (image.isMarkingsBaked == true) {
           return await _optimizePdfImageBytesAsync(bytes);
         }

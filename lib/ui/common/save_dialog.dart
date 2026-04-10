@@ -47,7 +47,7 @@ class SaveDialog extends StatefulWidget {
         annotations: annotations,
         isVideo: isVideo,
         onSave: onSave,
-        onCancel: () => Navigator.pop(context),
+        onCancel: () => Navigator.of(ctx).pop(),
       ),
     );
   }
