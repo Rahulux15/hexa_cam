@@ -1,6 +1,18 @@
 import 'package:flutter/foundation.dart';
 import 'package:image/image.dart' as img;
 
+/// Decodes common formats and re-encodes as JPEG so watermark decode succeeds
+/// (e.g. flattened PNG from the viewer, wide-gamut stills).
+Uint8List? reencodeImageBytesAsJpegForWatermark(Uint8List bytes) {
+  try {
+    final decoded = img.decodeImage(bytes);
+    if (decoded == null) return null;
+    return Uint8List.fromList(img.encodeJpg(decoded, quality: 92));
+  } catch (_) {
+    return null;
+  }
+}
+
 /// Composites [logoBytes] onto [imageBytes] (bottom-right).
 /// Uses moderate alpha so the mark is visible on exports (was ~10% and often invisible).
 /// On any failure returns `null` so callers can fall back to original bytes.

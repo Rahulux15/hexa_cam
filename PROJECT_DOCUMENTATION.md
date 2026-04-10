@@ -227,7 +227,7 @@ flutter build apk --release
 - Smaller per-CPU builds (optional):
 
 ```bash
-flutter build apk --release --split-per-abi
+    flutter build apk --release --split-per-abi
 ```
 
 - Outputs under `build/app/outputs/flutter-apk/` as `app-*-release.apk` (armeabi-v7a, arm64-v8a, x86_64).

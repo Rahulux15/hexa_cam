@@ -1,4 +1,6 @@
 import 'dart:convert';
+import 'dart:math' show min;
+import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
@@ -10,6 +12,12 @@ class MediaDatabase {
   static const String _tableName = 'media_assets';
   static const int _schemaVersion = 2;
   static final Map<String, Uint8List> _webStore = {};
+
+  /// Android SQLite [CursorWindow] is ~2MB per row; reading a whole BLOB in one
+  /// row can throw. Inline reads are safe below this size; larger blobs use
+  /// [substr] chunks.
+  static const int _maxInlineBlobBytes = 512 * 1024;
+  static const int _blobReadChunkBytes = 512 * 1024;
 
   static Future<Database> get database async {
     if (kIsWeb) {
@@ -47,9 +55,51 @@ class MediaDatabase {
       return _webStore[id];
     }
     final db = await database;
-    final results = await db.query(_tableName, where: 'id = ?', whereArgs: [id]);
-    if (results.isEmpty) return null;
-    return results.first['data'] as Uint8List;
+    final lenRow = await db.rawQuery(
+      'SELECT length(data) AS len FROM $_tableName WHERE id = ?',
+      [id],
+    );
+    if (lenRow.isEmpty) return null;
+    final len = lenRow.first['len'] as int?;
+    if (len == null || len == 0) return null;
+
+    if (len <= _maxInlineBlobBytes) {
+      final results = await db.query(
+        _tableName,
+        columns: ['data'],
+        where: 'id = ?',
+        whereArgs: [id],
+      );
+      if (results.isEmpty) return null;
+      return results.first['data'] as Uint8List?;
+    }
+    return _readBlobInChunks(db, id, len);
+  }
+
+  static Future<Uint8List> _readBlobInChunks(
+    Database db,
+    String id,
+    int totalLen,
+  ) async {
+    final builder = BytesBuilder(copy: false);
+    var offset = 0;
+    while (offset < totalLen) {
+      final take = min(_blobReadChunkBytes, totalLen - offset);
+      final rows = await db.rawQuery(
+        'SELECT substr(data, ?, ?) AS chunk FROM $_tableName WHERE id = ?',
+        [offset + 1, take, id],
+      );
+      if (rows.isEmpty) break;
+      final chunk = rows.first['chunk'];
+      if (chunk == null) break;
+      if (chunk is Uint8List) {
+        builder.add(chunk);
+      } else if (chunk is List<int>) {
+        builder.add(chunk);
+      }
+      offset += take;
+    }
+    return builder.toBytes();
   }
 
   static Future<void> deleteAsset(String id) async {
@@ -71,18 +121,22 @@ class MediaDatabase {
   }
 
   /// All blob bytes keyed by asset id — used to build `Media/` inside backup ZIP.
+  /// Loads ids only first, then each asset via [getAsset] (chunked for large BLOBs)
+  /// so Android never pulls every row into one [CursorWindow].
   static Future<Map<String, Uint8List>> loadAllAssetsForBackup() async {
     if (kIsWeb) {
       return Map<String, Uint8List>.from(_webStore);
     }
     final db = await database;
-    final rows = await db.query(_tableName, columns: ['id', 'data']);
+    final idRows = await db.query(_tableName, columns: ['id']);
     final out = <String, Uint8List>{};
-    for (final r in rows) {
+    for (final r in idRows) {
       final id = r['id'] as String?;
-      final data = r['data'] as Uint8List?;
-      if (id == null || data == null || data.isEmpty) continue;
-      out[id] = data;
+      if (id == null || id.isEmpty) continue;
+      final data = await getAsset(id);
+      if (data != null && data.isNotEmpty) {
+        out[id] = data;
+      }
     }
     return out;
   }

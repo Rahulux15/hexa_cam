@@ -29,11 +29,41 @@ class FileService {
     try {
       if (!await ExportPrefs.watermarkEnabled()) return bytes;
       final logo = await rootBundle.load('assets/images/report_logo.png');
-      final out = applyReportLogoWatermark(bytes, logo.buffer.asUint8List());
+      final logoBytes = logo.buffer.asUint8List();
+      var out = applyReportLogoWatermark(bytes, logoBytes);
+      if (out == null) {
+        final normalized = reencodeImageBytesAsJpegForWatermark(bytes);
+        if (normalized != null) {
+          out = applyReportLogoWatermark(normalized, logoBytes);
+        }
+      }
       return out ?? bytes;
     } catch (e) {
       logDebug('FileService._encodeBytesForExport watermark skipped: $e');
       return bytes;
+    }
+  }
+
+  /// Photos / media library access for Gal on Android 13+ and iOS (with plugin prompt).
+  static Future<void> _ensureGalleryExportPermissions({
+    required bool isVideo,
+  }) async {
+    if (kIsWeb) return;
+    try {
+      if (Platform.isAndroid) {
+        await Permission.photos.request();
+        if (isVideo) {
+          await Permission.videos.request();
+        }
+      } else if (Platform.isIOS) {
+        await Permission.photos.request();
+        await Permission.photosAddOnly.request();
+      }
+      if (!await Gal.hasAccess(toAlbum: true)) {
+        await Gal.requestAccess(toAlbum: true);
+      }
+    } catch (e) {
+      logDebug('FileService._ensureGalleryExportPermissions: $e');
     }
   }
 
@@ -61,6 +91,7 @@ class FileService {
     if (Platform.isIOS) {
       // Match Android: save into Photos when allowed; share sheet as fallback.
       try {
+        await _ensureGalleryExportPermissions(isVideo: false);
         if (!await Gal.hasAccess(toAlbum: true)) {
           await Gal.requestAccess(toAlbum: true);
         }
@@ -93,6 +124,7 @@ class FileService {
         ? 'hexacam-${DateTime.now().millisecondsSinceEpoch}'
         : sanitized;
     logDebug('FileService.saveToDevice gallery write name=$name');
+    await _ensureGalleryExportPermissions(isVideo: false);
     await Gal.putImageBytes(bytes, name: name);
     logDebug('FileService.saveToDevice gallery write done');
     return true;
@@ -162,6 +194,7 @@ class FileService {
     }
     if (Platform.isIOS) {
       try {
+        await _ensureGalleryExportPermissions(isVideo: true);
         if (!await Gal.hasAccess(toAlbum: true)) {
           await Gal.requestAccess(toAlbum: true);
         }
@@ -183,6 +216,7 @@ class FileService {
       return false;
     }
     logDebug('FileService.saveVideoToDevice gallery write path=$videoPath');
+    await _ensureGalleryExportPermissions(isVideo: true);
     await Gal.putVideo(videoPath);
     logDebug('FileService.saveVideoToDevice gallery write done');
     return true;

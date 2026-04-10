@@ -1158,6 +1158,11 @@ class _ReportPageState extends State<ReportPage> {
 
   void _showMessage(String text, Color backgroundColor) {
     if (!mounted) return;
+    // Pending debounced progress would fire after success and replace the green
+    // toast with a 100% bar (30s timer) — looks "stuck" on Android & iOS.
+    _progressToastDebounce?.cancel();
+    _progressToastDebounce = null;
+    HexaToast.dismiss();
     final type = backgroundColor == AppTheme.danger
         ? HexaToastType.error
         : HexaToastType.success;
@@ -1183,6 +1188,13 @@ class _ReportPageState extends State<ReportPage> {
 
   void _showProgress(String text, double progress) {
     if (!mounted) return;
+    final p = progress.clamp(0.0, 1.0);
+    // Final tick would schedule after [showMessage] and steal the overlay — skip.
+    if (p >= 1.0) {
+      _progressToastDebounce?.cancel();
+      _progressToastDebounce = null;
+      return;
+    }
     // Avoid resetting the overlay on every tick (was 900ms + replace = flicker / "stuck" feel).
     _progressToastDebounce?.cancel();
     _progressToastDebounce = Timer(const Duration(milliseconds: 160), () {
@@ -1191,7 +1203,7 @@ class _ReportPageState extends State<ReportPage> {
         context,
         text,
         type: HexaToastType.info,
-        progress: progress.clamp(0.0, 1.0),
+        progress: p,
         duration: const Duration(seconds: 30),
       );
     });

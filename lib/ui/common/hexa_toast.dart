@@ -8,6 +8,14 @@ class HexaToast {
   static OverlayEntry? _activeEntry;
   static Timer? _activeTimer;
 
+  /// Removes the active toast immediately (e.g. before showing success after progress).
+  static void dismiss() {
+    _activeTimer?.cancel();
+    _activeTimer = null;
+    _activeEntry?.remove();
+    _activeEntry = null;
+  }
+
   static void show(
     BuildContext context,
     String message, {
