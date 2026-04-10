@@ -15,6 +15,7 @@ class AnnotationPainter extends CustomPainter {
   final bool mirrorY;
   final double zoom;
   final int rotation;
+
   /// Multiplier for stroke width (e.g. [MediaQuery.devicePixelRatio]) for crisper lines on screen.
   final double lineWidthScale;
 
@@ -57,7 +58,7 @@ class AnnotationPainter extends CustomPainter {
 
   void _drawAnnotation(Canvas canvas, Annotation ann, Size canvasSize) {
     final strokeWidth =
-        (ann.strokeWidth * lineWidthScale).clamp(2.5, 28.0).toDouble();
+        (ann.strokeWidth * lineWidthScale).clamp(2.0, 120.0).toDouble();
     final paint = Paint()
       ..color = ann.color
       ..strokeWidth = strokeWidth
@@ -82,13 +83,12 @@ class AnnotationPainter extends CustomPainter {
           final shortSide =
               sourceSize.shortestSide <= 0 ? 1.0 : sourceSize.shortestSide;
           final fontSize =
-              (shortSide * 0.0175 * uiTextScale).clamp(16.0, 132.0).toDouble();
+              (shortSide * 0.0195 * uiTextScale).clamp(16.0, 220.0).toDouble();
           final anchor = points[0];
           final maxW = shortSide * 0.55;
-          final strokeW = (2.25 * lineWidthScale).clamp(2.0, 5.0);
+          final strokeW = (2.25 * lineWidthScale).clamp(2.0, 14.0);
           final lum = ann.color.computeLuminance();
-          final fillColor =
-              lum > 0.52 ? const Color(0xFF121212) : Colors.white;
+          final fillColor = lum > 0.52 ? const Color(0xFF121212) : Colors.white;
           final strokeColor =
               lum > 0.52 ? Colors.white : const Color(0xFF121212);
           const baseWeight = TextStyle(
@@ -184,10 +184,8 @@ class AnnotationPainter extends CustomPainter {
           ..isAntiAlias = true;
         final p = points[0];
         canvas.drawCircle(Offset(p.dx, p.dy), 4, fill);
-        canvas.drawLine(
-            Offset(p.dx - 8, p.dy), Offset(p.dx + 8, p.dy), paint);
-        canvas.drawLine(
-            Offset(p.dx, p.dy - 8), Offset(p.dx, p.dy + 8), paint);
+        canvas.drawLine(Offset(p.dx - 8, p.dy), Offset(p.dx + 8, p.dy), paint);
+        canvas.drawLine(Offset(p.dx, p.dy - 8), Offset(p.dx, p.dy + 8), paint);
         break;
       case AnnotationType.rectangle:
       case AnnotationType.square:
@@ -289,8 +287,10 @@ class AnnotationPainter extends CustomPainter {
     AnnotationType type,
   ) {
     if (points.isEmpty) return;
-    final mFont = (13 * uiTextScale).clamp(14.0, 64.0);
-    final strokeW = (2.25 * lineWidthScale).clamp(2.0, 5.0);
+    final shortSide =
+        sourceSize.shortestSide <= 0 ? 1.0 : sourceSize.shortestSide;
+    final mFont = (shortSide * 0.0105 * uiTextScale).clamp(14.0, 160.0);
+    final strokeW = (2.25 * lineWidthScale).clamp(2.0, 14.0);
 
     final lum = annotationColor.computeLuminance();
     final fillColor = lum > 0.52 ? const Color(0xFF121212) : Colors.white;
@@ -438,8 +438,10 @@ class AnnotationPainter extends CustomPainter {
 
           final o1 = side(1);
           final o2 = side(-1);
-          final s1 = _labelPlacementScore(o1, labelWidth, labelHeight, canvasSize);
-          final s2 = _labelPlacementScore(o2, labelWidth, labelHeight, canvasSize);
+          final s1 =
+              _labelPlacementScore(o1, labelWidth, labelHeight, canvasSize);
+          final s2 =
+              _labelPlacementScore(o2, labelWidth, labelHeight, canvasSize);
           return s1 >= s2 ? o1 : o2;
         }
         break;

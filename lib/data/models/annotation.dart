@@ -1,7 +1,17 @@
 import 'dart:ui';
 import 'point.dart';
 
-enum AnnotationType { draw, text, arrow, arrowOneWay, circle, rectangle, square, twoPointer, singlePointer }
+enum AnnotationType {
+  draw,
+  text,
+  arrow,
+  arrowOneWay,
+  circle,
+  rectangle,
+  square,
+  twoPointer,
+  singlePointer
+}
 
 class Annotation {
   final String id;
@@ -26,26 +36,48 @@ class Annotation {
     this.coordinateSpace = 'source',
   });
 
-  Annotation copyWith({List<HexaPoint>? points, String? coordinateSpace, String? measurement}) => Annotation(
-    id: id, type: type, points: points ?? this.points, text: text, color: color,
-    strokeWidth: strokeWidth, timestamp: timestamp, measurement: measurement ?? this.measurement,
-    coordinateSpace: coordinateSpace ?? this.coordinateSpace,
-  );
+  Annotation copyWith({
+    List<HexaPoint>? points,
+    String? coordinateSpace,
+    String? measurement,
+    double? strokeWidth,
+  }) =>
+      Annotation(
+        id: id,
+        type: type,
+        points: points ?? this.points,
+        text: text,
+        color: color,
+        strokeWidth: strokeWidth ?? this.strokeWidth,
+        timestamp: timestamp,
+        measurement: measurement ?? this.measurement,
+        coordinateSpace: coordinateSpace ?? this.coordinateSpace,
+      );
 
   factory Annotation.fromJson(Map<String, dynamic> json) => Annotation(
-    id: json['id'], type: AnnotationType.values.byName(json['type'] ?? 'draw'),
-    points: (json['points'] as List).map((p) => HexaPoint.fromJson(p)).toList(),
-    text: json['text'], color: _parseColor(json['color']),
-    strokeWidth: (json['strokeWidth'] ?? 2.0).toDouble(), timestamp: json['timestamp'],
-    measurement: json['measurement'], coordinateSpace: json['coordinateSpace'] ?? 'source',
-  );
+        id: json['id'],
+        type: AnnotationType.values.byName(json['type'] ?? 'draw'),
+        points:
+            (json['points'] as List).map((p) => HexaPoint.fromJson(p)).toList(),
+        text: json['text'],
+        color: _parseColor(json['color']),
+        strokeWidth: (json['strokeWidth'] ?? 2.0).toDouble(),
+        timestamp: json['timestamp'],
+        measurement: json['measurement'],
+        coordinateSpace: json['coordinateSpace'] ?? 'source',
+      );
 
   Map<String, dynamic> toJson() => {
-    'id': id, 'type': type.name, 'points': points.map((p) => p.toJson()).toList(),
-    if (text != null) 'text': text, 'color': color.toARGB32(), 'strokeWidth': strokeWidth,
-    'timestamp': timestamp, if (measurement != null) 'measurement': measurement,
-    'coordinateSpace': coordinateSpace,
-  };
+        'id': id,
+        'type': type.name,
+        'points': points.map((p) => p.toJson()).toList(),
+        if (text != null) 'text': text,
+        'color': color.toARGB32(),
+        'strokeWidth': strokeWidth,
+        'timestamp': timestamp,
+        if (measurement != null) 'measurement': measurement,
+        'coordinateSpace': coordinateSpace,
+      };
 
   static Color _parseColor(dynamic raw) {
     if (raw is int) return Color(raw);

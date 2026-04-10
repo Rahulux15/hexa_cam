@@ -39,10 +39,12 @@ class ReportController extends GetxController {
     try {
       if (kIsWeb) {
         // In-browser storage is [MediaDatabase] + folder list (see report page).
-        showMessage('Saved report to ${_label(folderLabel ?? folderName)}', Colors.green);
+        showMessage('Saved report to ${_label(folderLabel ?? folderName)}',
+            Colors.green);
         return true;
       }
-      onProgress?.call('Saving report to ${_label(folderLabel ?? folderName)}', 0.2);
+      onProgress?.call(
+          'Saving report to ${_label(folderLabel ?? folderName)}', 0.2);
       await _saveToAppFolderOnly(
         bytes,
         filename: filename,
@@ -52,11 +54,14 @@ class ReportController extends GetxController {
           0.2 + (p * 0.8),
         ),
       );
-      showMessage('Saved report to ${_label(folderLabel ?? folderName)}', Colors.green);
+      showMessage(
+          'Saved report to ${_label(folderLabel ?? folderName)}', Colors.green);
       return true;
     } catch (e) {
       logDebug('Save report failed: $e');
-      showMessage('Failed to save report to ${_label(folderLabel ?? folderName)}', Colors.red);
+      showMessage(
+          'Failed to save report to ${_label(folderLabel ?? folderName)}',
+          Colors.red);
       return false;
     } finally {
       isSaving.value = false;
@@ -67,7 +72,7 @@ class ReportController extends GetxController {
     required ImageData image,
     required Uint8List baseBytes,
   }) async {
-    if (image.annotations.isEmpty) {
+    if (image.annotations.isEmpty || image.isMarkingsBaked == true) {
       return baseBytes;
     }
     return MarkedMediaRenderer.renderPhotoWithAnnotations(
@@ -145,7 +150,8 @@ class ReportController extends GetxController {
             );
           }
         } catch (e) {
-          logDebug('ReportController.downloadReport iOS saveToDownloads failed: $e');
+          logDebug(
+              'ReportController.downloadReport iOS saveToDownloads failed: $e');
           showMessage(
             'Could not copy to Downloads folder; try Share below.',
             Colors.orange,
@@ -160,7 +166,8 @@ class ReportController extends GetxController {
             sharePositionOrigin: sharePositionOrigin,
           );
         } catch (_) {
-          logDebug('ReportController.downloadReport iOS share retry without anchor');
+          logDebug(
+              'ReportController.downloadReport iOS share retry without anchor');
           onProgress?.call('Retrying share…', 0.96);
           await FileService.sharePdfToDevice(
             bytes,
@@ -179,7 +186,8 @@ class ReportController extends GetxController {
           ? true
           : await permissionController.requestStoragePermissionIfNeeded();
       if (!permissionOk) {
-        showMessage('Failed to download report: storage permission denied', Colors.red);
+        showMessage(
+            'Failed to download report: storage permission denied', Colors.red);
         return false;
       }
       const reportFolder = 'Hexa Cam Reports';
@@ -204,10 +212,12 @@ class ReportController extends GetxController {
         );
         return false;
       }
-      logDebug('ReportController.downloadReport public download done path=$downloadPath');
+      logDebug(
+          'ReportController.downloadReport public download done path=$downloadPath');
       final normalizedPath = downloadPath.replaceAll('\\', '/');
       if (normalizedPath.contains('/Download/')) {
-        showMessage('Report downloaded to Downloads/Hexa Cam Reports', Colors.green);
+        showMessage(
+            'Report downloaded to Downloads/Hexa Cam Reports', Colors.green);
       } else {
         final folderPath = p.dirname(downloadPath).replaceAll('\\', '/');
         showMessage(
@@ -238,7 +248,8 @@ class ReportController extends GetxController {
       return filename ?? 'report_${DateTime.now().millisecondsSinceEpoch}.pdf';
     }
     final dir = await _appDocumentsDirectory();
-    final name = filename ?? 'report_${DateTime.now().millisecondsSinceEpoch}.pdf';
+    final name =
+        filename ?? 'report_${DateTime.now().millisecondsSinceEpoch}.pdf';
     final safeName = p.basename(name);
     final reportsDir = Directory(p.join(dir.path, 'reports', folderName));
     await reportsDir.create(recursive: true);

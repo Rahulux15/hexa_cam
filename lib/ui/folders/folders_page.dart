@@ -207,7 +207,8 @@ class _FoldersPageState extends State<FoldersPage> {
   Widget _buildBrand(bool isTab) {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       ShaderMask(
-        shaderCallback: (bounds) => AppTheme.buttonGradient.createShader(bounds),
+        shaderCallback: (bounds) =>
+            AppTheme.buttonGradient.createShader(bounds),
         child: Text('Hexa-Cam',
             style: TextStyle(
                 fontSize: isTab ? 22 : 18,
@@ -302,92 +303,92 @@ class _FoldersPageState extends State<FoldersPage> {
           offset: Offset(0, (1 - value) * 20),
           child: Opacity(opacity: value, child: child)),
       child: GestureDetector(
-          onTap: () => Get.toNamed<void>('/folder/${folder.id}'),
-          child: Container(
-            constraints: BoxConstraints(minHeight: isTab ? 92 : 82),
-            padding: EdgeInsets.symmetric(
-              horizontal: isTab ? 16 : 14,
-              vertical: isTab ? 10 : 8,
-            ),
-            decoration: AppTheme.softCardDecoration(
-                borderRadius: BorderRadius.circular(14),
-                color: const Color(0xFF232651)),
-            child: Row(children: [
-              Container(
-                width: isTab ? 46 : 40,
-                height: isTab ? 46 : 40,
-                decoration: BoxDecoration(
-                    gradient: AppTheme.buttonGradient,
-                    borderRadius: BorderRadius.circular(14)),
-                child: const Icon(Icons.folder_open_outlined,
-                    color: Colors.white, size: 20),
-              ),
-              SizedBox(width: isTab ? 14 : 10),
-              Expanded(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(folder.name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w700,
-                            fontSize: isTab ? 16 : 14)),
-                    const SizedBox(height: 4),
-                    Wrap(
-                      spacing: 10,
-                      runSpacing: 4,
-                      children: [
-                        _tinyMeta(Icons.photo_library_outlined, '$images'),
-                        _tinyMeta(Icons.videocam_outlined, '$videos'),
-                        _tinyMeta(Icons.description_outlined,
-                            '${folder.reports?.length ?? 0}'),
-                        _tinyMeta(Icons.calendar_today_outlined, created),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              PopupMenuButton<String>(
-                  onSelected: (value) async {
-                    if (value == 'rename') {
-                      _showRenameDialog(folder);
-                    } else {
-                      try {
-                        await foldersController.deleteFolder(folder.id);
-                        if (mounted) setState(() {});
-                      } catch (error) {
-                        if (!mounted) return;
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Delete failed: $error')),
-                        );
-                      }
-                    }
-                  },
-                  padding: EdgeInsets.zero,
-                  color: AppTheme.bgCardSoft,
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
-                      side: const BorderSide(color: AppTheme.borderColor)),
-                  icon: Container(
-                    width: isTab ? 28 : 26,
-                    height: isTab ? 28 : 26,
-                    decoration: BoxDecoration(
-                        color: const Color(0xFF1D2249),
-                        borderRadius: BorderRadius.circular(17)),
-                    child: const Icon(Icons.more_vert_rounded,
-                        color: AppTheme.textMuted),
-                  ),
-                  itemBuilder: (_) => const [
-                    PopupMenuItem(value: 'rename', child: Text('Rename')),
-                    PopupMenuItem(value: 'delete', child: Text('Delete'))
-                  ],
-                ),
-            ]),
+        onTap: () => Get.toNamed<void>('/folder/${folder.id}'),
+        child: Container(
+          constraints: BoxConstraints(minHeight: isTab ? 92 : 82),
+          padding: EdgeInsets.symmetric(
+            horizontal: isTab ? 16 : 14,
+            vertical: isTab ? 10 : 8,
           ),
+          decoration: AppTheme.softCardDecoration(
+              borderRadius: BorderRadius.circular(14),
+              color: const Color(0xFF232651)),
+          child: Row(children: [
+            Container(
+              width: isTab ? 46 : 40,
+              height: isTab ? 46 : 40,
+              decoration: BoxDecoration(
+                  gradient: AppTheme.buttonGradient,
+                  borderRadius: BorderRadius.circular(14)),
+              child: const Icon(Icons.folder_open_outlined,
+                  color: Colors.white, size: 20),
+            ),
+            SizedBox(width: isTab ? 14 : 10),
+            Expanded(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(folder.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                          fontSize: isTab ? 16 : 14)),
+                  const SizedBox(height: 4),
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 4,
+                    children: [
+                      _tinyMeta(Icons.photo_library_outlined, '$images'),
+                      _tinyMeta(Icons.videocam_outlined, '$videos'),
+                      _tinyMeta(Icons.description_outlined,
+                          '${folder.reports?.length ?? 0}'),
+                      _tinyMeta(Icons.calendar_today_outlined, created),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            PopupMenuButton<String>(
+              onSelected: (value) async {
+                if (value == 'rename') {
+                  _showRenameDialog(folder);
+                } else {
+                  try {
+                    await foldersController.deleteFolder(folder.id);
+                    if (mounted) setState(() {});
+                  } catch (error) {
+                    if (!mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Delete failed: $error')),
+                    );
+                  }
+                }
+              },
+              padding: EdgeInsets.zero,
+              color: AppTheme.bgCardSoft,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  side: const BorderSide(color: AppTheme.borderColor)),
+              icon: Container(
+                width: isTab ? 28 : 26,
+                height: isTab ? 28 : 26,
+                decoration: BoxDecoration(
+                    color: const Color(0xFF1D2249),
+                    borderRadius: BorderRadius.circular(17)),
+                child: const Icon(Icons.more_vert_rounded,
+                    color: AppTheme.textMuted),
+              ),
+              itemBuilder: (_) => const [
+                PopupMenuItem(value: 'rename', child: Text('Rename')),
+                PopupMenuItem(value: 'delete', child: Text('Delete'))
+              ],
+            ),
+          ]),
         ),
+      ),
     );
   }
 
@@ -397,7 +398,9 @@ class _FoldersPageState extends State<FoldersPage> {
       const SizedBox(width: 3),
       Text(text,
           style: const TextStyle(
-              color: Color(0xFFAFC0E4), fontSize: 10, fontWeight: FontWeight.w500)),
+              color: Color(0xFFAFC0E4),
+              fontSize: 10,
+              fontWeight: FontWeight.w500)),
     ]);
   }
 
@@ -467,7 +470,8 @@ class _FoldersPageState extends State<FoldersPage> {
         onPrimary: () async {
           if (_newFolderController.text.trim().isEmpty) return;
           try {
-            await foldersController.createFolder(_newFolderController.text.trim());
+            await foldersController
+                .createFolder(_newFolderController.text.trim());
           } catch (error) {
             if (dialogContext.mounted) {
               ScaffoldMessenger.of(dialogContext).showSnackBar(
@@ -498,7 +502,8 @@ class _FoldersPageState extends State<FoldersPage> {
         onPrimary: () async {
           if (controller.text.trim().isEmpty) return;
           try {
-            await foldersController.renameFolder(folder.id, controller.text.trim());
+            await foldersController.renameFolder(
+                folder.id, controller.text.trim());
           } catch (error) {
             if (dialogContext.mounted) {
               ScaffoldMessenger.of(dialogContext).showSnackBar(
@@ -525,86 +530,88 @@ class _FoldersPageState extends State<FoldersPage> {
   }) {
     final isTab = Responsive.isTablet(context);
     final media = MediaQuery.of(context);
-    final maxHeight = media.size.height - media.viewInsets.bottom - 48;
+    final keyboardInset = media.viewInsets.bottom;
     return Dialog(
       backgroundColor: Colors.transparent,
-      insetPadding: EdgeInsets.fromLTRB(
-        24,
-        24,
-        24,
-        24 + media.viewInsets.bottom,
-      ),
+      insetPadding: const EdgeInsets.fromLTRB(24, 24, 24, 24),
       child: SafeArea(
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxWidth: isTab ? 460 : 380,
-            maxHeight: maxHeight.clamp(240, 620),
-          ),
-          child: Container(
-            padding: EdgeInsets.all(isTab ? 26 : 24),
-            decoration: AppTheme.softCardDecoration(
-              borderRadius: BorderRadius.circular(24),
-              color: const Color(0xFF2A295D),
+        child: AnimatedPadding(
+          duration: const Duration(milliseconds: 160),
+          padding: EdgeInsets.only(bottom: keyboardInset > 0 ? 8 : 0),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: isTab ? 460 : 380,
+              maxHeight: media.size.height * 0.9,
             ),
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-              Text(
-                title,
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: isTab ? 22 : 18,
-                  fontWeight: FontWeight.w700,
-                ),
+            child: Container(
+              padding: EdgeInsets.all(isTab ? 26 : 24),
+              decoration: AppTheme.softCardDecoration(
+                borderRadius: BorderRadius.circular(24),
+                color: const Color(0xFF2A295D),
               ),
-              const SizedBox(height: 18),
-              TextField(
-                controller: controller,
-                autofocus: true,
-                style: const TextStyle(color: Colors.white),
-                decoration: InputDecoration(
-                  hintText: hintText,
-                  hintStyle: const TextStyle(color: AppTheme.textMuted),
-                  filled: true,
-                  fillColor: const Color(0xFF1D284D),
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(18),
-                    borderSide: const BorderSide(color: Color(0xFF35517A)),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(18),
-                    borderSide: const BorderSide(color: Color(0xFF35517A)),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(18),
-                    borderSide: const BorderSide(color: AppTheme.primaryLight),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  Expanded(
-                    child: _dialogActionButton(
-                      label: 'Cancel',
-                      onTap: () => Navigator.pop(context),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: isTab ? 22 : 18,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: _dialogActionButton(
-                      label: primaryLabel,
-                      onTap: onPrimary,
-                      primary: true,
+                    const SizedBox(height: 18),
+                    TextField(
+                      controller: controller,
+                      autofocus: true,
+                      style: const TextStyle(color: Colors.white),
+                      decoration: InputDecoration(
+                        hintText: hintText,
+                        hintStyle: const TextStyle(color: AppTheme.textMuted),
+                        filled: true,
+                        fillColor: const Color(0xFF1D284D),
+                        contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 16),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(18),
+                          borderSide:
+                              const BorderSide(color: Color(0xFF35517A)),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(18),
+                          borderSide:
+                              const BorderSide(color: Color(0xFF35517A)),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(18),
+                          borderSide:
+                              const BorderSide(color: AppTheme.primaryLight),
+                        ),
+                      ),
                     ),
-                  ),
-                ],
-              ),
-            ],
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _dialogActionButton(
+                            label: 'Cancel',
+                            onTap: () => Navigator.pop(context),
+                          ),
+                        ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: _dialogActionButton(
+                            label: primaryLabel,
+                            onTap: onPrimary,
+                            primary: true,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -666,6 +673,3 @@ class _StatData {
   final String value;
   final Color color;
 }
-
-
-

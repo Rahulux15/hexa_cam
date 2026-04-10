@@ -73,7 +73,11 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
       );
       setState(() {
         _image = image;
-        _annotations = List.from(image.annotations);
+        // If markings are already baked into pixels, keep old ids for export
+        // guards but do not paint them again as editable overlays.
+        _annotations = image.isMarkingsBaked == true
+            ? <Annotation>[]
+            : List.from(image.annotations);
         _rotation = image.rotation ?? 0;
         _flipH = image.mirrored ?? false;
         _bakedAnnotationIdsAtOpen = image.isMarkingsBaked == true
@@ -162,7 +166,8 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
                 onFiltersChanged: (f) {
                   final img = _image;
                   if (img == null) return;
-                  final upd = img.copyWith(cameraSettings: f.toCameraSettings());
+                  final upd =
+                      img.copyWith(cameraSettings: f.toCameraSettings());
                   _image = upd;
                   _schedulePersistImageMeta(upd);
                 },
@@ -279,7 +284,8 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
                   onFiltersChanged: (f) {
                     final img = _image;
                     if (img == null) return;
-                    final upd = img.copyWith(cameraSettings: f.toCameraSettings());
+                    final upd =
+                        img.copyWith(cameraSettings: f.toCameraSettings());
                     _image = upd;
                     _schedulePersistImageMeta(upd);
                   },
@@ -347,7 +353,8 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
                   icon: Icons.picture_as_pdf_outlined,
                   iconBg: const Color(0xFF8F5CFF),
                   title: 'Generate Report',
-                  subtitle: 'Create a PDF report (Download or Save from report page)',
+                  subtitle:
+                      'Create a PDF report (Download or Save from report page)',
                   onTap: () {
                     Navigator.pop(sheetCtx);
                     _openGenerateReportFlow();
@@ -481,8 +488,8 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
             rotation: _rotation,
             sourceWidth: _videoBurnWidth(image),
             sourceHeight: _videoBurnHeight(image),
-            outputFilename:
-                image.filename ?? 'hexa-cam-${DateTime.now().millisecondsSinceEpoch}.mp4',
+            outputFilename: image.filename ??
+                'hexa-cam-${DateTime.now().millisecondsSinceEpoch}.mp4',
           );
           if (burned != null) {
             pathToExport = burned;
@@ -691,19 +698,17 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
     if (bytes == null || bytes.isEmpty) return null;
 
     if (_annotations.isEmpty) return bytes;
-    final annotationSourceSize =
-        (image.sourceWidth != null &&
-                image.sourceHeight != null &&
-                image.sourceWidth! > 0 &&
-                image.sourceHeight! > 0)
-            ? Size(image.sourceWidth!, image.sourceHeight!)
-            : null;
+    final annotationSourceSize = (image.sourceWidth != null &&
+            image.sourceHeight != null &&
+            image.sourceWidth! > 0 &&
+            image.sourceHeight! > 0)
+        ? Size(image.sourceWidth!, image.sourceHeight!)
+        : null;
 
     final bakedIds = _bakedAnnotationIdsAtOpen;
     if (bakedIds != null) {
-      final overlay = _annotations
-          .where((a) => !bakedIds.contains(a.id))
-          .toList();
+      final overlay =
+          _annotations.where((a) => !bakedIds.contains(a.id)).toList();
       if (overlay.isEmpty) return bytes;
       final rendered = await MarkedMediaRenderer.renderPhotoWithAnnotations(
         baseImageBytes: bytes,
@@ -738,60 +743,61 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
       context: context,
       builder: (ctx) {
         final media = MediaQuery.of(ctx);
-        final maxHeight = media.size.height - media.viewInsets.bottom - 48;
+        final keyboardInset = media.viewInsets.bottom;
         return Dialog(
           backgroundColor: const Color(0xFF232651),
-          insetPadding: EdgeInsets.fromLTRB(
-            20,
-            24,
-            20,
-            24 + media.viewInsets.bottom,
-          ),
+          insetPadding: const EdgeInsets.fromLTRB(20, 24, 20, 24),
           child: SafeArea(
-            child: ConstrainedBox(
-              constraints: BoxConstraints(maxHeight: maxHeight.clamp(220, 560)),
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(20, 18, 20, 12),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('Delete', style: TextStyle(color: Colors.white)),
-                    const SizedBox(height: 10),
-                    const Text(
-                      'Remove all markings on this image, or delete the image from the folder?',
-                      style: TextStyle(color: Colors.white70),
-                    ),
-                    const SizedBox(height: 14),
-                    Wrap(
-                      alignment: WrapAlignment.end,
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(ctx, 'cancel'),
-                          child: const Text(
-                            'Cancel',
-                            style: TextStyle(color: Colors.white54),
+            child: AnimatedPadding(
+              duration: const Duration(milliseconds: 160),
+              padding: EdgeInsets.only(bottom: keyboardInset > 0 ? 8 : 0),
+              child: ConstrainedBox(
+                constraints:
+                    BoxConstraints(maxHeight: media.size.height * 0.85),
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(20, 18, 20, 12),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Delete',
+                          style: TextStyle(color: Colors.white)),
+                      const SizedBox(height: 10),
+                      const Text(
+                        'Remove all markings on this image, or delete the image from the folder?',
+                        style: TextStyle(color: Colors.white70),
+                      ),
+                      const SizedBox(height: 14),
+                      Wrap(
+                        alignment: WrapAlignment.end,
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(ctx, 'cancel'),
+                            child: const Text(
+                              'Cancel',
+                              style: TextStyle(color: Colors.white54),
+                            ),
                           ),
-                        ),
-                        TextButton(
-                          onPressed: () => Navigator.pop(ctx, 'clear'),
-                          child: const Text(
-                            'Clear markings',
-                            style: TextStyle(color: Colors.white70),
+                          TextButton(
+                            onPressed: () => Navigator.pop(ctx, 'clear'),
+                            child: const Text(
+                              'Clear markings',
+                              style: TextStyle(color: Colors.white70),
+                            ),
                           ),
-                        ),
-                        TextButton(
-                          onPressed: () => Navigator.pop(ctx, 'remove'),
-                          child: Text(
-                            'Delete image',
-                            style: TextStyle(color: AppTheme.danger),
+                          TextButton(
+                            onPressed: () => Navigator.pop(ctx, 'remove'),
+                            child: Text(
+                              'Delete image',
+                              style: TextStyle(color: AppTheme.danger),
+                            ),
                           ),
-                        ),
-                      ],
-                    ),
-                  ],
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -843,9 +849,8 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
 
   String? _measurementFor(Annotation annotation) {
     final lens = _image?.lens;
-    final calibration = lens == null
-        ? null
-        : calibrationController.calibrations[lens];
+    final calibration =
+        lens == null ? null : calibrationController.calibrations[lens];
     return MeasurementCalculator.getMeasurementText(
       annotation,
       pixelsPerUnit: calibration?.pixelsPerUnit,
@@ -856,7 +861,8 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
   List<Annotation> _syncedAnnotations() {
     final bakedIds = _bakedAnnotationIdsAtOpen;
     return _annotations
-        .where((annotation) => bakedIds == null || !bakedIds.contains(annotation.id))
+        .where((annotation) =>
+            bakedIds == null || !bakedIds.contains(annotation.id))
         .map((annotation) {
       if (annotation.type == AnnotationType.twoPointer) {
         return annotation.copyWith(measurement: _measurementFor(annotation));
@@ -880,57 +886,58 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
       context: context,
       builder: (dialogContext) {
         final media = MediaQuery.of(dialogContext);
-        final maxHeight = media.size.height - media.viewInsets.bottom - 48;
+        final keyboardInset = media.viewInsets.bottom;
         return Dialog(
           backgroundColor: const Color(0xFF232651),
-          insetPadding: EdgeInsets.fromLTRB(
-            20,
-            24,
-            20,
-            24 + media.viewInsets.bottom,
-          ),
+          insetPadding: const EdgeInsets.fromLTRB(20, 24, 20, 24),
           child: SafeArea(
-            child: ConstrainedBox(
-              constraints: BoxConstraints(maxHeight: maxHeight.clamp(220, 560)),
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(20, 18, 20, 12),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('Media Info', style: TextStyle(color: Colors.white)),
-                    const SizedBox(height: 10),
-                    Text(
-                      'Type: ${image.type == MediaType.video ? 'Video' : 'Image'}',
-                      style: const TextStyle(color: Colors.white70),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      'Lens: ${image.lens ?? '-'}',
-                      style: const TextStyle(color: Colors.white70),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      'Time: ${image.timestamp}',
-                      style: const TextStyle(color: Colors.white70),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      'Annotations: ${_annotations.length}',
-                      style: const TextStyle(color: Colors.white70),
-                    ),
-                    const SizedBox(height: 14),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: TextButton(
-                        onPressed: () => Navigator.pop(dialogContext),
-                        child: const Text(
-                          'Close',
-                          style: TextStyle(color: Colors.white),
+            child: AnimatedPadding(
+              duration: const Duration(milliseconds: 160),
+              padding: EdgeInsets.only(bottom: keyboardInset > 0 ? 8 : 0),
+              child: ConstrainedBox(
+                constraints:
+                    BoxConstraints(maxHeight: media.size.height * 0.85),
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(20, 18, 20, 12),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Media Info',
+                          style: TextStyle(color: Colors.white)),
+                      const SizedBox(height: 10),
+                      Text(
+                        'Type: ${image.type == MediaType.video ? 'Video' : 'Image'}',
+                        style: const TextStyle(color: Colors.white70),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Lens: ${image.lens ?? '-'}',
+                        style: const TextStyle(color: Colors.white70),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Time: ${image.timestamp}',
+                        style: const TextStyle(color: Colors.white70),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Annotations: ${_annotations.length}',
+                        style: const TextStyle(color: Colors.white70),
+                      ),
+                      const SizedBox(height: 14),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton(
+                          onPressed: () => Navigator.pop(dialogContext),
+                          child: const Text(
+                            'Close',
+                            style: TextStyle(color: Colors.white),
+                          ),
                         ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -1011,15 +1018,15 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
   }
 
   Widget _placeholder() => Container(
-    color: Colors.black12,
-    child: const Center(
-      child: Icon(
-        Icons.broken_image_outlined,
-        color: AppTheme.textMuted,
-        size: 36,
-      ),
-    ),
-  );
+        color: Colors.black12,
+        child: const Center(
+          child: Icon(
+            Icons.broken_image_outlined,
+            color: AppTheme.textMuted,
+            size: 36,
+          ),
+        ),
+      );
 
   Rect _sharePositionOrigin() {
     final box = context.findRenderObject() as RenderBox?;
@@ -1098,7 +1105,8 @@ class _ViewerTopActionRow extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 10),
-            sideCircleButtonBuilder(icon: Icons.edit_rounded, onTap: onOpenEditor),
+            sideCircleButtonBuilder(
+                icon: Icons.edit_rounded, onTap: onOpenEditor),
             const SizedBox(width: 10),
             sideCircleButtonBuilder(
               icon: Icons.info_outline_rounded,
@@ -1112,7 +1120,8 @@ class _ViewerTopActionRow extends StatelessWidget {
             const SizedBox(width: 10),
             sideCircleButtonBuilder(icon: Icons.undo_rounded, onTap: onUndo),
             const SizedBox(width: 10),
-            sideCircleButtonBuilder(icon: Icons.rotate_right_rounded, onTap: onRotate),
+            sideCircleButtonBuilder(
+                icon: Icons.rotate_right_rounded, onTap: onRotate),
             const SizedBox(width: 10),
             sideCircleButtonBuilder(
               icon: Icons.fullscreen_rounded,

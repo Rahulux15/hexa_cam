@@ -47,12 +47,6 @@ Future<BackupResult> runBackup(StorageService storage) async {
     await appendHumanReadableExportToArchive(archive, foldersData);
 
     final zipBytes = ZipEncoder().encode(archive);
-    if (zipBytes == null) {
-      return const BackupResult(
-        ok: false,
-        message: 'Could not create backup archive.',
-      );
-    }
 
     // Prefer a user-visible folder on Android (Downloads); iOS has no public
     // Downloads API — app Documents + UIFileSharingEnabled + share sheet.

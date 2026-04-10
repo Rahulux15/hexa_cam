@@ -40,12 +40,6 @@ Future<BackupResult> runBackup(StorageService storage) async {
     await appendHumanReadableExportToArchive(archive, foldersData);
 
     final zipBytes = ZipEncoder().encode(archive);
-    if (zipBytes == null) {
-      return const BackupResult(
-        ok: false,
-        message: 'Could not create backup archive.',
-      );
-    }
 
     final name = 'hexacam-backup-${DateTime.now().millisecondsSinceEpoch}.zip';
     await downloadBytesWeb(

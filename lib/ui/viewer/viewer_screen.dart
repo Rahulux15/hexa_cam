@@ -132,7 +132,8 @@ class ViewerScreenState extends State<ViewerScreen> {
     _filters = ViewerFilters.fromCameraSettings(widget.image.cameraSettings);
     _stampEnabled = widget.image.showCalibrationStamp ?? false;
     final lens = widget.image.lens;
-    final stored = lens == null ? null : calibrationController.calibrations[lens];
+    final stored =
+        lens == null ? null : calibrationController.calibrations[lens];
     _calibrationUnit = stored?.unit ?? 'μm';
   }
 
@@ -154,7 +155,8 @@ class ViewerScreenState extends State<ViewerScreen> {
       _filters = ViewerFilters.fromCameraSettings(widget.image.cameraSettings);
       _stampEnabled = widget.image.showCalibrationStamp ?? false;
       final lens = widget.image.lens;
-      final stored = lens == null ? null : calibrationController.calibrations[lens];
+      final stored =
+          lens == null ? null : calibrationController.calibrations[lens];
       _calibrationUnit = stored?.unit ?? 'μm';
     }
   }
@@ -275,111 +277,129 @@ class ViewerScreenState extends State<ViewerScreen> {
       context: context,
       barrierDismissible: false,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) => Dialog(
-          backgroundColor: Colors.transparent,
-          insetPadding: EdgeInsets.fromLTRB(
-            18,
-            18,
-            18,
-            18 + MediaQuery.viewInsetsOf(ctx).bottom,
-          ),
-          child: ConstrainedBox(
-            constraints: BoxConstraints(
-              maxWidth: isTablet ? 420 : 360,
-              maxHeight: MediaQuery.sizeOf(ctx).height * 0.9,
-            ),
-            child: Container(
-              padding: EdgeInsets.all(isTablet ? 24 : 20),
-              decoration: AppTheme.softCardDecoration(
-                borderRadius: BorderRadius.circular(24),
-                color: const Color(0xFF2A295D),
-              ),
-              child: SingleChildScrollView(
-                child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Set Calibration',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: isTablet ? 22 : 18,
-                    fontWeight: FontWeight.w700,
+        builder: (ctx, setDialogState) => Material(
+          color: Colors.transparent,
+          child: SafeArea(
+            child: Center(
+              child: Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
+                child: AnimatedPadding(
+                  duration: const Duration(milliseconds: 160),
+                  padding: EdgeInsets.only(
+                    bottom: MediaQuery.viewInsetsOf(ctx).bottom > 0 ? 8 : 0,
                   ),
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  'Enter the real distance for this line ($lens).',
-                  style: const TextStyle(color: Color(0xFFD9DCF4), height: 1.4),
-                ),
-                const SizedBox(height: 14),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: knownController,
-                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                        style: const TextStyle(color: Colors.white),
-                        decoration: InputDecoration(
-                          labelText: 'Known distance',
-                          labelStyle: const TextStyle(color: Color(0xFFAFB5D9)),
-                          filled: true,
-                          fillColor: const Color(0xFF1E2140),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(14),
-                            borderSide: BorderSide.none,
-                          ),
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxWidth: isTablet ? 420 : 360,
+                      maxHeight: MediaQuery.sizeOf(ctx).height * 0.9,
+                    ),
+                    child: Container(
+                      padding: EdgeInsets.all(isTablet ? 24 : 20),
+                      decoration: AppTheme.softCardDecoration(
+                        borderRadius: BorderRadius.circular(24),
+                        color: const Color(0xFF2A295D),
+                      ),
+                      child: SingleChildScrollView(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Set Calibration',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: isTablet ? 22 : 18,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            Text(
+                              'Enter the real distance for this line ($lens).',
+                              style: const TextStyle(
+                                  color: Color(0xFFD9DCF4), height: 1.4),
+                            ),
+                            const SizedBox(height: 14),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: TextField(
+                                    controller: knownController,
+                                    keyboardType:
+                                        const TextInputType.numberWithOptions(
+                                            decimal: true),
+                                    style: const TextStyle(color: Colors.white),
+                                    decoration: InputDecoration(
+                                      labelText: 'Known distance',
+                                      labelStyle: const TextStyle(
+                                          color: Color(0xFFAFB5D9)),
+                                      filled: true,
+                                      fillColor: const Color(0xFF1E2140),
+                                      border: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(14),
+                                        borderSide: BorderSide.none,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                DropdownButtonHideUnderline(
+                                  child: DropdownButton<String>(
+                                    value: dialogUnit,
+                                    dropdownColor: const Color(0xFF1E2140),
+                                    style: const TextStyle(color: Colors.white),
+                                    items: const [
+                                      DropdownMenuItem(
+                                          value: 'μm', child: Text('μm')),
+                                      DropdownMenuItem(
+                                          value: 'nm', child: Text('nm')),
+                                    ],
+                                    onChanged: (v) {
+                                      if (v == null) return;
+                                      setDialogState(() => dialogUnit = v);
+                                    },
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 10),
+                            Text(
+                              'Measured: ${px.toStringAsFixed(0)} px',
+                              style: const TextStyle(color: Color(0xFFAFB5D9)),
+                            ),
+                            const SizedBox(height: 18),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.end,
+                              children: [
+                                TextButton(
+                                  onPressed: () => Navigator.pop(ctx, false),
+                                  child: const Text('Cancel',
+                                      style: TextStyle(color: Colors.white70)),
+                                ),
+                                const SizedBox(width: 10),
+                                ElevatedButton(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: AppTheme.primary,
+                                    foregroundColor: Colors.white,
+                                    shape: RoundedRectangleBorder(
+                                        borderRadius:
+                                            BorderRadius.circular(14)),
+                                  ),
+                                  onPressed: () =>
+                                      Navigator.pop(ctx, <String, dynamic>{
+                                    'confirmed': true,
+                                    'unit': dialogUnit,
+                                  }),
+                                  child: const Text('Save'),
+                                ),
+                              ],
+                            ),
+                          ],
                         ),
                       ),
                     ),
-                    const SizedBox(width: 10),
-                    DropdownButtonHideUnderline(
-                      child: DropdownButton<String>(
-                        value: dialogUnit,
-                        dropdownColor: const Color(0xFF1E2140),
-                        style: const TextStyle(color: Colors.white),
-                        items: const [
-                          DropdownMenuItem(value: 'μm', child: Text('μm')),
-                          DropdownMenuItem(value: 'nm', child: Text('nm')),
-                        ],
-                        onChanged: (v) {
-                          if (v == null) return;
-                          setDialogState(() => dialogUnit = v);
-                        },
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
-                const SizedBox(height: 10),
-                Text(
-                  'Measured: ${px.toStringAsFixed(0)} px',
-                  style: const TextStyle(color: Color(0xFFAFB5D9)),
-                ),
-                const SizedBox(height: 18),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(ctx, false),
-                      child: const Text('Cancel', style: TextStyle(color: Colors.white70)),
-                    ),
-                    const SizedBox(width: 10),
-                    ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppTheme.primary,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                      ),
-                      onPressed: () => Navigator.pop(ctx, <String, dynamic>{
-                        'confirmed': true,
-                        'unit': dialogUnit,
-                      }),
-                      child: const Text('Save'),
-                    ),
-                  ],
-                ),
-              ],
-            ),
               ),
             ),
           ),
@@ -417,26 +437,69 @@ class ViewerScreenState extends State<ViewerScreen> {
       if (!mounted) return;
       final ok = await showDialog<bool>(
         context: context,
-        builder: (ctx) => AlertDialog(
-          backgroundColor: const Color(0xFF232651),
-          title: const Text(
-            'Short reference line',
-            style: TextStyle(color: Colors.white),
-          ),
-          content: const Text(
-            'The calibration line is very short; results may be noisy. Continue?',
-            style: TextStyle(color: Colors.white70),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancel'),
+        builder: (ctx) => Material(
+          color: Colors.transparent,
+          child: SafeArea(
+            child: Center(
+              child: Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxWidth: Responsive.isTablet(ctx) ? 420 : 360,
+                    maxHeight: MediaQuery.sizeOf(ctx).height * 0.85,
+                  ),
+                  child: Container(
+                    padding: const EdgeInsets.fromLTRB(20, 18, 20, 14),
+                    decoration: AppTheme.softCardDecoration(
+                      borderRadius: BorderRadius.circular(22),
+                      color: const Color(0xFF232651),
+                    ),
+                    child: SingleChildScrollView(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Short reference line',
+                            style: TextStyle(color: Colors.white, fontSize: 18),
+                          ),
+                          const SizedBox(height: 10),
+                          const Text(
+                            'The calibration line is very short; results may be noisy. Continue?',
+                            style:
+                                TextStyle(color: Colors.white70, height: 1.35),
+                          ),
+                          const SizedBox(height: 14),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: [
+                              TextButton(
+                                onPressed: () => Navigator.pop(ctx, false),
+                                child: const Text(
+                                  'Cancel',
+                                  style: TextStyle(color: Colors.white70),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              TextButton(
+                                onPressed: () => Navigator.pop(ctx, true),
+                                child: const Text(
+                                  'Continue',
+                                  style:
+                                      TextStyle(color: AppTheme.primaryLight),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
             ),
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Continue'),
-            ),
-          ],
+          ),
         ),
       );
       if (ok != true) return;
@@ -524,10 +587,7 @@ class ViewerScreenState extends State<ViewerScreen> {
 
   /// When no draw tool is active, allow pinch/pan on the still image or video frame.
   bool get _viewerPinchZoomEnabled =>
-      !_locked &&
-      !_editingPaused &&
-      _tool == null &&
-      !_showToolsPanel;
+      !_locked && !_editingPaused && _tool == null && !_showToolsPanel;
 
   Future<void> _promptText(Offset local) async {
     final source = _displayToSource(local);
@@ -536,55 +596,57 @@ class ViewerScreenState extends State<ViewerScreen> {
       context: context,
       builder: (ctx) => Dialog(
         backgroundColor: const Color(0xFF232651),
-        insetPadding: EdgeInsets.fromLTRB(
-          20,
-          20,
-          20,
-          20 + MediaQuery.viewInsetsOf(ctx).bottom,
-        ),
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxWidth: 420,
-            maxHeight: MediaQuery.sizeOf(ctx).height * 0.85,
+        insetPadding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
+        child: AnimatedPadding(
+          duration: const Duration(milliseconds: 160),
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.viewInsetsOf(ctx).bottom > 0 ? 8 : 0,
           ),
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('Label', style: TextStyle(color: Colors.white)),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: controller,
-                  style: const TextStyle(color: Colors.white),
-                  decoration: const InputDecoration(
-                    hintText: 'Enter text',
-                    hintStyle: TextStyle(color: Colors.white38),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: 420,
+              maxHeight: MediaQuery.sizeOf(ctx).height * 0.85,
+            ),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Label', style: TextStyle(color: Colors.white)),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: controller,
+                    style: const TextStyle(color: Colors.white),
+                    decoration: const InputDecoration(
+                      hintText: 'Enter text',
+                      hintStyle: TextStyle(color: Colors.white38),
+                    ),
+                    autofocus: true,
                   ),
-                  autofocus: true,
-                ),
-                const SizedBox(height: 16),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(ctx),
-                      child: const Text(
-                        'Cancel',
-                        style: TextStyle(color: Colors.white54),
+                  const SizedBox(height: 16),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(ctx),
+                        child: const Text(
+                          'Cancel',
+                          style: TextStyle(color: Colors.white54),
+                        ),
                       ),
-                    ),
-                    TextButton(
-                      onPressed: () => Navigator.pop(ctx, controller.text.trim()),
-                      child: const Text(
-                        'OK',
-                        style: TextStyle(color: AppTheme.primaryLight),
+                      TextButton(
+                        onPressed: () =>
+                            Navigator.pop(ctx, controller.text.trim()),
+                        child: const Text(
+                          'OK',
+                          style: TextStyle(color: AppTheme.primaryLight),
+                        ),
                       ),
-                    ),
-                  ],
-                ),
-              ],
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -660,7 +722,8 @@ class ViewerScreenState extends State<ViewerScreen> {
         if (i >= 0) {
           final sw = _lastSourceSize.width <= 0 ? 1.0 : _lastSourceSize.width;
           final sh = _lastSourceSize.height <= 0 ? 1.0 : _lastSourceSize.height;
-          final pts = _annotations[i].points
+          final pts = _annotations[i]
+              .points
               .map(
                 (e) => HexaPoint(
                   x: (e.x + dx).clamp(0.0, sw),
@@ -698,7 +761,9 @@ class ViewerScreenState extends State<ViewerScreen> {
   }
 
   void _onPanEnd(DragEndDetails details) {
-    if (_tool == ViewerDrawTool.move && _moveId != null && _moveBefore != null) {
+    if (_tool == ViewerDrawTool.move &&
+        _moveId != null &&
+        _moveBefore != null) {
       final id = _moveId!;
       final before = _moveBefore!;
       final i = _annotations.indexWhere((a) => a.id == id);
@@ -750,9 +815,8 @@ class ViewerScreenState extends State<ViewerScreen> {
       color: _drawingColor,
       strokeWidth: _drawingStrokeWidth,
       timestamp: DateTime.now().toIso8601String(),
-      measurement: measurement != null && measurement.isNotEmpty
-          ? measurement
-          : null,
+      measurement:
+          measurement != null && measurement.isNotEmpty ? measurement : null,
     );
     setState(() {
       _annotations.add(ann);
@@ -796,7 +860,8 @@ class ViewerScreenState extends State<ViewerScreen> {
             child: Center(
               child: LayoutBuilder(
                 builder: (context, constraints) {
-                  final size = Size(constraints.maxWidth, constraints.maxHeight);
+                  final size =
+                      Size(constraints.maxWidth, constraints.maxHeight);
                   final source = Size(
                     image.sourceWidth ?? size.width,
                     image.sourceHeight ?? size.height,
@@ -838,96 +903,100 @@ class ViewerScreenState extends State<ViewerScreen> {
                                   ),
                                 ),
                               ),
-                            if (_stampEnabled)
-                              Positioned(
-                                top: 18,
-                                right: 18,
-                                child: IgnorePointer(
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 8,
-                                      vertical: 4,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xCC10162E),
-                                      borderRadius: BorderRadius.circular(8),
-                                      border: Border.all(color: Colors.white24),
-                                    ),
-                                    child: Text(
-                                      _buildStampLabel(),
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.w700,
-                                        fontSize: 10,
+                              if (_stampEnabled)
+                                Positioned(
+                                  top: 18,
+                                  right: 18,
+                                  child: IgnorePointer(
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 4,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xCC10162E),
+                                        borderRadius: BorderRadius.circular(8),
+                                        border:
+                                            Border.all(color: Colors.white24),
+                                      ),
+                                      child: Text(
+                                        _buildStampLabel(),
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.w700,
+                                          fontSize: 10,
+                                        ),
                                       ),
                                     ),
                                   ),
                                 ),
-                              ),
-                            Positioned.fill(
-                              child: GestureDetector(
-                                behavior: HitTestBehavior.opaque,
-                                onTapDown: _locked || _editingPaused
-                                    ? null
-                                    : (_tool == ViewerDrawTool.text
-                                        ? (d) => _promptText(d.localPosition)
-                                        : null),
-                                onPanStart: (_canStroke || _canMove || _canErase)
-                                    ? _onPanStart
-                                    : null,
-                                onPanUpdate: (_canStroke || _canMove || _canErase)
-                                    ? _onPanUpdate
-                                    : null,
-                                onPanEnd: (_canStroke && _isDrawing) ||
-                                        _canMove ||
-                                        _canErase
-                                    ? _onPanEnd
-                                    : null,
-                                child: CustomPaint(
-                                  painter: AnnotationPainter(
-                                    annotations: _annotationsForPaint(),
-                                    currentDrawing: _isDrawing &&
-                                            _annotationType != null
-                                        ? Annotation(
-                                            id: 'current',
-                                            type: _annotationType!,
-                                            points: _currentPoints,
-                                            color: _drawingColor,
-                                            strokeWidth: _drawingStrokeWidth,
-                                            timestamp: '',
-                                            measurement: _measurementFor(
-                                              Annotation(
-                                                id: '',
-                                                type: _annotationType!,
-                                                points: _currentPoints,
-                                                color: _drawingColor,
-                                                strokeWidth: _drawingStrokeWidth,
-                                                timestamp: '',
+                              Positioned.fill(
+                                child: GestureDetector(
+                                  behavior: HitTestBehavior.opaque,
+                                  onTapDown: _locked || _editingPaused
+                                      ? null
+                                      : (_tool == ViewerDrawTool.text
+                                          ? (d) => _promptText(d.localPosition)
+                                          : null),
+                                  onPanStart:
+                                      (_canStroke || _canMove || _canErase)
+                                          ? _onPanStart
+                                          : null,
+                                  onPanUpdate:
+                                      (_canStroke || _canMove || _canErase)
+                                          ? _onPanUpdate
+                                          : null,
+                                  onPanEnd: (_canStroke && _isDrawing) ||
+                                          _canMove ||
+                                          _canErase
+                                      ? _onPanEnd
+                                      : null,
+                                  child: CustomPaint(
+                                    painter: AnnotationPainter(
+                                      annotations: _annotationsForPaint(),
+                                      currentDrawing: _isDrawing &&
+                                              _annotationType != null
+                                          ? Annotation(
+                                              id: 'current',
+                                              type: _annotationType!,
+                                              points: _currentPoints,
+                                              color: _drawingColor,
+                                              strokeWidth: _drawingStrokeWidth,
+                                              timestamp: '',
+                                              measurement: _measurementFor(
+                                                Annotation(
+                                                  id: '',
+                                                  type: _annotationType!,
+                                                  points: _currentPoints,
+                                                  color: _drawingColor,
+                                                  strokeWidth:
+                                                      _drawingStrokeWidth,
+                                                  timestamp: '',
+                                                ),
                                               ),
-                                            ),
-                                          )
-                                        : null,
-                                    displaySize: fitted,
-                                    sourceSize: source,
-                                    fit: BoxFit.contain,
-                                    mirrorX: widget.mirrorX,
-                                    mirrorY: widget.mirrorY,
-                                    rotation: widget.rotation,
-                                    uiTextScale: uiTextScale,
+                                            )
+                                          : null,
+                                      displaySize: fitted,
+                                      sourceSize: source,
+                                      fit: BoxFit.contain,
+                                      mirrorX: widget.mirrorX,
+                                      mirrorY: widget.mirrorY,
+                                      rotation: widget.rotation,
+                                      uiTextScale: uiTextScale,
+                                    ),
                                   ),
                                 ),
                               ),
-                            ),
-                          ],
-                        ),
+                            ],
+                          ),
                         ),
                       ),
                     ),
-                );
-              },
+                  );
+                },
+              ),
             ),
           ),
-        ),
         ),
         if (_showToolsPanel) _buildToolsOverlay(context),
         if (_showColorRow && _showToolsPanel)
@@ -941,8 +1010,7 @@ class ViewerScreenState extends State<ViewerScreen> {
                 children: AppConstants.annotationColors
                     .map(
                       (color) => GestureDetector(
-                        onTap: () =>
-                            setState(() => _drawingColor = color),
+                        onTap: () => setState(() => _drawingColor = color),
                         child: Container(
                           width: 34,
                           height: 34,
@@ -983,7 +1051,9 @@ class ViewerScreenState extends State<ViewerScreen> {
                   child: Padding(
                     padding: const EdgeInsets.all(14),
                     child: Icon(
-                      _showToolsPanel ? Icons.close_rounded : Icons.edit_rounded,
+                      _showToolsPanel
+                          ? Icons.close_rounded
+                          : Icons.edit_rounded,
                       color: Colors.white,
                       size: 28,
                     ),
@@ -1238,7 +1308,8 @@ class ViewerScreenState extends State<ViewerScreen> {
       ),
       child: Row(
         children: [
-          const Icon(Icons.line_weight_rounded, color: Colors.white70, size: 18),
+          const Icon(Icons.line_weight_rounded,
+              color: Colors.white70, size: 18),
           const SizedBox(width: 8),
           const Text(
             'Thickness',
@@ -1309,7 +1380,8 @@ class ViewerScreenState extends State<ViewerScreen> {
                 child: const Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.refresh_rounded, color: Colors.white70, size: 14),
+                    Icon(Icons.refresh_rounded,
+                        color: Colors.white70, size: 14),
                     SizedBox(width: 4),
                     Text(
                       'Reset',
@@ -1546,7 +1618,8 @@ class ViewerScreenState extends State<ViewerScreen> {
               Text(name,
                   style: const TextStyle(color: Colors.white70, fontSize: 11)),
               Text(valueLabel,
-                  style: const TextStyle(color: Color(0xFF93A4D1), fontSize: 10)),
+                  style:
+                      const TextStyle(color: Color(0xFF93A4D1), fontSize: 10)),
             ],
           ),
           SliderTheme(
@@ -1597,7 +1670,8 @@ class ViewerScreenState extends State<ViewerScreen> {
           label: 'Eraser',
           active: _tool == ViewerDrawTool.eraser,
           onTap: () => setState(() {
-            _tool = _tool == ViewerDrawTool.eraser ? null : ViewerDrawTool.eraser;
+            _tool =
+                _tool == ViewerDrawTool.eraser ? null : ViewerDrawTool.eraser;
             _editingPaused = false;
           }),
         ),
@@ -1628,8 +1702,7 @@ class ViewerScreenState extends State<ViewerScreen> {
     bool danger = false,
   }) {
     final color = danger ? AppTheme.danger : Colors.white;
-    final borderColor =
-        highlight ? AppTheme.primaryLight : Colors.white12;
+    final borderColor = highlight ? AppTheme.primaryLight : Colors.white12;
     return Opacity(
       opacity: onTap == null ? 0.35 : 1,
       child: InkWell(

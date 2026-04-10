@@ -91,8 +91,10 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
   final Uuid _uuid = const Uuid();
   Size _lastSourceSize = Size.zero;
   double _pinchStartZoom = 1.0;
+
   /// True if this scale gesture used 2+ fingers (pinch); skip pan end / use zoom only.
   bool _previewScaleWasMultiTouch = false;
+
   /// Ensures [_onPanStart] runs once per gesture (some platforms delay [onScaleStart]).
   bool _previewScalePanDispatched = false;
   int _activePreviewPointers = 0;
@@ -220,9 +222,8 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
     final c = _controller;
     if (c == null) return;
     final p = c.value.previewSize;
-    _previewListenerSize = p == null
-        ? null
-        : Size(p.width.toDouble(), p.height.toDouble());
+    _previewListenerSize =
+        p == null ? null : Size(p.width.toDouble(), p.height.toDouble());
     c.addListener(_onCameraPreviewValueChanged);
   }
 
@@ -253,7 +254,8 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
   }
 
   double _responsiveViewportAspectRatio(BuildContext context) {
-    final isLandscape = MediaQuery.orientationOf(context) == Orientation.landscape;
+    final isLandscape =
+        MediaQuery.orientationOf(context) == Orientation.landscape;
     final base = _useFourByThreeViewport ? (4 / 3) : (16 / 9);
     return isLandscape ? base : (1.0 / base);
   }
@@ -306,32 +308,32 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
       if (!kIsWeb) {
         if (Platform.isAndroid) {
           final cameraStatus = await Permission.camera.request().timeout(
-            const Duration(seconds: 6),
-            onTimeout: () => PermissionStatus.denied,
-          );
+                const Duration(seconds: 6),
+                onTimeout: () => PermissionStatus.denied,
+              );
           await Permission.microphone.request().timeout(
-            const Duration(seconds: 6),
-            onTimeout: () => PermissionStatus.denied,
-          );
+                const Duration(seconds: 6),
+                onTimeout: () => PermissionStatus.denied,
+              );
           await Permission.storage.request().timeout(
-            const Duration(seconds: 6),
-            onTimeout: () => PermissionStatus.denied,
-          );
+                const Duration(seconds: 6),
+                onTimeout: () => PermissionStatus.denied,
+              );
           await Permission.manageExternalStorage.request().timeout(
-            const Duration(seconds: 6),
-            onTimeout: () => PermissionStatus.denied,
-          );
+                const Duration(seconds: 6),
+                onTimeout: () => PermissionStatus.denied,
+              );
           if (await Permission.photos.isDenied) {
             await Permission.photos.request().timeout(
-              const Duration(seconds: 6),
-              onTimeout: () => PermissionStatus.denied,
-            );
+                  const Duration(seconds: 6),
+                  onTimeout: () => PermissionStatus.denied,
+                );
           }
           if (await Permission.videos.isDenied) {
             await Permission.videos.request().timeout(
-              const Duration(seconds: 6),
-              onTimeout: () => PermissionStatus.denied,
-            );
+                  const Duration(seconds: 6),
+                  onTimeout: () => PermissionStatus.denied,
+                );
           }
           if (!cameraStatus.isGranted) {
             shouldInitCamera = false;
@@ -343,22 +345,22 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
           var status = await Permission.camera.status;
           if (!status.isGranted) {
             status = await Permission.camera.request().timeout(
-              const Duration(seconds: 10),
-              onTimeout: () => PermissionStatus.denied,
-            );
+                  const Duration(seconds: 10),
+                  onTimeout: () => PermissionStatus.denied,
+                );
           }
           await Permission.microphone.request().timeout(
-            const Duration(seconds: 10),
-            onTimeout: () => PermissionStatus.denied,
-          );
+                const Duration(seconds: 10),
+                onTimeout: () => PermissionStatus.denied,
+              );
           await Permission.photos.request().timeout(
-            const Duration(seconds: 10),
-            onTimeout: () => PermissionStatus.denied,
-          );
+                const Duration(seconds: 10),
+                onTimeout: () => PermissionStatus.denied,
+              );
           await Permission.photosAddOnly.request().timeout(
-            const Duration(seconds: 10),
-            onTimeout: () => PermissionStatus.denied,
-          );
+                const Duration(seconds: 10),
+                onTimeout: () => PermissionStatus.denied,
+              );
           if (!status.isGranted) {
             shouldInitCamera = false;
             if (mounted) {
@@ -401,9 +403,9 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
 
     try {
       final cameras = await cam.availableCameras().timeout(
-        const Duration(seconds: 8),
-        onTimeout: () => <cam.CameraDescription>[],
-      );
+            const Duration(seconds: 8),
+            onTimeout: () => <cam.CameraDescription>[],
+          );
       if (cameras.isEmpty) {
         logDebug('No cameras available');
         if (!mounted) return;
@@ -462,13 +464,11 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                 enableAudio: false,
                 imageFormatGroup: kIsWeb
                     ? cam.ImageFormatGroup.unknown
-                    : (Platform.isAndroid
-                        ? cam.ImageFormatGroup.jpeg
-                        : null),
+                    : (Platform.isAndroid ? cam.ImageFormatGroup.jpeg : null),
               );
               await _controller!.initialize().timeout(
-                const Duration(seconds: 10),
-              );
+                    const Duration(seconds: 10),
+                  );
               if (!kIsWeb && Platform.isIOS) {
                 try {
                   await _controller!.prepareForVideoRecording();
@@ -588,7 +588,8 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
       }
       return;
     }
-    if (state == AppLifecycleState.paused || state == AppLifecycleState.detached) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached) {
       if (controller != null) {
         _detachCameraListener();
         controller.dispose();
@@ -677,7 +678,8 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
               child: LayoutBuilder(
                 builder: (context, constraints) => SingleChildScrollView(
                   child: ConstrainedBox(
-                    constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                    constraints:
+                        BoxConstraints(minHeight: constraints.maxHeight),
                     child: Center(child: _buildLeftRail(isTablet)),
                   ),
                 ),
@@ -690,7 +692,8 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
               child: LayoutBuilder(
                 builder: (context, constraints) => SingleChildScrollView(
                   child: ConstrainedBox(
-                    constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                    constraints:
+                        BoxConstraints(minHeight: constraints.maxHeight),
                     child: Center(child: _buildRightRail(isTablet)),
                   ),
                 ),
@@ -893,9 +896,9 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
               targetAspectRatio: _responsiveViewportAspectRatio(context),
             );
             final selectedAspect = _responsiveViewportAspectRatio(context);
-            final sourceAspect = renderSize.width / math.max(1.0, renderSize.height);
-            final shouldCropToFill =
-                !_useFourByThreeViewport &&
+            final sourceAspect =
+                renderSize.width / math.max(1.0, renderSize.height);
+            final shouldCropToFill = !_useFourByThreeViewport &&
                 (sourceAspect - selectedAspect).abs() > 0.02;
             final previewFit = shouldCropToFill ? BoxFit.cover : BoxFit.contain;
             final uiTextScale = _annotationUiTextScale(context);
@@ -954,7 +957,8 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                                       ),
                                       if (_focusIndicatorPoint != null)
                                         IgnorePointer(
-                                          child: _buildFocusIndicator(renderSize),
+                                          child:
+                                              _buildFocusIndicator(renderSize),
                                         ),
                                     ],
                                   ),
@@ -969,15 +973,15 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                                   annotations: _displayAnnotations(),
                                   currentDrawing:
                                       _isDrawing && _selectedTool != null
-                                      ? Annotation(
-                                          id: 'current',
-                                          type: _selectedTool!,
-                                          points: _currentPoints,
-                                          color: _drawingColor,
-                                          strokeWidth: _drawingStrokeWidth,
-                                          timestamp: '',
-                                        )
-                                      : null,
+                                          ? Annotation(
+                                              id: 'current',
+                                              type: _selectedTool!,
+                                              points: _currentPoints,
+                                              color: _drawingColor,
+                                              strokeWidth: _drawingStrokeWidth,
+                                              timestamp: '',
+                                            )
+                                          : null,
                                   displaySize: Size(
                                     viewport.width,
                                     viewport.height,
@@ -1369,7 +1373,8 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(999),
               color: Colors.white.withValues(alpha: 0.18),
-              border: Border.all(color: AppTheme.primaryLight.withValues(alpha: 0.88)),
+              border: Border.all(
+                  color: AppTheme.primaryLight.withValues(alpha: 0.88)),
             ),
             child: Center(
               child: Text(
@@ -2194,9 +2199,8 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
         color: highlighted ? null : const Color(0xFF1E1C48),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: highlighted
-              ? const Color(0xFFAB9CFF)
-              : const Color(0xFF3B427C),
+          color:
+              highlighted ? const Color(0xFFAB9CFF) : const Color(0xFF3B427C),
         ),
       ),
       child: Column(
@@ -2627,72 +2631,74 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-            Text(
-              'Select Magnification',
-              style: TextStyle(
-                color: AppTheme.textPrimary,
-                fontSize: isTab ? 18 : 16,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            SizedBox(height: isTab ? 18 : 16),
-            Wrap(
-              spacing: 12,
-              runSpacing: 12,
-              children: AppConstants.magnificationLevels.map((lens) {
-                return GestureDetector(
-                  onTap: () {
-                    setState(() {
-                      _selectedLens = lens;
-                      final microEntry = microscopeCalibrationController
-                          .getCalibrationForMagnification(lens);
-                      final stored = calibrationController.calibrations[lens];
-                      final effective = microEntry != null
-                          ? StoredCalibration(
-                              lens: microEntry.magnification,
-                              unit: microEntry.unit,
-                              unitPerPixel: microEntry.unitPerPixel,
-                              pixelsPerUnit: microEntry.pixelsPerUnit,
-                              referenceLength: microEntry.referenceLength,
-                              measuredPixelDistance:
-                                  microEntry.measuredPixelDistance,
-                              unitPerDivision: microEntry.unitPerDivision,
-                              measuredDivisions: microEntry.measuredDivisions,
-                              createdAt: microEntry.createdAt,
-                            )
-                          : stored;
-                      if (effective != null) {
-                        _calibrationUnit = effective.unit;
-                      }
-                    });
-                    _refreshAnnotationMeasurements();
-                    Navigator.pop(sheetContext);
-                  },
-                  child: Container(
-                    padding: EdgeInsets.symmetric(
-                      horizontal: isTab ? 22 : 20,
-                      vertical: isTab ? 14 : 12,
-                    ),
-                    decoration: BoxDecoration(
-                      color: _selectedLens == lens
-                          ? AppTheme.primary
-                          : AppTheme.bgTertiary,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      lens,
-                      style: TextStyle(
-                        color: _selectedLens == lens
-                            ? Colors.white
-                            : AppTheme.textSecondary,
-                        fontWeight: FontWeight.w600,
-                        fontSize: isTab ? 16 : 14,
-                      ),
-                    ),
+                Text(
+                  'Select Magnification',
+                  style: TextStyle(
+                    color: AppTheme.textPrimary,
+                    fontSize: isTab ? 18 : 16,
+                    fontWeight: FontWeight.w600,
                   ),
-                );
-              }).toList(),
-            ),
+                ),
+                SizedBox(height: isTab ? 18 : 16),
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 12,
+                  children: AppConstants.magnificationLevels.map((lens) {
+                    return GestureDetector(
+                      onTap: () {
+                        setState(() {
+                          _selectedLens = lens;
+                          final microEntry = microscopeCalibrationController
+                              .getCalibrationForMagnification(lens);
+                          final stored =
+                              calibrationController.calibrations[lens];
+                          final effective = microEntry != null
+                              ? StoredCalibration(
+                                  lens: microEntry.magnification,
+                                  unit: microEntry.unit,
+                                  unitPerPixel: microEntry.unitPerPixel,
+                                  pixelsPerUnit: microEntry.pixelsPerUnit,
+                                  referenceLength: microEntry.referenceLength,
+                                  measuredPixelDistance:
+                                      microEntry.measuredPixelDistance,
+                                  unitPerDivision: microEntry.unitPerDivision,
+                                  measuredDivisions:
+                                      microEntry.measuredDivisions,
+                                  createdAt: microEntry.createdAt,
+                                )
+                              : stored;
+                          if (effective != null) {
+                            _calibrationUnit = effective.unit;
+                          }
+                        });
+                        _refreshAnnotationMeasurements();
+                        Navigator.pop(sheetContext);
+                      },
+                      child: Container(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: isTab ? 22 : 20,
+                          vertical: isTab ? 14 : 12,
+                        ),
+                        decoration: BoxDecoration(
+                          color: _selectedLens == lens
+                              ? AppTheme.primary
+                              : AppTheme.bgTertiary,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          lens,
+                          style: TextStyle(
+                            color: _selectedLens == lens
+                                ? Colors.white
+                                : AppTheme.textSecondary,
+                            fontWeight: FontWeight.w600,
+                            fontSize: isTab ? 16 : 14,
+                          ),
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
               ],
             ),
           ),
@@ -2713,10 +2719,26 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
       (_settings.tint - AppConstants.defaultTint).abs() < 0.01;
 
   static const List<double> _previewColorMatrixIdentity = <double>[
-    1, 0, 0, 0, 0,
-    0, 1, 0, 0, 0,
-    0, 0, 1, 0, 0,
-    0, 0, 0, 1, 0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
   ];
 
   Widget _buildCameraPreviewWithOptionalFilter() {
@@ -2874,9 +2896,8 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
       final dx = point.x - startCursor.x;
       final dy = point.y - startCursor.y;
       final sourceW = _lastSourceSize.width <= 0 ? 1.0 : _lastSourceSize.width;
-      final sourceH = _lastSourceSize.height <= 0
-          ? 1.0
-          : _lastSourceSize.height;
+      final sourceH =
+          _lastSourceSize.height <= 0 ? 1.0 : _lastSourceSize.height;
       setState(() {
         final movedPoints = startPoints
             .map(
@@ -2957,8 +2978,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
       _viewMode = CameraViewMode.defaultOpen;
     });
 
-    final shouldPromptCalibration =
-        _awaitingCalibrationLine &&
+    final shouldPromptCalibration = _awaitingCalibrationLine &&
         createdAnnotation.type == AnnotationType.twoPointer &&
         createdAnnotation.points.length >= 2;
     if (shouldPromptCalibration) {
@@ -3080,266 +3100,288 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                Text(
-                  isVideo ? 'Recording Captured' : 'Image Captured',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 20,
-                  ),
-                ),
-                const SizedBox(height: 14),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(18),
-                  child: Container(
-                    height: previewHeight,
-                    width: double.infinity,
-                    color: AppTheme.bgTertiary,
-                    child: isVideo
-                        ? (kIsWeb
-                            ? const Center(
-                                child: Icon(
-                                  Icons.videocam_rounded,
-                                  size: 56,
-                                  color: Colors.white,
-                                ),
-                              )
-                            : FutureBuilder<Uint8List?>(
-                                future: VideoExportService.extractVideoThumbnailBytes(
-                                  sourcePath: filePath,
-                                ),
-                                builder: (context, snapshot) {
-                                  if (snapshot.connectionState ==
-                                      ConnectionState.waiting) {
-                                    return const Center(
-                                      child: CircularProgressIndicator(strokeWidth: 2),
-                                    );
-                                  }
-                                  final bytes = snapshot.data;
-                                  if (bytes == null || bytes.isEmpty) {
-                                    return const Center(
-                                      child: Icon(
-                                        Icons.videocam_rounded,
-                                        size: 56,
-                                        color: Colors.white,
-                                      ),
-                                    );
-                                  }
-                                  return Image.memory(bytes, fit: BoxFit.contain);
-                                },
-                              ))
-                        : kIsWeb
-                        ? LayoutBuilder(
-                            builder: (context, constraints) {
-                              final size = Size(
-                                constraints.maxWidth,
-                                constraints.maxHeight,
-                              );
-                              final source = _lastSourceSize == Size.zero
-                                  ? size
-                                  : _lastSourceSize;
-                              return FutureBuilder<Uint8List>(
-                                future: cam.XFile(filePath).readAsBytes(),
-                                builder: (context, snapshot) {
-                                  if (snapshot.connectionState ==
-                                      ConnectionState.waiting) {
-                                    return const Center(
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                      ),
-                                    );
-                                  }
-                                  final bytes = snapshot.data;
-                                  if (bytes == null || bytes.isEmpty) {
-                                    return const Center(
-                                      child: Icon(
-                                        Icons.broken_image_outlined,
-                                        color: AppTheme.textMuted,
-                                        size: 36,
-                                      ),
-                                    );
-                                  }
-                                  return Stack(
-                                    fit: StackFit.expand,
-                                    children: [
-                                      Transform(
-                                        alignment: Alignment.center,
-                                        transform: Matrix4.identity()
-                                          ..rotateZ(_rotation * math.pi / 180)
-                                          ..scaleByDouble(
-                                            (_mirror || _flipH) ? -1.0 : 1.0,
-                                            _flipV ? -1.0 : 1.0,
-                                            1.0,
-                                            1.0,
-                                          ),
-                                        child: Image.memory(
-                                          bytes,
-                                          fit: BoxFit.contain,
-                                        ),
-                                      ),
-                                      CustomPaint(
-                                        painter: AnnotationPainter(
-                                          annotations: _annotationsForSave(),
-                                          displaySize: size,
-                                          sourceSize: source,
-                                          fit: BoxFit.contain,
-                                          mirrorX: _mirror || _flipH,
-                                          mirrorY: _flipV,
-                                          rotation: _rotation,
-                                          uiTextScale:
-                                              _annotationUiTextScale(context),
-                                        ),
-                                      ),
-                                    ],
-                                  );
-                                },
-                              );
-                            },
-                          )
-                        : LayoutBuilder(
-                            builder: (context, constraints) {
-                              final size = Size(
-                                constraints.maxWidth,
-                                constraints.maxHeight,
-                              );
-                              final source = _lastSourceSize == Size.zero
-                                  ? size
-                                  : _lastSourceSize;
-                              return Stack(
-                                fit: StackFit.expand,
-                                children: [
-                                  Transform(
-                                    alignment: Alignment.center,
-                                    transform: Matrix4.identity()
-                                      ..rotateZ(_rotation * math.pi / 180)
-                                      ..scaleByDouble(
-                                        (_mirror || _flipH) ? -1.0 : 1.0,
-                                        _flipV ? -1.0 : 1.0,
-                                        1.0,
-                                        1.0,
-                                      ),
-                                    child: Image.file(
-                                      File(filePath),
-                                      fit: BoxFit.contain,
-                                      errorBuilder: (c, e, s) => const Center(
-                                        child: Icon(
-                                          Icons.broken_image_outlined,
-                                          color: AppTheme.textMuted,
-                                          size: 36,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                  CustomPaint(
-                                    painter: AnnotationPainter(
-                                      annotations: _annotationsForSave(),
-                                      displaySize: size,
-                                      sourceSize: source,
-                                      fit: BoxFit.contain,
-                                      mirrorX: _mirror || _flipH,
-                                      mirrorY: _flipV,
-                                      rotation: _rotation,
-                                      uiTextScale:
-                                          _annotationUiTextScale(context),
-                                    ),
-                                  ),
-                                ],
-                              );
-                            },
-                          ),
-                  ),
-                ),
-                const SizedBox(height: 18),
-                Flex(
-                  direction: stackButtons ? Axis.vertical : Axis.horizontal,
-                  children: [
-                    Expanded(
-                      flex: stackButtons ? 0 : 1,
-                      child: SizedBox(
-                        width: double.infinity,
-                        child: OutlinedButton.icon(
-                          onPressed: () async {
-                            Navigator.pop(sheetContext);
-                            if (!mounted) return;
-                            await _persistMedia(
-                              sourcePath: filePath,
-                              preferredName: defaultName,
-                              isVideo: isVideo,
-                              exportToDevice: true,
-                            );
-                          },
-                          icon: const Icon(Icons.download_outlined),
-                          label: const Text('Download'),
-                        ),
+                    Text(
+                      isVideo ? 'Recording Captured' : 'Image Captured',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 20,
                       ),
                     ),
-                    SizedBox(width: stackButtons ? 0 : 12, height: stackButtons ? 10 : 0),
-                    Expanded(
-                      flex: stackButtons ? 0 : 1,
-                      child: SizedBox(
+                    const SizedBox(height: 14),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(18),
+                      child: Container(
+                        height: previewHeight,
                         width: double.infinity,
-                        child: ElevatedButton.icon(
-                          onPressed: () async {
-                            Navigator.pop(sheetContext);
-                            if (!mounted) return;
-                            await SaveDialog.show(
-                              context,
-                              imageUrl: isVideo
-                                  ? null
-                                  : (kIsWeb ? filePath : 'file://$filePath'),
-                              mediaId: null,
-                              annotations: _annotationsForSave(),
-                              isVideo: isVideo,
-                              onSave: (filename, description) async {
+                        color: AppTheme.bgTertiary,
+                        child: isVideo
+                            ? (kIsWeb
+                                ? const Center(
+                                    child: Icon(
+                                      Icons.videocam_rounded,
+                                      size: 56,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                : FutureBuilder<Uint8List?>(
+                                    future: VideoExportService
+                                        .extractVideoThumbnailBytes(
+                                      sourcePath: filePath,
+                                    ),
+                                    builder: (context, snapshot) {
+                                      if (snapshot.connectionState ==
+                                          ConnectionState.waiting) {
+                                        return const Center(
+                                          child: CircularProgressIndicator(
+                                              strokeWidth: 2),
+                                        );
+                                      }
+                                      final bytes = snapshot.data;
+                                      if (bytes == null || bytes.isEmpty) {
+                                        return const Center(
+                                          child: Icon(
+                                            Icons.videocam_rounded,
+                                            size: 56,
+                                            color: Colors.white,
+                                          ),
+                                        );
+                                      }
+                                      return Image.memory(bytes,
+                                          fit: BoxFit.contain);
+                                    },
+                                  ))
+                            : kIsWeb
+                                ? LayoutBuilder(
+                                    builder: (context, constraints) {
+                                      final size = Size(
+                                        constraints.maxWidth,
+                                        constraints.maxHeight,
+                                      );
+                                      final source =
+                                          _lastSourceSize == Size.zero
+                                              ? size
+                                              : _lastSourceSize;
+                                      return FutureBuilder<Uint8List>(
+                                        future:
+                                            cam.XFile(filePath).readAsBytes(),
+                                        builder: (context, snapshot) {
+                                          if (snapshot.connectionState ==
+                                              ConnectionState.waiting) {
+                                            return const Center(
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 2,
+                                              ),
+                                            );
+                                          }
+                                          final bytes = snapshot.data;
+                                          if (bytes == null || bytes.isEmpty) {
+                                            return const Center(
+                                              child: Icon(
+                                                Icons.broken_image_outlined,
+                                                color: AppTheme.textMuted,
+                                                size: 36,
+                                              ),
+                                            );
+                                          }
+                                          return Stack(
+                                            fit: StackFit.expand,
+                                            children: [
+                                              Transform(
+                                                alignment: Alignment.center,
+                                                transform: Matrix4.identity()
+                                                  ..rotateZ(
+                                                      _rotation * math.pi / 180)
+                                                  ..scaleByDouble(
+                                                    (_mirror || _flipH)
+                                                        ? -1.0
+                                                        : 1.0,
+                                                    _flipV ? -1.0 : 1.0,
+                                                    1.0,
+                                                    1.0,
+                                                  ),
+                                                child: Image.memory(
+                                                  bytes,
+                                                  fit: BoxFit.contain,
+                                                ),
+                                              ),
+                                              CustomPaint(
+                                                painter: AnnotationPainter(
+                                                  annotations:
+                                                      _annotationsForSave(),
+                                                  displaySize: size,
+                                                  sourceSize: source,
+                                                  fit: BoxFit.contain,
+                                                  mirrorX: _mirror || _flipH,
+                                                  mirrorY: _flipV,
+                                                  rotation: _rotation,
+                                                  uiTextScale:
+                                                      _annotationUiTextScale(
+                                                          context),
+                                                ),
+                                              ),
+                                            ],
+                                          );
+                                        },
+                                      );
+                                    },
+                                  )
+                                : LayoutBuilder(
+                                    builder: (context, constraints) {
+                                      final size = Size(
+                                        constraints.maxWidth,
+                                        constraints.maxHeight,
+                                      );
+                                      final source =
+                                          _lastSourceSize == Size.zero
+                                              ? size
+                                              : _lastSourceSize;
+                                      return Stack(
+                                        fit: StackFit.expand,
+                                        children: [
+                                          Transform(
+                                            alignment: Alignment.center,
+                                            transform: Matrix4.identity()
+                                              ..rotateZ(
+                                                  _rotation * math.pi / 180)
+                                              ..scaleByDouble(
+                                                (_mirror || _flipH)
+                                                    ? -1.0
+                                                    : 1.0,
+                                                _flipV ? -1.0 : 1.0,
+                                                1.0,
+                                                1.0,
+                                              ),
+                                            child: Image.file(
+                                              File(filePath),
+                                              fit: BoxFit.contain,
+                                              errorBuilder: (c, e, s) =>
+                                                  const Center(
+                                                child: Icon(
+                                                  Icons.broken_image_outlined,
+                                                  color: AppTheme.textMuted,
+                                                  size: 36,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                          CustomPaint(
+                                            painter: AnnotationPainter(
+                                              annotations:
+                                                  _annotationsForSave(),
+                                              displaySize: size,
+                                              sourceSize: source,
+                                              fit: BoxFit.contain,
+                                              mirrorX: _mirror || _flipH,
+                                              mirrorY: _flipV,
+                                              rotation: _rotation,
+                                              uiTextScale:
+                                                  _annotationUiTextScale(
+                                                      context),
+                                            ),
+                                          ),
+                                        ],
+                                      );
+                                    },
+                                  ),
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+                    Flex(
+                      direction: stackButtons ? Axis.vertical : Axis.horizontal,
+                      children: [
+                        Expanded(
+                          flex: stackButtons ? 0 : 1,
+                          child: SizedBox(
+                            width: double.infinity,
+                            child: OutlinedButton.icon(
+                              onPressed: () async {
+                                Navigator.pop(sheetContext);
+                                if (!mounted) return;
                                 await _persistMedia(
                                   sourcePath: filePath,
-                                  preferredName: filename.trim().isEmpty
-                                      ? defaultName
-                                      : filename.trim(),
-                                  description: description,
+                                  preferredName: defaultName,
                                   isVideo: isVideo,
-                                  exportToDevice: false,
+                                  exportToDevice: true,
                                 );
                               },
-                            );
-                          },
-                          icon: const Icon(Icons.save_outlined),
-                          label: const Text('Save'),
+                              icon: const Icon(Icons.download_outlined),
+                              label: const Text('Download'),
+                            ),
+                          ),
+                        ),
+                        SizedBox(
+                            width: stackButtons ? 0 : 12,
+                            height: stackButtons ? 10 : 0),
+                        Expanded(
+                          flex: stackButtons ? 0 : 1,
+                          child: SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton.icon(
+                              onPressed: () async {
+                                Navigator.pop(sheetContext);
+                                if (!mounted) return;
+                                await SaveDialog.show(
+                                  context,
+                                  imageUrl: isVideo
+                                      ? null
+                                      : (kIsWeb
+                                          ? filePath
+                                          : 'file://$filePath'),
+                                  mediaId: null,
+                                  annotations: _annotationsForSave(),
+                                  isVideo: isVideo,
+                                  onSave: (filename, description) async {
+                                    await _persistMedia(
+                                      sourcePath: filePath,
+                                      preferredName: filename.trim().isEmpty
+                                          ? defaultName
+                                          : filename.trim(),
+                                      description: description,
+                                      isVideo: isVideo,
+                                      exportToDevice: false,
+                                    );
+                                  },
+                                );
+                              },
+                              icon: const Icon(Icons.save_outlined),
+                              label: const Text('Save'),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Center(
+                      child: TextButton.icon(
+                        onPressed: () async {
+                          Navigator.pop(sheetContext);
+                          if (!mounted) return;
+                          final previewMedia =
+                              await _buildPreviewMediaForReport(
+                            filePath: filePath,
+                            isVideo: isVideo,
+                            defaultName: defaultName,
+                          );
+                          if (!mounted) return;
+                          Get.toNamed<void>(
+                            '/report/${widget.folderId}',
+                            arguments: {
+                              'images': [previewMedia.toJson()],
+                            },
+                          );
+                        },
+                        icon: const Icon(
+                          Icons.picture_as_pdf_outlined,
+                          color: Colors.white70,
+                          size: 20,
+                        ),
+                        label: const Text(
+                          'Create report from this capture',
+                          style: TextStyle(color: Colors.white70),
                         ),
                       ),
                     ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                Center(
-                  child: TextButton.icon(
-                    onPressed: () async {
-                      Navigator.pop(sheetContext);
-                      if (!mounted) return;
-                      final previewMedia = await _buildPreviewMediaForReport(
-                        filePath: filePath,
-                        isVideo: isVideo,
-                        defaultName: defaultName,
-                      );
-                      if (!mounted) return;
-                      Get.toNamed<void>(
-                        '/report/${widget.folderId}',
-                        arguments: {
-                          'images': [previewMedia.toJson()],
-                        },
-                      );
-                    },
-                    icon: const Icon(
-                      Icons.picture_as_pdf_outlined,
-                      color: Colors.white70,
-                      size: 20,
-                    ),
-                    label: const Text(
-                      'Create report from this capture',
-                      style: TextStyle(color: Colors.white70),
-                    ),
-                  ),
-                ),
                   ],
                 ),
               );
@@ -3387,10 +3429,10 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
           mirrorX: _mirror || _flipH,
           mirrorY: _flipV,
           rotation: _rotation,
-          annotationSourceSize: _lastSourceSize.width > 0 &&
-                  _lastSourceSize.height > 0
-              ? _lastSourceSize
-              : null,
+          annotationSourceSize:
+              _lastSourceSize.width > 0 && _lastSourceSize.height > 0
+                  ? _lastSourceSize
+                  : null,
         );
         finalBytes = kIsWeb
             ? compressMarkedStillForStore(finalBytes)
@@ -3409,9 +3451,8 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
           mirrorY: _flipV,
           rotation: _rotation,
           sourceWidth: _lastSourceSize.width > 0 ? _lastSourceSize.width : 1280,
-          sourceHeight: _lastSourceSize.height > 0
-              ? _lastSourceSize.height
-              : 720,
+          sourceHeight:
+              _lastSourceSize.height > 0 ? _lastSourceSize.height : 720,
           outputFilename: preferredName,
         );
         if (exported != null) {
@@ -3456,7 +3497,8 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
       }
       if (isVideo && !kIsWeb) {
         try {
-          final thumbBytes = await VideoExportService.extractVideoThumbnailBytes(
+          final thumbBytes =
+              await VideoExportService.extractVideoThumbnailBytes(
             sourcePath: mediaSourcePath,
           );
           if (thumbBytes != null && thumbBytes.isNotEmpty) {
@@ -3468,10 +3510,10 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                     mirrorX: _mirror || _flipH,
                     mirrorY: _flipV,
                     rotation: _rotation,
-                    annotationSourceSize: _lastSourceSize.width > 0 &&
-                            _lastSourceSize.height > 0
-                        ? _lastSourceSize
-                        : null,
+                    annotationSourceSize:
+                        _lastSourceSize.width > 0 && _lastSourceSize.height > 0
+                            ? _lastSourceSize
+                            : null,
                   );
             thumbnailId = FileService.generateAssetId('thumb');
             await MediaDatabase.saveAsset(thumbnailId, thumbWithMarks);
@@ -3490,10 +3532,10 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                     mirrorX: _mirror || _flipH,
                     mirrorY: _flipV,
                     rotation: _rotation,
-                    annotationSourceSize: _lastSourceSize.width > 0 &&
-                            _lastSourceSize.height > 0
-                        ? _lastSourceSize
-                        : null,
+                    annotationSourceSize:
+                        _lastSourceSize.width > 0 && _lastSourceSize.height > 0
+                            ? _lastSourceSize
+                            : null,
                   );
             thumbnailId = FileService.generateAssetId('thumb');
             await MediaDatabase.saveAsset(thumbnailId, thumbWithMarks);
@@ -3517,9 +3559,8 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
         showCalibrationStamp: _stampEnabled,
         type: isVideo ? MediaType.video : MediaType.image,
         sourceWidth: _lastSourceSize.width > 0 ? _lastSourceSize.width : null,
-        sourceHeight: _lastSourceSize.height > 0
-            ? _lastSourceSize.height
-            : null,
+        sourceHeight:
+            _lastSourceSize.height > 0 ? _lastSourceSize.height : null,
         isMarkingsBaked: shouldBakeStillForExport,
       );
 
@@ -3609,8 +3650,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
   ) {
     if (!uiStateController.measurementMode) return null;
     final effectiveCalibration = _effectiveCalibrationForLens(_selectedLens);
-    final needsCalibrationLabel =
-        effectiveCalibration == null &&
+    final needsCalibrationLabel = effectiveCalibration == null &&
         type != AnnotationType.text &&
         type != AnnotationType.singlePointer;
     if (needsCalibrationLabel) {
@@ -3755,10 +3795,10 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                   mirrorX: _mirror || _flipH,
                   mirrorY: _flipV,
                   rotation: _rotation,
-                  annotationSourceSize: _lastSourceSize.width > 0 &&
-                          _lastSourceSize.height > 0
-                      ? _lastSourceSize
-                      : null,
+                  annotationSourceSize:
+                      _lastSourceSize.width > 0 && _lastSourceSize.height > 0
+                          ? _lastSourceSize
+                          : null,
                 );
           thumbnailId = FileService.generateAssetId('thumb');
           await MediaDatabase.saveAsset(thumbnailId, thumbWithMarks);
@@ -3777,10 +3817,10 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                   mirrorX: _mirror || _flipH,
                   mirrorY: _flipV,
                   rotation: _rotation,
-                  annotationSourceSize: _lastSourceSize.width > 0 &&
-                          _lastSourceSize.height > 0
-                      ? _lastSourceSize
-                      : null,
+                  annotationSourceSize:
+                      _lastSourceSize.width > 0 && _lastSourceSize.height > 0
+                          ? _lastSourceSize
+                          : null,
                 );
           thumbnailId = FileService.generateAssetId('thumb');
           await MediaDatabase.saveAsset(thumbnailId, thumbWithMarks);
@@ -3916,8 +3956,8 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
   List<Annotation> _displayAnnotations() => _syncedAnnotations();
 
   StoredCalibration? _effectiveCalibrationForLens(String lens) {
-    final microEntry = microscopeCalibrationController
-        .getCalibrationForMagnification(lens);
+    final microEntry =
+        microscopeCalibrationController.getCalibrationForMagnification(lens);
     final storedCalibration = calibrationController.calibrations[lens];
     return microEntry != null
         ? StoredCalibration(
@@ -4049,65 +4089,67 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
       barrierDismissible: false,
       builder: (ctx) => Dialog(
         backgroundColor: const Color(0xFF2B295C),
-        insetPadding: EdgeInsets.fromLTRB(
-          20,
-          20,
-          20,
-          20 + MediaQuery.viewInsetsOf(ctx).bottom,
-        ),
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxWidth: 420,
-            maxHeight: MediaQuery.sizeOf(ctx).height * 0.85,
+        insetPadding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
+        child: AnimatedPadding(
+          duration: const Duration(milliseconds: 160),
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.viewInsetsOf(ctx).bottom > 0 ? 8 : 0,
           ),
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Add Text',
-                  style: TextStyle(color: Colors.white, fontSize: 18),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: controller,
-                  autofocus: true,
-                  style: const TextStyle(color: Colors.white),
-                  decoration: const InputDecoration(
-                    hintText: 'Enter text',
-                    hintStyle: TextStyle(color: Color(0xFFAFB5D9)),
-                    enabledBorder: UnderlineInputBorder(
-                      borderSide: BorderSide(color: Color(0xFF4A57AA)),
-                    ),
-                    focusedBorder: UnderlineInputBorder(
-                      borderSide: BorderSide(color: AppTheme.primary),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: 420,
+              maxHeight: MediaQuery.sizeOf(ctx).height * 0.85,
+            ),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Add Text',
+                    style: TextStyle(color: Colors.white, fontSize: 18),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: controller,
+                    autofocus: true,
+                    style: const TextStyle(color: Colors.white),
+                    decoration: const InputDecoration(
+                      hintText: 'Enter text',
+                      hintStyle: TextStyle(color: Color(0xFFAFB5D9)),
+                      enabledBorder: UnderlineInputBorder(
+                        borderSide: BorderSide(color: Color(0xFF4A57AA)),
+                      ),
+                      focusedBorder: UnderlineInputBorder(
+                        borderSide: BorderSide(color: AppTheme.primary),
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(height: 16),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(ctx),
-                      child: const Text(
-                        'Cancel',
-                        style: TextStyle(color: Colors.white70),
+                  const SizedBox(height: 16),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(ctx),
+                        child: const Text(
+                          'Cancel',
+                          style: TextStyle(color: Colors.white70),
+                        ),
                       ),
-                    ),
-                    ElevatedButton(
-                      onPressed: () =>
-                          Navigator.pop(ctx, controller.text.trim()),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppTheme.primary,
+                      ElevatedButton(
+                        onPressed: () =>
+                            Navigator.pop(ctx, controller.text.trim()),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppTheme.primary,
+                        ),
+                        child: const Text('Add',
+                            style: TextStyle(color: Colors.white)),
                       ),
-                      child: const Text('Add', style: TextStyle(color: Colors.white)),
-                    ),
-                  ],
-                ),
-              ],
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -4208,166 +4250,183 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
     final result = await showDialog<Map<String, double?>>(
       context: context,
       barrierDismissible: false,
-      builder: (dialogContext) => Dialog(
-        backgroundColor: Colors.transparent,
-        insetPadding: EdgeInsets.fromLTRB(
-          18,
-          18,
-          18,
-          18 + MediaQuery.viewInsetsOf(dialogContext).bottom,
-        ),
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxWidth: isTablet ? 420 : 360,
-            maxHeight: MediaQuery.sizeOf(dialogContext).height * 0.9,
-          ),
-          child: Container(
-            padding: EdgeInsets.all(isTablet ? 24 : 20),
-            decoration: AppTheme.softCardDecoration(
-              borderRadius: BorderRadius.circular(24),
-              color: const Color(0xFF2A295D),
-            ),
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Set Calibration',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: isTablet ? 22 : 18,
-                      fontWeight: FontWeight.w700,
-                    ),
+      builder: (dialogContext) => Material(
+        color: Colors.transparent,
+        child: SafeArea(
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
+              child: AnimatedPadding(
+                duration: const Duration(milliseconds: 160),
+                padding: EdgeInsets.only(
+                  bottom:
+                      MediaQuery.viewInsetsOf(dialogContext).bottom > 0 ? 8 : 0,
+                ),
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxWidth: isTablet ? 420 : 360,
+                    maxHeight: MediaQuery.sizeOf(dialogContext).height * 0.9,
                   ),
-                  const SizedBox(height: 10),
-                  Text(
-                    'Enter the real distance for this line ($_selectedLens).',
-                    style: const TextStyle(color: Color(0xFFD9DCF4), height: 1.4),
-                  ),
-                  const SizedBox(height: 14),
-                  TextField(
-                    controller: knownController,
-                    autofocus: true,
-                    keyboardType: const TextInputType.numberWithOptions(
-                      decimal: true,
+                  child: Container(
+                    padding: EdgeInsets.all(isTablet ? 24 : 20),
+                    decoration: AppTheme.softCardDecoration(
+                      borderRadius: BorderRadius.circular(24),
+                      color: const Color(0xFF2A295D),
                     ),
-                    style: const TextStyle(color: Colors.white),
-                    decoration: InputDecoration(
-                      labelText:
-                          'Distance (${_calibrationUnit == 'μm' ? 'Micron' : 'Nanometer'})',
-                      labelStyle: const TextStyle(color: Color(0xFF9DA5CB)),
-                      filled: true,
-                      fillColor: const Color(0xFF1D284D),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(18),
-                        borderSide: const BorderSide(color: Color(0xFF35517A)),
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(18),
-                        borderSide: const BorderSide(color: Color(0xFF35517A)),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(18),
-                        borderSide: const BorderSide(
-                          color: AppTheme.primaryLight,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: manualController,
-                    keyboardType: const TextInputType.numberWithOptions(
-                      decimal: true,
-                    ),
-                    style: const TextStyle(color: Colors.white),
-                    decoration: InputDecoration(
-                      labelText: 'Manual Override (unit/px) - optional',
-                      labelStyle: const TextStyle(color: Color(0xFF9DA5CB)),
-                      filled: true,
-                      fillColor: const Color(0xFF1D284D),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(18),
-                        borderSide: const BorderSide(color: Color(0xFF35517A)),
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(18),
-                        borderSide: const BorderSide(color: Color(0xFF35517A)),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(18),
-                        borderSide: const BorderSide(
-                          color: AppTheme.primaryLight,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: SizedBox(
-                          height: 48,
-                          child: ElevatedButton(
-                            onPressed: () => Navigator.pop(dialogContext),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF1D284D),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(18),
-                              ),
-                            ),
-                            child: const Text(
-                              'Cancel',
-                              style: TextStyle(color: Colors.white),
+                    child: SingleChildScrollView(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Set Calibration',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: isTablet ? 22 : 18,
+                              fontWeight: FontWeight.w700,
                             ),
                           ),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: SizedBox(
-                          height: 48,
-                          child: ElevatedButton(
-                            onPressed: () {
-                              Navigator.pop(dialogContext, <String, double?>{
-                                'knownDistance':
-                                    double.tryParse(knownController.text.trim()) ??
-                                    0,
-                                'manualOverride': double.tryParse(
-                                  manualController.text.trim(),
-                                ),
-                              });
-                            },
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.transparent,
-                              shadowColor: Colors.transparent,
-                              padding: EdgeInsets.zero,
-                              shape: RoundedRectangleBorder(
+                          const SizedBox(height: 10),
+                          Text(
+                            'Enter the real distance for this line ($_selectedLens).',
+                            style: const TextStyle(
+                                color: Color(0xFFD9DCF4), height: 1.4),
+                          ),
+                          const SizedBox(height: 14),
+                          TextField(
+                            controller: knownController,
+                            autofocus: true,
+                            keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true,
+                            ),
+                            style: const TextStyle(color: Colors.white),
+                            decoration: InputDecoration(
+                              labelText:
+                                  'Distance (${_calibrationUnit == 'μm' ? 'Micron' : 'Nanometer'})',
+                              labelStyle:
+                                  const TextStyle(color: Color(0xFF9DA5CB)),
+                              filled: true,
+                              fillColor: const Color(0xFF1D284D),
+                              border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(18),
+                                borderSide:
+                                    const BorderSide(color: Color(0xFF35517A)),
+                              ),
+                              enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(18),
+                                borderSide:
+                                    const BorderSide(color: Color(0xFF35517A)),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(18),
+                                borderSide: const BorderSide(
+                                  color: AppTheme.primaryLight,
+                                ),
                               ),
                             ),
-                            child: Ink(
-                              decoration: BoxDecoration(
-                                gradient: AppTheme.buttonGradient,
+                          ),
+                          const SizedBox(height: 12),
+                          TextField(
+                            controller: manualController,
+                            keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true,
+                            ),
+                            style: const TextStyle(color: Colors.white),
+                            decoration: InputDecoration(
+                              labelText: 'Manual Override (unit/px) - optional',
+                              labelStyle:
+                                  const TextStyle(color: Color(0xFF9DA5CB)),
+                              filled: true,
+                              fillColor: const Color(0xFF1D284D),
+                              border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(18),
+                                borderSide:
+                                    const BorderSide(color: Color(0xFF35517A)),
                               ),
-                              child: const Center(
-                                child: Text(
-                                  'Save',
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w700,
+                              enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(18),
+                                borderSide:
+                                    const BorderSide(color: Color(0xFF35517A)),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(18),
+                                borderSide: const BorderSide(
+                                  color: AppTheme.primaryLight,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: SizedBox(
+                                  height: 48,
+                                  child: ElevatedButton(
+                                    onPressed: () =>
+                                        Navigator.pop(dialogContext),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: const Color(0xFF1D284D),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(18),
+                                      ),
+                                    ),
+                                    child: const Text(
+                                      'Cancel',
+                                      style: TextStyle(color: Colors.white),
+                                    ),
                                   ),
                                 ),
                               ),
-                            ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: SizedBox(
+                                  height: 48,
+                                  child: ElevatedButton(
+                                    onPressed: () {
+                                      Navigator.pop(
+                                          dialogContext, <String, double?>{
+                                        'knownDistance': double.tryParse(
+                                                knownController.text.trim()) ??
+                                            0,
+                                        'manualOverride': double.tryParse(
+                                          manualController.text.trim(),
+                                        ),
+                                      });
+                                    },
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.transparent,
+                                      shadowColor: Colors.transparent,
+                                      padding: EdgeInsets.zero,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(18),
+                                      ),
+                                    ),
+                                    child: Ink(
+                                      decoration: BoxDecoration(
+                                        gradient: AppTheme.buttonGradient,
+                                        borderRadius: BorderRadius.circular(18),
+                                      ),
+                                      child: const Center(
+                                        child: Text(
+                                          'Save',
+                                          style: TextStyle(
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
-                        ),
+                        ],
                       ),
-                    ],
+                    ),
                   ),
-                ],
+                ),
               ),
             ),
           ),
@@ -4452,26 +4511,69 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
     )) {
       final ok = await showDialog<bool>(
         context: context,
-        builder: (ctx) => AlertDialog(
-          backgroundColor: const Color(0xFF232651),
-          title: const Text(
-            'Short reference line',
-            style: TextStyle(color: Colors.white),
-          ),
-          content: const Text(
-            'The calibration line is very short; results may be noisy. Continue?',
-            style: TextStyle(color: Colors.white70),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancel'),
+        builder: (ctx) => Material(
+          color: Colors.transparent,
+          child: SafeArea(
+            child: Center(
+              child: Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxWidth: Responsive.isTablet(ctx) ? 420 : 360,
+                    maxHeight: MediaQuery.sizeOf(ctx).height * 0.85,
+                  ),
+                  child: Container(
+                    padding: const EdgeInsets.fromLTRB(20, 18, 20, 14),
+                    decoration: AppTheme.softCardDecoration(
+                      borderRadius: BorderRadius.circular(22),
+                      color: const Color(0xFF232651),
+                    ),
+                    child: SingleChildScrollView(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Short reference line',
+                            style: TextStyle(color: Colors.white, fontSize: 18),
+                          ),
+                          const SizedBox(height: 10),
+                          const Text(
+                            'The calibration line is very short; results may be noisy. Continue?',
+                            style:
+                                TextStyle(color: Colors.white70, height: 1.35),
+                          ),
+                          const SizedBox(height: 14),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: [
+                              TextButton(
+                                onPressed: () => Navigator.pop(ctx, false),
+                                child: const Text(
+                                  'Cancel',
+                                  style: TextStyle(color: Colors.white70),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              TextButton(
+                                onPressed: () => Navigator.pop(ctx, true),
+                                child: const Text(
+                                  'Continue',
+                                  style:
+                                      TextStyle(color: AppTheme.primaryLight),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
             ),
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Continue'),
-            ),
-          ],
+          ),
         ),
       );
       if (ok != true) return;

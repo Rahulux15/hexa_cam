@@ -10,13 +10,9 @@ import '../data/models/point.dart';
 import 'annotation_painter.dart';
 
 class MarkedMediaRenderer {
-  // Keep exported stroke thickness visually consistent with live drawing.
-  // High-resolution exports need stronger scale so marks remain legible in
-  // gallery thumbnails, reports, and saved media across devices.
-  static double _exportUiScale(Size sourceSize) {
-    final shortSide = sourceSize.shortestSide <= 0 ? 1.0 : sourceSize.shortestSide;
-    return (shortSide / 720.0).clamp(1.35, 4.4).toDouble();
-  }
+  // WYSIWYG export: geometry is normalized to target pixels, so keep
+  // painter-level scaling neutral.
+  static double _exportUiScale(Size sourceSize) => 1.0;
 
   static Future<Uint8List> renderAnnotationOverlay({
     required Size sourceSize,
@@ -99,9 +95,8 @@ class MarkedMediaRenderer {
     );
     painter.paint(canvas, sourceSize);
 
-    final outImage = await recorder
-        .endRecording()
-        .toImage(image.width, image.height);
+    final outImage =
+        await recorder.endRecording().toImage(image.width, image.height);
     final outData = await outImage.toByteData(format: ui.ImageByteFormat.png);
     return outData!.buffer.asUint8List();
   }
@@ -147,9 +142,16 @@ class MarkedMediaRenderer {
     required double sx,
     required double sy,
   }) {
+    final sxAbs = sx.abs();
+    final syAbs = sy.abs();
+    final strokeScale = (sxAbs <= 0 || syAbs <= 0)
+        ? 1.0
+        : sqrt(sxAbs * syAbs).clamp(0.25, 12.0).toDouble();
     return annotations
         .map(
           (annotation) => annotation.copyWith(
+            strokeWidth:
+                (annotation.strokeWidth * strokeScale).clamp(0.5, 240.0),
             points: annotation.points
                 .map((p) => HexaPoint(x: p.x * sx, y: p.y * sy))
                 .toList(),
@@ -188,9 +190,11 @@ class MarkedMediaRenderer {
     }
     final width = (maxX - minX).abs();
     final height = (maxY - minY).abs();
-    final imageDiag = sqrt((size.width * size.width) + (size.height * size.height));
+    final imageDiag =
+        sqrt((size.width * size.width) + (size.height * size.height));
     final markDiag = sqrt((width * width) + (height * height));
-    final spread = imageDiag <= 0 ? 0.0 : (markDiag / imageDiag).clamp(0.0, 1.0);
+    final spread =
+        imageDiag <= 0 ? 0.0 : (markDiag / imageDiag).clamp(0.0, 1.0);
 
     // Prefer mappings that keep points in frame and preserve realistic spread.
     // This avoids selecting tiny clustered overlays when a better mapping exists.

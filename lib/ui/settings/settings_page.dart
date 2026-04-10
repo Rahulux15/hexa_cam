@@ -57,7 +57,8 @@ class _SettingsPageState extends State<SettingsPage> {
 
   @override
   void dispose() {
-    _nameController.dispose(); _emailController.dispose();
+    _nameController.dispose();
+    _emailController.dispose();
     super.dispose();
   }
 
@@ -119,7 +120,9 @@ class _SettingsPageState extends State<SettingsPage> {
             bottom: false,
             child: Container(
               padding: EdgeInsets.fromLTRB(pad, 16, pad, 12),
-              decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: AppTheme.borderColor))),
+              decoration: const BoxDecoration(
+                  border:
+                      Border(bottom: BorderSide(color: AppTheme.borderColor))),
               child: Row(children: [
                 GestureDetector(
                   onTap: () => _currentView == SettingsView.main
@@ -128,8 +131,11 @@ class _SettingsPageState extends State<SettingsPage> {
                   child: Container(
                     width: isTab ? 44 : 40,
                     height: isTab ? 44 : 40,
-                    decoration: BoxDecoration(color: AppTheme.bgCard, borderRadius: BorderRadius.circular(20)),
-                    child: Icon(Icons.arrow_back_rounded, color: AppTheme.textSecondary, size: isTab ? 22 : 20),
+                    decoration: BoxDecoration(
+                        color: AppTheme.bgCard,
+                        borderRadius: BorderRadius.circular(20)),
+                    child: Icon(Icons.arrow_back_rounded,
+                        color: AppTheme.textSecondary, size: isTab ? 22 : 20),
                   ),
                 ),
                 SizedBox(width: isTab ? 16 : 12),
@@ -137,12 +143,18 @@ class _SettingsPageState extends State<SettingsPage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('Settings', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppTheme.textPrimary)),
+                      const Text('Settings',
+                          style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                              color: AppTheme.textPrimary)),
                       Text(
                         _getSubtitle(),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: TextStyle(fontSize: isTab ? 13 : 12, color: AppTheme.textMuted),
+                        style: TextStyle(
+                            fontSize: isTab ? 13 : 12,
+                            color: AppTheme.textMuted),
                       ),
                     ],
                   ),
@@ -169,21 +181,31 @@ class _SettingsPageState extends State<SettingsPage> {
 
   String _getSubtitle() {
     switch (_currentView) {
-      case SettingsView.main: return 'Manage your preferences';
-      case SettingsView.profile: return 'Personal information';
-      case SettingsView.privacy: return 'Data & security';
-      case SettingsView.help: return 'Get assistance';
-      case SettingsView.about: return 'App information';
+      case SettingsView.main:
+        return 'Manage your preferences';
+      case SettingsView.profile:
+        return 'Personal information';
+      case SettingsView.privacy:
+        return 'Data & security';
+      case SettingsView.help:
+        return 'Get assistance';
+      case SettingsView.about:
+        return 'App information';
     }
   }
 
   Widget _buildCurrentView() {
     switch (_currentView) {
-      case SettingsView.main: return _buildMainView();
-      case SettingsView.profile: return _buildProfileView();
-      case SettingsView.privacy: return _buildPrivacyView();
-      case SettingsView.help: return _buildHelpView();
-      case SettingsView.about: return _buildAboutView();
+      case SettingsView.main:
+        return _buildMainView();
+      case SettingsView.profile:
+        return _buildProfileView();
+      case SettingsView.privacy:
+        return _buildPrivacyView();
+      case SettingsView.help:
+        return _buildHelpView();
+      case SettingsView.about:
+        return _buildAboutView();
     }
   }
 
@@ -191,11 +213,13 @@ class _SettingsPageState extends State<SettingsPage> {
     final isTab = Responsive.isTablet(context);
     return Column(children: [
       _buildSection('General', [
-        _buildTile(Icons.badge_outlined, 'Profile', 'Personal information', () => setState(() => _currentView = SettingsView.profile)),
+        _buildTile(Icons.badge_outlined, 'Profile', 'Personal information',
+            () => setState(() => _currentView = SettingsView.profile)),
       ]),
       SizedBox(height: isTab ? 18 : 16),
       _buildSection('Application', [
-        _buildTile(Icons.verified_user_outlined, 'Privacy', 'Data & security', () => setState(() => _currentView = SettingsView.privacy)),
+        _buildTile(Icons.verified_user_outlined, 'Privacy', 'Data & security',
+            () => setState(() => _currentView = SettingsView.privacy)),
         _buildTile(
           Icons.shield_outlined,
           'Reset Permission State',
@@ -211,8 +235,13 @@ class _SettingsPageState extends State<SettingsPage> {
       ]),
       SizedBox(height: isTab ? 18 : 16),
       _buildSection('Support', [
-        _buildTile(Icons.support_agent_outlined, 'Help & Support', 'Get assistance', () => setState(() => _currentView = SettingsView.help)),
-        _buildTile(Icons.info_outline_rounded, 'About', 'App information', () => setState(() => _currentView = SettingsView.about)),
+        _buildTile(
+            Icons.support_agent_outlined,
+            'Help & Support',
+            'Get assistance',
+            () => setState(() => _currentView = SettingsView.help)),
+        _buildTile(Icons.info_outline_rounded, 'About', 'App information',
+            () => setState(() => _currentView = SettingsView.about)),
       ]),
       SizedBox(height: isTab ? 18 : 16),
       _buildSection('Export & backup', [
@@ -258,7 +287,9 @@ class _SettingsPageState extends State<SettingsPage> {
       ]),
       SizedBox(height: isTab ? 18 : 16),
       _buildSection('Data', [
-        _buildTile(Icons.delete_sweep_outlined, 'Clear All Data', 'Reset everything', () => setState(() => _showClearDialog = true), isDanger: true),
+        _buildTile(Icons.delete_sweep_outlined, 'Clear All Data',
+            'Reset everything', () => setState(() => _showClearDialog = true),
+            isDanger: true),
       ]),
       SizedBox(height: isTab ? 36 : 32),
       SizedBox(
@@ -279,7 +310,8 @@ class _SettingsPageState extends State<SettingsPage> {
       ),
       SizedBox(height: isTab ? 12 : 10),
       _buildAboutVersionLine(isTab),
-      const Text('Scientific Imaging & Microscopy', style: TextStyle(fontSize: 12, color: AppTheme.textDisabled)),
+      const Text('Scientific Imaging & Microscopy',
+          style: TextStyle(fontSize: 12, color: AppTheme.textDisabled)),
       SizedBox(height: isTab ? 34 : 30),
     ]);
   }
@@ -291,12 +323,29 @@ class _SettingsPageState extends State<SettingsPage> {
         padding: const EdgeInsets.only(left: 4, bottom: 8),
         child: Text(
           title.toUpperCase(),
-          style: TextStyle(fontSize: isTab ? 13 : 12, fontWeight: FontWeight.w600, color: AppTheme.textMuted, letterSpacing: 1),
+          style: TextStyle(
+              fontSize: isTab ? 13 : 12,
+              fontWeight: FontWeight.w600,
+              color: AppTheme.textMuted,
+              letterSpacing: 1),
         ),
       ),
       Container(
-        decoration: BoxDecoration(color: AppTheme.bgCard, borderRadius: BorderRadius.circular(12), border: Border.all(color: AppTheme.borderColor)),
-        child: Column(children: items.asMap().entries.map((e) => Column(children: [e.value, if (e.key < items.length - 1) const Divider(height: 1, color: AppTheme.borderColor, indent: 60)])).toList()),
+        decoration: BoxDecoration(
+            color: AppTheme.bgCard,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: AppTheme.borderColor)),
+        child: Column(
+            children: items
+                .asMap()
+                .entries
+                .map((e) => Column(children: [
+                      e.value,
+                      if (e.key < items.length - 1)
+                        const Divider(
+                            height: 1, color: AppTheme.borderColor, indent: 60)
+                    ]))
+                .toList()),
       ),
     ]);
   }
@@ -355,7 +404,9 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 
-  Widget _buildTile(IconData icon, String title, String subtitle, VoidCallback onTap, {bool isDanger = false}) {
+  Widget _buildTile(
+      IconData icon, String title, String subtitle, VoidCallback onTap,
+      {bool isDanger = false}) {
     final isTab = Responsive.isTablet(context);
     return GestureDetector(
       onTap: onTap,
@@ -370,16 +421,27 @@ class _SettingsPageState extends State<SettingsPage> {
               color: isDanger ? const Color(0x14EF4444) : null,
               borderRadius: BorderRadius.circular(12),
             ),
-            child: Icon(icon, color: isDanger ? AppTheme.danger : Colors.white, size: isTab ? 22 : 20),
+            child: Icon(icon,
+                color: isDanger ? AppTheme.danger : Colors.white,
+                size: isTab ? 22 : 20),
           ),
           SizedBox(width: isTab ? 14 : 12),
           Expanded(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(title, style: TextStyle(fontSize: isTab ? 17 : 16, fontWeight: FontWeight.w500, color: isDanger ? AppTheme.danger : AppTheme.textPrimary)),
-              Text(subtitle, style: TextStyle(fontSize: isTab ? 13 : 12, color: AppTheme.textMuted)),
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(title,
+                  style: TextStyle(
+                      fontSize: isTab ? 17 : 16,
+                      fontWeight: FontWeight.w500,
+                      color:
+                          isDanger ? AppTheme.danger : AppTheme.textPrimary)),
+              Text(subtitle,
+                  style: TextStyle(
+                      fontSize: isTab ? 13 : 12, color: AppTheme.textMuted)),
             ]),
           ),
-          Icon(Icons.chevron_right, color: AppTheme.textMuted, size: isTab ? 24 : 22),
+          Icon(Icons.chevron_right,
+              color: AppTheme.textMuted, size: isTab ? 24 : 22),
         ]),
       ),
     );
@@ -390,7 +452,8 @@ class _SettingsPageState extends State<SettingsPage> {
     return Column(children: [
       _buildProfileField('Full Name', _nameController, Icons.badge_outlined),
       SizedBox(height: isTab ? 14 : 12),
-      _buildProfileField('Email Address', _emailController, Icons.alternate_email_rounded),
+      _buildProfileField(
+          'Email Address', _emailController, Icons.alternate_email_rounded),
       SizedBox(height: isTab ? 18 : 14),
       Align(
         alignment: Alignment.centerLeft,
@@ -405,24 +468,38 @@ class _SettingsPageState extends State<SettingsPage> {
     ]);
   }
 
-  Widget _buildProfileField(String label, TextEditingController controller, IconData icon) {
+  Widget _buildProfileField(
+      String label, TextEditingController controller, IconData icon) {
     final isTab = Responsive.isTablet(context);
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text(label, style: TextStyle(fontSize: isTab ? 15 : 14, fontWeight: FontWeight.w500, color: AppTheme.textSecondary)),
+      Text(label,
+          style: TextStyle(
+              fontSize: isTab ? 15 : 14,
+              fontWeight: FontWeight.w500,
+              color: AppTheme.textSecondary)),
       SizedBox(height: isTab ? 8 : 6),
       TextField(
         controller: controller,
         readOnly: true,
         enabled: false,
-        style: TextStyle(color: AppTheme.textPrimary, fontSize: isTab ? 16 : 14),
+        style:
+            TextStyle(color: AppTheme.textPrimary, fontSize: isTab ? 16 : 14),
         decoration: InputDecoration(
-          prefixIcon: Icon(icon, color: AppTheme.textMuted, size: isTab ? 22 : 20),
+          prefixIcon:
+              Icon(icon, color: AppTheme.textMuted, size: isTab ? 22 : 20),
           filled: true,
           fillColor: AppTheme.bgTertiary,
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppTheme.borderColor)),
-          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppTheme.borderColor)),
-          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppTheme.primary)),
-          contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: isTab ? 14 : 12),
+          border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: AppTheme.borderColor)),
+          enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: AppTheme.borderColor)),
+          focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: AppTheme.primary)),
+          contentPadding:
+              EdgeInsets.symmetric(horizontal: 16, vertical: isTab ? 14 : 12),
         ),
       ),
     ]);
@@ -519,8 +596,7 @@ class _SettingsPageState extends State<SettingsPage> {
         policyCard(
           heading: 'Principles of Data Protection',
           icon: Icons.rule_folder_outlined,
-          body:
-              '• Lawfulness, fairness, and transparency\n'
+          body: '• Lawfulness, fairness, and transparency\n'
               '• Purpose limitation\n'
               '• Data minimization\n'
               '• Accuracy\n'
@@ -557,8 +633,7 @@ class _SettingsPageState extends State<SettingsPage> {
         policyCard(
           heading: 'Permissions We Take',
           icon: Icons.admin_panel_settings_outlined,
-          body:
-              'Hexa-Cam requests only functional permissions:\n'
+          body: 'Hexa-Cam requests only functional permissions:\n'
               '• Camera: to capture microscope photos/videos\n'
               '• Photos/Media/Files or Storage: to save, read, and export images/videos/reports\n'
               '• (Platform dependent) Microphone may be requested by video capture APIs on some devices\n\n'
@@ -603,8 +678,7 @@ class _SettingsPageState extends State<SettingsPage> {
         policyCard(
           heading: 'Contact Information',
           icon: Icons.support_agent_outlined,
-          body:
-              'Email: support@quasmoindianmicroscope.com\n'
+          body: 'Email: support@quasmoindianmicroscope.com\n'
               'Toll-Free: 1800-419-4979\n'
               'Location: #84, HSIDC Industrial Area, Ambala Cantt. – 133 001, Haryana, INDIA',
         ),
@@ -674,7 +748,10 @@ class _SettingsPageState extends State<SettingsPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(label, style: bodyStyle.copyWith(fontWeight: FontWeight.w500, color: AppTheme.textSecondary)),
+            Text(label,
+                style: bodyStyle.copyWith(
+                    fontWeight: FontWeight.w500,
+                    color: AppTheme.textSecondary)),
             SizedBox(height: isTab ? 4 : 2),
             selectable
                 ? SelectableText(value, style: linkStyle)
@@ -695,7 +772,8 @@ class _SettingsPageState extends State<SettingsPage> {
               gradient: AppTheme.primaryGradient,
               borderRadius: BorderRadius.circular(isTab ? 18 : 16),
             ),
-            child: Icon(Icons.support_agent_outlined, color: Colors.white, size: isTab ? 32 : 28),
+            child: Icon(Icons.support_agent_outlined,
+                color: Colors.white, size: isTab ? 32 : 28),
           ),
         ),
         SizedBox(height: isTab ? 18 : 16),
@@ -747,7 +825,8 @@ class _SettingsPageState extends State<SettingsPage> {
           children: [
             labeledBlock('Sales', 'sales@quasmoindianmicroscope.com'),
             labeledBlock('Tender Enquiries', 'quasmo.mechanical@gmail.com'),
-            labeledBlock('General Inquiries', 'info@quasmoindianmicroscope.com'),
+            labeledBlock(
+                'General Inquiries', 'info@quasmoindianmicroscope.com'),
           ],
         ),
         SizedBox(height: isTab ? 12 : 10),
@@ -782,7 +861,8 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   Widget _buildAboutVersionLine(bool isTab) {
-    final style = TextStyle(color: AppTheme.textMuted, fontSize: isTab ? 14 : 12);
+    final style =
+        TextStyle(color: AppTheme.textMuted, fontSize: isTab ? 14 : 12);
     if (_appVersionLabel == null) {
       return Row(
         mainAxisSize: MainAxisSize.min,
@@ -843,7 +923,8 @@ class _SettingsPageState extends State<SettingsPage> {
                     gradient: AppTheme.primaryGradient,
                     borderRadius: BorderRadius.circular(isTab ? 26 : 24),
                   ),
-                  child: Icon(Icons.biotech_outlined, color: Colors.white, size: isTab ? 48 : 44),
+                  child: Icon(Icons.biotech_outlined,
+                      color: Colors.white, size: isTab ? 48 : 44),
                 );
               },
             ),
@@ -975,7 +1056,7 @@ class _SettingsPageState extends State<SettingsPage> {
   Widget _buildClearDialog() {
     final isTab = Responsive.isTablet(context);
     final media = MediaQuery.of(context);
-    final maxHeight = media.size.height - media.viewInsets.bottom - 48;
+    final keyboardInset = media.viewInsets.bottom;
     return GestureDetector(
       onTap: () => setState(() => _showClearDialog = false),
       child: Container(
@@ -987,59 +1068,91 @@ class _SettingsPageState extends State<SettingsPage> {
               child: ConstrainedBox(
                 constraints: BoxConstraints(
                   maxWidth: isTab ? 560 : media.size.width - 40,
-                  maxHeight: maxHeight.clamp(280, 640),
+                  maxHeight: (media.size.height * 0.9).clamp(280, 640),
                 ),
-                child: SingleChildScrollView(
-                  child: Container(
-                    margin: const EdgeInsets.all(20),
-                    padding: EdgeInsets.all(isTab ? 28 : 24),
-                    decoration: BoxDecoration(color: AppTheme.bgCard, borderRadius: BorderRadius.circular(20)),
-                    child: Column(mainAxisSize: MainAxisSize.min, children: [
-                Container(
-                  width: isTab ? 64 : 56,
-                  height: isTab ? 64 : 56,
-                  decoration: BoxDecoration(color: const Color(0x14EF4444), borderRadius: BorderRadius.circular(isTab ? 18 : 16)),
-                  child: Icon(Icons.delete_sweep_outlined, color: AppTheme.danger, size: isTab ? 32 : 28),
-                ),
-                SizedBox(height: isTab ? 18 : 16),
-                Text(
-                  'Clear All Data?',
-                  style: TextStyle(fontSize: isTab ? 20 : 18, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
-                ),
-                SizedBox(height: isTab ? 10 : 8),
-                Text(
-                  'This will permanently delete all folders, images, and settings. This action cannot be undone.',
-                  style: TextStyle(color: AppTheme.textSecondary, fontSize: isTab ? 15 : 14),
-                  textAlign: TextAlign.center,
-                ),
-                SizedBox(height: isTab ? 22 : 20),
-                Row(children: [
-                  Expanded(
-                    child: TextButton(
-                      onPressed: () => setState(() => _showClearDialog = false),
-                      style: TextButton.styleFrom(padding: EdgeInsets.symmetric(vertical: isTab ? 14 : 12), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), backgroundColor: AppTheme.bgTertiary),
-                      child: Text('Cancel', style: TextStyle(color: AppTheme.textSecondary, fontSize: isTab ? 15 : 14)),
+                child: AnimatedPadding(
+                  duration: const Duration(milliseconds: 160),
+                  padding: EdgeInsets.only(bottom: keyboardInset > 0 ? 8 : 0),
+                  child: SingleChildScrollView(
+                    child: Container(
+                      margin: const EdgeInsets.all(20),
+                      padding: EdgeInsets.all(isTab ? 28 : 24),
+                      decoration: BoxDecoration(
+                          color: AppTheme.bgCard,
+                          borderRadius: BorderRadius.circular(20)),
+                      child: Column(mainAxisSize: MainAxisSize.min, children: [
+                        Container(
+                          width: isTab ? 64 : 56,
+                          height: isTab ? 64 : 56,
+                          decoration: BoxDecoration(
+                              color: const Color(0x14EF4444),
+                              borderRadius:
+                                  BorderRadius.circular(isTab ? 18 : 16)),
+                          child: Icon(Icons.delete_sweep_outlined,
+                              color: AppTheme.danger, size: isTab ? 32 : 28),
+                        ),
+                        SizedBox(height: isTab ? 18 : 16),
+                        Text(
+                          'Clear All Data?',
+                          style: TextStyle(
+                              fontSize: isTab ? 20 : 18,
+                              fontWeight: FontWeight.bold,
+                              color: AppTheme.textPrimary),
+                        ),
+                        SizedBox(height: isTab ? 10 : 8),
+                        Text(
+                          'This will permanently delete all folders, images, and settings. This action cannot be undone.',
+                          style: TextStyle(
+                              color: AppTheme.textSecondary,
+                              fontSize: isTab ? 15 : 14),
+                          textAlign: TextAlign.center,
+                        ),
+                        SizedBox(height: isTab ? 22 : 20),
+                        Row(children: [
+                          Expanded(
+                            child: TextButton(
+                              onPressed: () =>
+                                  setState(() => _showClearDialog = false),
+                              style: TextButton.styleFrom(
+                                  padding: EdgeInsets.symmetric(
+                                      vertical: isTab ? 14 : 12),
+                                  shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12)),
+                                  backgroundColor: AppTheme.bgTertiary),
+                              child: Text('Cancel',
+                                  style: TextStyle(
+                                      color: AppTheme.textSecondary,
+                                      fontSize: isTab ? 15 : 14)),
+                            ),
+                          ),
+                          SizedBox(width: isTab ? 14 : 12),
+                          Expanded(
+                            child: ElevatedButton(
+                              onPressed: _isClearingData ? null : _clearAllData,
+                              style: ElevatedButton.styleFrom(
+                                  padding: EdgeInsets.symmetric(
+                                      vertical: isTab ? 14 : 12),
+                                  backgroundColor: AppTheme.danger,
+                                  shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12))),
+                              child: _isClearingData
+                                  ? SizedBox(
+                                      width: isTab ? 18 : 16,
+                                      height: isTab ? 18 : 16,
+                                      child: const CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Colors.white,
+                                      ),
+                                    )
+                                  : Text('Clear All',
+                                      style: TextStyle(
+                                          color: Colors.white,
+                                          fontSize: isTab ? 15 : 14)),
+                            ),
+                          ),
+                        ]),
+                      ]),
                     ),
-                  ),
-                  SizedBox(width: isTab ? 14 : 12),
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: _isClearingData ? null : _clearAllData,
-                      style: ElevatedButton.styleFrom(padding: EdgeInsets.symmetric(vertical: isTab ? 14 : 12), backgroundColor: AppTheme.danger, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-                      child: _isClearingData
-                          ? SizedBox(
-                              width: isTab ? 18 : 16,
-                              height: isTab ? 18 : 16,
-                              child: const CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
-                              ),
-                            )
-                          : Text('Clear All', style: TextStyle(color: Colors.white, fontSize: isTab ? 15 : 14)),
-                    ),
-                  ),
-                ]),
-              ]),
                   ),
                 ),
               ),
@@ -1119,5 +1232,3 @@ class _SettingsPageState extends State<SettingsPage> {
     }
   }
 }
-
-
