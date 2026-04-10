@@ -70,6 +70,23 @@ class MediaDatabase {
     await db.delete(_tableName);
   }
 
+  /// All blob bytes keyed by asset id — used to build `Media/` inside backup ZIP.
+  static Future<Map<String, Uint8List>> loadAllAssetsForBackup() async {
+    if (kIsWeb) {
+      return Map<String, Uint8List>.from(_webStore);
+    }
+    final db = await database;
+    final rows = await db.query(_tableName, columns: ['id', 'data']);
+    final out = <String, Uint8List>{};
+    for (final r in rows) {
+      final id = r['id'] as String?;
+      final data = r['data'] as Uint8List?;
+      if (id == null || data == null || data.isEmpty) continue;
+      out[id] = data;
+    }
+    return out;
+  }
+
   /// JSON snapshot of in-memory web blobs for ZIP backup (web only).
   static String webStoreSnapshotJsonForBackup() {
     if (!kIsWeb) {

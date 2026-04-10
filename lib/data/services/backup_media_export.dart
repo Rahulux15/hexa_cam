@@ -8,6 +8,30 @@ import '../models/image_data.dart';
 import '../models/report_data.dart';
 import 'database_service.dart';
 
+Uint8List? _bytesForIds(
+  Map<String, Uint8List> assets,
+  Iterable<String?> ids,
+) {
+  for (final id in ids) {
+    if (id == null || id.isEmpty) continue;
+    final b = assets[id];
+    if (b != null && b.isNotEmpty) return b;
+  }
+  return null;
+}
+
+/// Inline image bytes when the app stored a data URL (common on web).
+Uint8List? _bytesFromDataImageUrl(String url) {
+  if (!url.startsWith('data:image/')) return null;
+  final comma = url.indexOf(',');
+  if (comma <= 0 || comma + 1 >= url.length) return null;
+  try {
+    return Uint8List.fromList(base64Decode(url.substring(comma + 1)));
+  } catch (_) {
+    return null;
+  }
+}
+
 final _invalidPathChars = RegExp(r'[<>:"/\\|?*\x00-\x1f]');
 
 String _sanitizePathSegment(String name) {
@@ -26,20 +50,19 @@ String _extensionForImage(ImageData img) {
   return 'jpg';
 }
 
-/// Prefer main file, then thumbnail (e.g. video poster).
-Future<Uint8List?> _loadImageBytes(ImageData img) async {
-  final ids = <String>[
-    if (img.mediaId != null && img.mediaId!.isNotEmpty) img.mediaId!,
-    if (img.type == MediaType.video &&
-        img.thumbnailId != null &&
-        img.thumbnailId!.isNotEmpty)
-      img.thumbnailId!,
-  ];
-  for (final id in ids) {
-    final b = await MediaDatabase.getAsset(id);
-    if (b != null && b.isNotEmpty) return b;
-  }
-  return null;
+/// Prefer main file, then thumbnail, then image id (some saves key by id).
+Future<Uint8List?> _loadImageBytes(
+  ImageData img,
+  Map<String, Uint8List> assets,
+) async {
+  final fromStore = _bytesForIds(assets, [
+    img.mediaId,
+    if (img.thumbnailId != null && img.thumbnailId!.isNotEmpty) img.thumbnailId,
+    img.id,
+  ]);
+  if (fromStore != null) return fromStore;
+
+  return _bytesFromDataImageUrl(img.imageUrl);
 }
 
 String _imageArchiveName(ImageData img, int index) {
@@ -73,13 +96,17 @@ Future<void> appendHumanReadableExportToArchive(
 ) async {
   if (foldersRaw == null || foldersRaw.isEmpty) return;
 
+  final assets = await MediaDatabase.loadAllAssetsForBackup();
+
   final usedNames = <String>{};
 
   for (final raw in foldersRaw) {
     if (raw is! Map) continue;
     late final Folder folder;
     try {
-      folder = Folder.fromJson(Map<String, dynamic>.from(raw));
+      final normalized =
+          jsonDecode(jsonEncode(raw)) as Map<String, dynamic>;
+      folder = Folder.fromJson(normalized);
     } catch (_) {
       continue;
     }
@@ -98,7 +125,7 @@ Future<void> appendHumanReadableExportToArchive(
 
     for (var i = 0; i < folder.images.length; i++) {
       final img = folder.images[i];
-      final bytes = await _loadImageBytes(img);
+      final bytes = await _loadImageBytes(img, assets);
       if (bytes == null) continue;
 
       var name = _imageArchiveName(img, i);
@@ -119,7 +146,7 @@ Future<void> appendHumanReadableExportToArchive(
       final rep = reports[r];
       final id = rep.pdfAssetId;
       if (id == null || id.isEmpty) continue;
-      final bytes = await MediaDatabase.getAsset(id);
+      final bytes = _bytesForIds(assets, [id, rep.id]);
       if (bytes == null || bytes.isEmpty) continue;
 
       var name = _reportArchiveName(rep, r);
