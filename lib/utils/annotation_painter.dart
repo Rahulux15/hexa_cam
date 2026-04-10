@@ -79,29 +79,74 @@ class AnnotationPainter extends CustomPainter {
         break;
       case AnnotationType.text:
         if (ann.text != null) {
-          final shortSide = sourceSize.shortestSide <= 0 ? 1.0 : sourceSize.shortestSide;
+          final shortSide =
+              sourceSize.shortestSide <= 0 ? 1.0 : sourceSize.shortestSide;
           final fontSize =
               (shortSide * 0.0175 * uiTextScale).clamp(16.0, 132.0).toDouble();
-          final tp = TextPainter(
-              text: TextSpan(
-                  text: ann.text,
-                  style: TextStyle(
-                      color: ann.color,
-                      fontSize: fontSize,
-                      fontWeight: FontWeight.bold)),
-              textDirection: TextDirection.ltr);
-          tp.layout(minWidth: 0, maxWidth: shortSide * 0.55);
-          final boxWidth = max(tp.width + 20, 96.0);
-          final boxHeight = tp.height + 12;
           final anchor = points[0];
-          final left = (anchor.dx - boxWidth).clamp(8.0, canvasSize.width - boxWidth - 8.0);
-          final top = (anchor.dy - boxHeight).clamp(8.0, canvasSize.height - boxHeight - 8.0);
-          final rect = RRect.fromRectAndRadius(
-            Rect.fromLTWH(left, top, boxWidth, boxHeight),
-            const Radius.circular(12),
+          final maxW = shortSide * 0.55;
+          final strokeW = (2.25 * lineWidthScale).clamp(2.0, 5.0);
+          final lum = ann.color.computeLuminance();
+          final fillColor =
+              lum > 0.52 ? const Color(0xFF121212) : Colors.white;
+          final strokeColor =
+              lum > 0.52 ? Colors.white : const Color(0xFF121212);
+          const baseWeight = TextStyle(
+            fontWeight: FontWeight.bold,
+            height: 1.2,
           );
-          canvas.drawRRect(rect, Paint()..color = const Color(0xCC10162E));
-          tp.paint(canvas, Offset(rect.left + 10, rect.top + (rect.height - tp.height) / 2));
+          final strokeTp = TextPainter(
+            text: TextSpan(
+              text: ann.text,
+              style: baseWeight.copyWith(
+                fontSize: fontSize,
+                foreground: Paint()
+                  ..style = PaintingStyle.stroke
+                  ..strokeWidth = strokeW
+                  ..color = strokeColor
+                  ..strokeJoin = StrokeJoin.round
+                  ..isAntiAlias = true,
+              ),
+            ),
+            textDirection: TextDirection.ltr,
+          )..layout(minWidth: 0, maxWidth: maxW);
+          final fillTp = TextPainter(
+            text: TextSpan(
+              text: ann.text,
+              style: baseWeight.copyWith(
+                fontSize: fontSize,
+                color: fillColor,
+              ),
+            ),
+            textDirection: TextDirection.ltr,
+          )..layout(minWidth: 0, maxWidth: maxW);
+          final tw = strokeTp.width;
+          final th = strokeTp.height;
+          const edge = 8.0;
+          const gap = 10.0;
+          // Keep label above-left of tap so it does not sit on the anchor.
+          var left = (anchor.dx - tw - gap)
+              .clamp(
+                edge,
+                max(edge, canvasSize.width - tw - edge),
+              )
+              .toDouble();
+          var top = (anchor.dy - th - gap)
+              .clamp(
+                edge,
+                max(edge, canvasSize.height - th - edge),
+              )
+              .toDouble();
+          if (top >= anchor.dy - 2) {
+            top = (anchor.dy + gap)
+                .clamp(
+                  edge,
+                  max(edge, canvasSize.height - th - edge),
+                )
+                .toDouble();
+          }
+          strokeTp.paint(canvas, Offset(left, top));
+          fillTp.paint(canvas, Offset(left, top));
         }
         break;
       case AnnotationType.arrow:
@@ -160,7 +205,14 @@ class AnnotationPainter extends CustomPainter {
     }
 
     if (ann.measurement != null && ann.measurement!.trim().isNotEmpty) {
-      _drawMeasurementLabel(canvas, ann.measurement!, points, canvasSize);
+      _drawMeasurementLabel(
+        canvas,
+        ann.measurement!,
+        points,
+        canvasSize,
+        ann.color,
+        ann.type,
+      );
     }
   }
 
@@ -226,24 +278,40 @@ class AnnotationPainter extends CustomPainter {
     _cachedOffsetY = offsetY;
   }
 
+  /// Measurement labels sit **outside** shapes (no pill). Fill / stroke from
+  /// [annotationColor] luminance for contrast on the photo.
   void _drawMeasurementLabel(
-      Canvas canvas, String text, List<Offset> points, Size canvasSize) {
+    Canvas canvas,
+    String text,
+    List<Offset> points,
+    Size canvasSize,
+    Color annotationColor,
+    AnnotationType type,
+  ) {
     if (points.isEmpty) return;
-    final anchor = points.length == 1
-        ? points.first
-        : Offset(
-            (points.first.dx + points.last.dx) / 2,
-            (points.first.dy + points.last.dy) / 2,
-          );
     final mFont = (13 * uiTextScale).clamp(14.0, 64.0);
-    final textPainter = TextPainter(
+    final strokeW = (2.25 * lineWidthScale).clamp(2.0, 5.0);
+
+    final lum = annotationColor.computeLuminance();
+    final fillColor = lum > 0.52 ? const Color(0xFF121212) : Colors.white;
+    final strokeColor = lum > 0.52 ? Colors.white : const Color(0xFF121212);
+
+    const baseStyle = TextStyle(
+      fontWeight: FontWeight.w700,
+      height: 1.25,
+    );
+
+    final strokePainter = TextPainter(
       text: TextSpan(
         text: text,
-        style: TextStyle(
-          color: Colors.white,
+        style: baseStyle.copyWith(
           fontSize: mFont,
-          fontWeight: FontWeight.w700,
-          height: 1.25,
+          foreground: Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = strokeW
+            ..color = strokeColor
+            ..strokeJoin = StrokeJoin.round
+            ..isAntiAlias = true,
         ),
       ),
       textDirection: TextDirection.ltr,
@@ -252,43 +320,177 @@ class AnnotationPainter extends CustomPainter {
       ellipsis: '…',
     )..layout(minWidth: 0, maxWidth: 220);
 
-    const padding = EdgeInsets.symmetric(horizontal: 6, vertical: 4);
-    final labelWidth = max(textPainter.width + padding.horizontal, 64.0);
-    final labelHeight = textPainter.height + padding.vertical;
-    final maxLeft = (canvasSize.width - labelWidth).clamp(0.0, double.infinity);
-    final maxTop = (canvasSize.height - labelHeight).clamp(0.0, double.infinity);
-    final preferredLeft = anchor.dx - (labelWidth / 2);
-    final labelLeft = preferredLeft < 8
-        ? 8.0
-        : preferredLeft > maxLeft - 8
-            ? maxLeft
-            : preferredLeft;
-    final preferredTop = anchor.dy - labelHeight - 18;
-    final labelTop = preferredTop < 8
-        ? (anchor.dy + 18).clamp(8.0, maxTop)
-        : preferredTop > maxTop - 8
-            ? maxTop
-            : preferredTop;
-    final labelRect = RRect.fromRectAndRadius(
-      Rect.fromLTWH(
-        labelLeft,
-        labelTop,
-        labelWidth,
-        labelHeight,
+    final fillPainter = TextPainter(
+      text: TextSpan(
+        text: text,
+        style: baseStyle.copyWith(
+          fontSize: mFont,
+          color: fillColor,
+        ),
       ),
-      const Radius.circular(12),
-    );
+      textDirection: TextDirection.ltr,
+      textAlign: TextAlign.center,
+      maxLines: 1,
+      ellipsis: '…',
+    )..layout(minWidth: 0, maxWidth: 220);
 
-    final labelPaint = Paint()..color = const Color(0xCC10162E);
-    final textOffset = Offset(
-      labelRect.left + ((labelWidth - textPainter.width) / 2),
-      labelRect.top + (labelHeight - textPainter.height) / 2 - 1,
+    final labelWidth = strokePainter.width;
+    final labelHeight = strokePainter.height;
+    final textOffset = _measurementLabelTopLeft(
+      type: type,
+      points: points,
+      canvasSize: canvasSize,
+      labelWidth: labelWidth,
+      labelHeight: labelHeight,
     );
+    strokePainter.paint(canvas, textOffset);
+    fillPainter.paint(canvas, textOffset);
+  }
 
-    // Keep labels axis-aligned in display (viewport) space so text stays
-    // upright and readable; geometry is already transformed in [points].
-    canvas.drawRRect(labelRect, labelPaint);
-    textPainter.paint(canvas, textOffset);
+  static const double _labelEdgePad = 8.0;
+  static const double _labelShapeGap = 10.0;
+
+  double _labelPlacementScore(
+    Offset topLeft,
+    double w,
+    double h,
+    Size canvas,
+  ) {
+    final cx = topLeft.dx + w / 2;
+    final cy = topLeft.dy + h / 2;
+    final dx = (cx - canvas.width / 2).abs();
+    final dy = (cy - canvas.height / 2).abs();
+    return (canvas.width + canvas.height) / 2 - dx - dy;
+  }
+
+  Offset _measurementLabelTopLeft({
+    required AnnotationType type,
+    required List<Offset> points,
+    required Size canvasSize,
+    required double labelWidth,
+    required double labelHeight,
+  }) {
+    final pad = _labelEdgePad;
+    final gap = _labelShapeGap;
+
+    double clampX(double x) => x
+        .clamp(
+          pad,
+          max(pad, canvasSize.width - labelWidth - pad),
+        )
+        .toDouble();
+
+    double clampY(double y) => y
+        .clamp(
+          pad,
+          max(pad, canvasSize.height - labelHeight - pad),
+        )
+        .toDouble();
+
+    switch (type) {
+      case AnnotationType.circle:
+        if (points.length >= 2) {
+          final c = points[0];
+          final r = (points[1] - c).distance;
+          var top = c.dy - r - gap - labelHeight;
+          var left = c.dx - labelWidth / 2;
+          if (top < pad) {
+            top = c.dy + r + gap;
+          }
+          return Offset(clampX(left), clampY(top));
+        }
+        break;
+      case AnnotationType.rectangle:
+      case AnnotationType.square:
+        if (points.length >= 2) {
+          final rect = Rect.fromPoints(points[0], points[1]);
+          var top = rect.top - gap - labelHeight;
+          var left = rect.center.dx - labelWidth / 2;
+          if (top < pad) {
+            top = rect.bottom + gap;
+          }
+          return Offset(clampX(left), clampY(top));
+        }
+        break;
+      case AnnotationType.twoPointer:
+      case AnnotationType.arrow:
+      case AnnotationType.arrowOneWay:
+        if (points.length >= 2) {
+          final a = points[0];
+          final b = points[1];
+          final mid = Offset((a.dx + b.dx) / 2, (a.dy + b.dy) / 2);
+          final dx = b.dx - a.dx;
+          final dy = b.dy - a.dy;
+          final len = sqrt(dx * dx + dy * dy);
+          if (len < 1e-6) {
+            final left = clampX(mid.dx - labelWidth / 2);
+            final top = clampY(mid.dy - gap - labelHeight);
+            return Offset(left, top);
+          }
+          final nx = -dy / len;
+          final ny = dx / len;
+          final dist = gap + labelHeight * 0.35 + 10.0;
+          Offset side(double sign) {
+            final cx = mid.dx + nx * dist * sign - labelWidth / 2;
+            final cy = mid.dy + ny * dist * sign - labelHeight / 2;
+            return Offset(clampX(cx), clampY(cy));
+          }
+
+          final o1 = side(1);
+          final o2 = side(-1);
+          final s1 = _labelPlacementScore(o1, labelWidth, labelHeight, canvasSize);
+          final s2 = _labelPlacementScore(o2, labelWidth, labelHeight, canvasSize);
+          return s1 >= s2 ? o1 : o2;
+        }
+        break;
+      case AnnotationType.singlePointer:
+        if (points.isNotEmpty) {
+          final p = points[0];
+          var top = p.dy - gap - labelHeight;
+          var left = p.dx - labelWidth / 2;
+          if (top < pad) {
+            top = p.dy + gap;
+          }
+          return Offset(clampX(left), clampY(top));
+        }
+        break;
+      case AnnotationType.draw:
+        if (points.isNotEmpty) {
+          var minX = points.first.dx;
+          var maxX = points.first.dx;
+          var minY = points.first.dy;
+          var maxY = points.first.dy;
+          for (final q in points) {
+            minX = min(minX, q.dx);
+            maxX = max(maxX, q.dx);
+            minY = min(minY, q.dy);
+            maxY = max(maxY, q.dy);
+          }
+          final rect = Rect.fromLTRB(minX, minY, maxX, maxY);
+          var top = rect.top - gap - labelHeight;
+          var left = rect.center.dx - labelWidth / 2;
+          if (top < pad) {
+            top = rect.bottom + gap;
+          }
+          return Offset(clampX(left), clampY(top));
+        }
+        break;
+      case AnnotationType.text:
+        break;
+    }
+
+    final anchor = points.length == 1
+        ? points.first
+        : Offset(
+            (points.first.dx + points.last.dx) / 2,
+            (points.first.dy + points.last.dy) / 2,
+          );
+    var top = anchor.dy - labelHeight - 22;
+    if (top < pad) {
+      top = anchor.dy + 22;
+    }
+    var left = anchor.dx - labelWidth / 2;
+    return Offset(clampX(left), clampY(top));
   }
 
   @override

@@ -1497,7 +1497,8 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
       curve: Curves.easeOut,
       top: isTablet ? 78 : 70,
       right: isTablet ? 108 : 84,
-      width: isTablet ? 270 : 228,
+      // Slight extra width avoids sub-pixel Row/Slider overflows in landscape.
+      width: isTablet ? 272 : 234,
       bottom: 20.0 + safeBottom,
       child: GestureDetector(
         behavior: HitTestBehavior.deferToChild,
@@ -1880,11 +1881,14 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
           ),
         ),
         Expanded(
-          child: Slider(
-            min: 0,
-            max: 255,
-            value: value.clamp(0, 255),
-            onChanged: onChanged,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 6),
+            child: Slider(
+              min: 0,
+              max: 255,
+              value: value.clamp(0, 255),
+              onChanged: onChanged,
+            ),
           ),
         ),
         SizedBox(
@@ -1919,15 +1923,19 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                 size: 16,
               ),
               const SizedBox(width: 8),
-              Text(
-                'Marking Thickness',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: isTablet ? 13 : 12,
-                  fontWeight: FontWeight.w700,
+              Expanded(
+                child: Text(
+                  'Marking Thickness',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: isTablet ? 13 : 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
-              const Spacer(),
+              const SizedBox(width: 6),
               Text(
                 '${_drawingStrokeWidth.toStringAsFixed(1)} px',
                 style: TextStyle(
@@ -1938,16 +1946,20 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
               ),
             ],
           ),
-          Slider(
-            min: 2.0,
-            max: 16.0,
-            divisions: 28,
-            value: _drawingStrokeWidth,
-            onChanged: (value) {
-              setState(() {
-                _drawingStrokeWidth = value;
-              });
-            },
+          // Slider thumb/track can paint ~1–2px past the layout width; inset prevents overflow.
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            child: Slider(
+              min: 2.0,
+              max: 16.0,
+              divisions: 28,
+              value: _drawingStrokeWidth,
+              onChanged: (value) {
+                setState(() {
+                  _drawingStrokeWidth = value;
+                });
+              },
+            ),
           ),
         ],
       ),

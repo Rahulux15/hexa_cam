@@ -87,6 +87,10 @@ class _SettingsPageState extends State<SettingsPage> {
         context,
         result.message,
         type: result.ok ? HexaToastType.success : HexaToastType.error,
+        duration: result.ok
+            ? const Duration(seconds: 10)
+            : const Duration(seconds: 4),
+        maxMessageLines: result.ok ? 12 : 4,
       );
     } finally {
       if (mounted) setState(() => _backupRunning = false);
@@ -242,7 +246,7 @@ class _SettingsPageState extends State<SettingsPage> {
             : _buildTile(
                 Icons.folder_zip_outlined,
                 'Backup data to ZIP',
-                'HexaCamBackups: app data + Media/ (photos, videos, PDFs by folder)',
+                'ZIP includes all folders, captures, PDF reports + share to save visibly',
                 _runBackup,
               ),
         _buildTile(

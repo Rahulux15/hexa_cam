@@ -811,14 +811,14 @@ class ViewerScreenState extends State<ViewerScreen> {
                     child: SizedBox(
                       width: fitted.width,
                       height: fitted.height,
-                      child: InteractiveViewer(
-                        panEnabled: _viewerPinchZoomEnabled,
-                        scaleEnabled: _viewerPinchZoomEnabled,
-                        clipBehavior: Clip.hardEdge,
-                        minScale: 0.75,
-                        maxScale: 4,
-                        child: RepaintBoundary(
-                          key: repaintBoundaryKey,
+                      child: RepaintBoundary(
+                        key: repaintBoundaryKey,
+                        child: InteractiveViewer(
+                          panEnabled: _viewerPinchZoomEnabled,
+                          scaleEnabled: _viewerPinchZoomEnabled,
+                          clipBehavior: Clip.hardEdge,
+                          minScale: 0.75,
+                          maxScale: 4,
                           child: Stack(
                             children: [
                               Positioned.fill(
@@ -920,9 +920,9 @@ class ViewerScreenState extends State<ViewerScreen> {
                             ),
                           ],
                         ),
+                        ),
                       ),
                     ),
-                  ),
                 );
               },
             ),
@@ -1250,14 +1250,17 @@ class ViewerScreenState extends State<ViewerScreen> {
           ),
           const SizedBox(width: 10),
           Expanded(
-            child: Slider(
-              min: 2.0,
-              max: 16.0,
-              divisions: 28,
-              value: _drawingStrokeWidth,
-              onChanged: _locked
-                  ? null
-                  : (value) => setState(() => _drawingStrokeWidth = value),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Slider(
+                min: 2.0,
+                max: 16.0,
+                divisions: 28,
+                value: _drawingStrokeWidth,
+                onChanged: _locked
+                    ? null
+                    : (value) => setState(() => _drawingStrokeWidth = value),
+              ),
             ),
           ),
           SizedBox(

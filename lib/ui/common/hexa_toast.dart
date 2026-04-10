@@ -24,6 +24,8 @@ class HexaToast {
     double? progress,
     /// Extra offset below the status bar / safe-area top (e.g. dense top chrome).
     double topExtraInset = 0,
+    /// Defaults to 3; use a higher value for multi-line paths (e.g. backup).
+    int? maxMessageLines,
   }) {
     // Use root overlay so toasts sit at the top of the screen, not inside a
     // modal/bottom sheet's small overlay (which made them look "stuck" at the bottom).
@@ -108,7 +110,7 @@ class HexaToast {
                           Flexible(
                             child: Text(
                               message,
-                              maxLines: 3,
+                              maxLines: maxMessageLines ?? 3,
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
                                 color: Colors.white,
