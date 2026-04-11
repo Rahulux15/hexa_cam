@@ -56,18 +56,28 @@ double annotationHitDistance(HexaPoint p, Annotation a) {
 }
 
 /// Label-only hit test in source coordinates (for move-label tool).
-double annotationLabelHitDistance(HexaPoint p, Annotation a) {
+double annotationLabelHitDistance(
+  HexaPoint p,
+  Annotation a, {
+  Size? sourceSize,
+}) {
   if (a.points.isEmpty) return double.infinity;
   if (a.type == AnnotationType.text) {
-    return _distPointToRect(p, _labelRectForText(a).inflate(34));
+    return _distPointToRect(
+      p,
+      _labelRectForText(a, sourceSize: sourceSize).inflate(34),
+    );
   }
   if (a.measurement != null && a.measurement!.trim().isNotEmpty) {
-    return _distPointToRect(p, _labelRectForMeasurement(a).inflate(34));
+    return _distPointToRect(
+      p,
+      _labelRectForMeasurement(a, sourceSize: sourceSize).inflate(34),
+    );
   }
   return double.infinity;
 }
 
-Rect _labelRectForText(Annotation a) {
+Rect _labelRectForText(Annotation a, {Size? sourceSize}) {
   final anchor = a.points.first;
   final text = (a.text ?? '').trim();
   final charCount = text.isEmpty ? 1 : text.runes.length.clamp(1, 42);
@@ -78,15 +88,25 @@ Rect _labelRectForText(Annotation a) {
   final textWidth = (fontSize * 0.58 * charCount).clamp(28.0, 520.0);
   final textHeight = (fontSize * 1.22).clamp(14.0, 128.0);
   const gap = 10.0;
+  var left = anchor.x - textWidth - gap;
+  var top = anchor.y - textHeight - gap;
+  final bounds = _sourceBounds(sourceSize);
+  if (bounds != null) {
+    left = _clampLabelX(left, textWidth.toDouble(), bounds);
+    top = _clampLabelY(top, textHeight.toDouble(), bounds);
+    if (top >= anchor.y - 2) {
+      top = _clampLabelY(anchor.y + gap, textHeight.toDouble(), bounds);
+    }
+  }
   return Rect.fromLTWH(
-    anchor.x - textWidth - gap + a.labelOffsetX,
-    anchor.y - textHeight - gap + a.labelOffsetY,
+    left + a.labelOffsetX,
+    top + a.labelOffsetY,
     textWidth.toDouble(),
     textHeight.toDouble(),
   );
 }
 
-Rect _labelRectForMeasurement(Annotation a) {
+Rect _labelRectForMeasurement(Annotation a, {Size? sourceSize}) {
   final text = (a.measurement ?? '').trim();
   final chars = text.runes.length.clamp(1, 40);
   final fontSize = (a.labelFontSize ?? (10.0 + (a.strokeWidth * 1.1))).clamp(
@@ -106,10 +126,18 @@ Rect _labelRectForMeasurement(Annotation a) {
         final r = _dist(a.points[1], c);
         left = c.x - (w / 2);
         top = c.y - r - gap - h;
+        final bounds = _sourceBounds(sourceSize);
+        if (bounds != null && top < _labelEdgePad) {
+          top = c.y + r + gap;
+        }
         break;
       }
       left = a.points.first.x - (w / 2);
       top = a.points.first.y - h - gap;
+      final bounds = _sourceBounds(sourceSize);
+      if (bounds != null && top < _labelEdgePad) {
+        top = a.points.first.y + gap;
+      }
       break;
     case AnnotationType.rectangle:
     case AnnotationType.square:
@@ -117,12 +145,21 @@ Rect _labelRectForMeasurement(Annotation a) {
         final leftX = min(a.points.first.x, a.points.last.x);
         final rightX = max(a.points.first.x, a.points.last.x);
         final topY = min(a.points.first.y, a.points.last.y);
+        final bottomY = max(a.points.first.y, a.points.last.y);
         left = ((leftX + rightX) / 2) - (w / 2);
         top = topY - gap - h;
+        final bounds = _sourceBounds(sourceSize);
+        if (bounds != null && top < _labelEdgePad) {
+          top = bottomY + gap;
+        }
         break;
       }
       left = a.points.first.x - (w / 2);
       top = a.points.first.y - h - gap;
+      final bounds = _sourceBounds(sourceSize);
+      if (bounds != null && top < _labelEdgePad) {
+        top = a.points.first.y + gap;
+      }
       break;
     case AnnotationType.twoPointer:
     case AnnotationType.arrow:
@@ -157,13 +194,19 @@ Rect _labelRectForMeasurement(Annotation a) {
       var minX = a.points.first.x;
       var maxX = a.points.first.x;
       var minY = a.points.first.y;
+      var maxY = a.points.first.y;
       for (final p in a.points) {
         minX = min(minX, p.x);
         maxX = max(maxX, p.x);
         minY = min(minY, p.y);
+        maxY = max(maxY, p.y);
       }
       left = ((minX + maxX) / 2) - (w / 2);
       top = minY - h - gap;
+      final bounds = _sourceBounds(sourceSize);
+      if (bounds != null && top < _labelEdgePad) {
+        top = maxY + gap;
+      }
       break;
     case AnnotationType.text:
       left = a.points.first.x - (w / 2);
@@ -171,12 +214,36 @@ Rect _labelRectForMeasurement(Annotation a) {
       break;
   }
 
+  final bounds = _sourceBounds(sourceSize);
+  if (bounds != null) {
+    left = _clampLabelX(left, w.toDouble(), bounds);
+    top = _clampLabelY(top, h.toDouble(), bounds);
+    final shiftedLeft =
+        _clampLabelX(left + a.labelOffsetX, w.toDouble(), bounds);
+    final shiftedTop = _clampLabelY(top + a.labelOffsetY, h.toDouble(), bounds);
+    return Rect.fromLTWH(shiftedLeft, shiftedTop, w.toDouble(), h.toDouble());
+  }
+
   return Rect.fromLTWH(
-    left + a.labelOffsetX,
-    top + a.labelOffsetY,
-    w.toDouble(),
-    h.toDouble(),
-  );
+      left + a.labelOffsetX, top + a.labelOffsetY, w.toDouble(), h.toDouble());
+}
+
+const double _labelEdgePad = 8.0;
+
+Rect? _sourceBounds(Size? sourceSize) {
+  if (sourceSize == null) return null;
+  if (sourceSize.width <= 0 || sourceSize.height <= 0) return null;
+  return Rect.fromLTWH(0, 0, sourceSize.width, sourceSize.height);
+}
+
+double _clampLabelX(double left, double width, Rect bounds) {
+  final maxLeft = max(_labelEdgePad, bounds.width - width - _labelEdgePad);
+  return left.clamp(_labelEdgePad, maxLeft).toDouble();
+}
+
+double _clampLabelY(double top, double height, Rect bounds) {
+  final maxTop = max(_labelEdgePad, bounds.height - height - _labelEdgePad);
+  return top.clamp(_labelEdgePad, maxTop).toDouble();
 }
 
 double _dist(HexaPoint a, HexaPoint b) {

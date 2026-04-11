@@ -734,7 +734,11 @@ class ViewerScreenState extends State<ViewerScreen> {
       Annotation? labelHit;
       var bestLabelDistance = 220.0;
       for (final a in _annotations.reversed) {
-        final d = annotationLabelHitDistance(p, a);
+        final d = annotationLabelHitDistance(
+          p,
+          a,
+          sourceSize: _lastSourceSize,
+        );
         if (d < bestLabelDistance) {
           bestLabelDistance = d;
           labelHit = a;

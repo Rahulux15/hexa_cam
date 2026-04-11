@@ -2958,16 +2958,22 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
 
     if (_moveMode || _selectedTool == null) return;
 
-    setState(() {
-      if (_selectedTool == AnnotationType.singlePointer) {
+    if (_selectedTool == AnnotationType.singlePointer) {
+      setState(() {
         _currentPoints = [point];
         _isDrawing = true;
-        _onPanEnd(DragEndDetails());
-      } else if (_selectedTool == AnnotationType.text) {
+      });
+      _onPanEnd(DragEndDetails());
+      return;
+    }
+
+    if (_selectedTool == AnnotationType.text) {
+      setState(() {
         _viewMode = CameraViewMode.defaultOpen;
-        _showTextDialog(point);
-      }
-    });
+      });
+      // Launch outside setState to avoid keyboard/dialog race on some devices.
+      unawaited(_showTextDialog(point));
+    }
   }
 
   void _onPanUpdate(DragUpdateDetails details) {
@@ -4890,7 +4896,11 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
     int? closestIndex;
     var closestDistance = maxDistance;
     for (var i = _annotations.length - 1; i >= 0; i--) {
-      final d = annotationLabelHitDistance(point, _annotations[i]);
+      final d = annotationLabelHitDistance(
+        point,
+        _annotations[i],
+        sourceSize: _lastSourceSize,
+      );
       if (d < closestDistance) {
         closestDistance = d;
         closestIndex = i;
