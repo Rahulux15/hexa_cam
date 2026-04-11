@@ -1,4 +1,5 @@
 import java.util.Properties
+import org.gradle.api.GradleException
 
 plugins {
     id("com.android.application")
@@ -16,6 +17,32 @@ val localProps = Properties().apply {
 val apiBaseUrl = (project.findProperty("API_BASE_URL") as String?)
     ?: localProps.getProperty("API_BASE_URL")
     ?: "https://api.quasmoindianmicroscope.com/api"
+
+val keyProps = Properties().apply {
+    val keyPropertiesFile = rootProject.file("key.properties")
+    if (keyPropertiesFile.exists()) {
+        keyPropertiesFile.inputStream().use { load(it) }
+    }
+}
+val requestedTasks = gradle.startParameter.taskNames.map { it.lowercase() }
+val requiresReleaseSigning = requestedTasks.any { task ->
+    "release" in task || "bundle" in task || "publish" in task
+}
+val storeFilePath = keyProps.getProperty("storeFile")
+val storePass = keyProps.getProperty("storePassword")
+val keyAliasValue = keyProps.getProperty("keyAlias")
+val keyPass = keyProps.getProperty("keyPassword")
+val hasReleaseSigningConfig = !storeFilePath.isNullOrBlank() &&
+    !storePass.isNullOrBlank() &&
+    !keyAliasValue.isNullOrBlank() &&
+    !keyPass.isNullOrBlank() &&
+    rootProject.file(storeFilePath).exists()
+
+if (requiresReleaseSigning && !hasReleaseSigningConfig) {
+    throw GradleException(
+        "Missing release signing config. Create android/key.properties with storeFile, storePassword, keyAlias, keyPassword, and ensure the keystore file exists.",
+    )
+}
 
 android {
     namespace = "com.hexa_cam"
@@ -45,6 +72,19 @@ android {
         buildConfigField("String", "API_BASE_URL", "\"$apiBaseUrl\"")
     }
 
+    signingConfigs {
+        create("release") {
+            if (!hasReleaseSigningConfig) {
+                return@create
+            }
+            val resolvedStoreFile = rootProject.file(storeFilePath!!)
+            storeFile = resolvedStoreFile
+            storePassword = storePass
+            keyAlias = keyAliasValue
+            keyPassword = keyPass
+        }
+    }
+
     buildTypes {
         debug {
             applicationIdSuffix = ".debug"
@@ -56,7 +96,11 @@ android {
             // R8/resource shrinking caused release-only crashes on some devices.
             isMinifyEnabled = false
             isShrinkResources = false
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = if (hasReleaseSigningConfig) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",

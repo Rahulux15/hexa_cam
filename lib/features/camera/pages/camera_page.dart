@@ -325,10 +325,6 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                 const Duration(seconds: 6),
                 onTimeout: () => PermissionStatus.denied,
               );
-          await Permission.manageExternalStorage.request().timeout(
-                const Duration(seconds: 6),
-                onTimeout: () => PermissionStatus.denied,
-              );
           if (await Permission.photos.isDenied) {
             await Permission.photos.request().timeout(
                   const Duration(seconds: 6),

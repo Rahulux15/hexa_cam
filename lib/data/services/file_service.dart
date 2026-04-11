@@ -19,6 +19,7 @@ import 'web_download_stub.dart' if (dart.library.html) 'web_download_web.dart';
 class FileService {
   static const _uuid = Uuid();
   static const _startupPermissionKey = 'storage_permissions_requested';
+  static const _mediaAlbumName = 'Hexa Cam';
   static Uint8List? _reportLogoBytesCache;
 
   /// UUID v4 from package:uuid — collision risk is negligible for app-scale IDs.
@@ -144,7 +145,11 @@ class FileService {
     logDebug('FileService.saveToDevice gallery write name=$name');
     try {
       await _ensureGalleryExportPermissions(isVideo: false);
-      await Gal.putImageBytes(bytes, name: name);
+      await Gal.putImageBytes(
+        bytes,
+        name: name,
+        album: _mediaAlbumName,
+      );
       logDebug('FileService.saveToDevice gallery write done');
       return true;
     } catch (e) {
@@ -251,7 +256,10 @@ class FileService {
     logDebug('FileService.saveVideoToDevice gallery write path=$videoPath');
     try {
       await _ensureGalleryExportPermissions(isVideo: true);
-      await Gal.putVideo(videoPath);
+      await Gal.putVideo(
+        videoPath,
+        album: _mediaAlbumName,
+      );
       logDebug('FileService.saveVideoToDevice gallery write done');
       return true;
     } catch (e) {
@@ -446,8 +454,9 @@ class FileService {
 
   static Future<void> _requestAndroidStoragePermissions() async {
     final deviceInfo = await DeviceInfoPlugin().androidInfo;
-    if (deviceInfo.version.sdkInt >= 30) {
-      await Permission.manageExternalStorage.request();
+    if (deviceInfo.version.sdkInt >= 33) {
+      await Permission.photos.request();
+      await Permission.videos.request();
       return;
     }
     await Permission.storage.request();

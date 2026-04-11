@@ -36,6 +36,9 @@ migrate_working_dir/
 /android/app/debug
 /android/app/profile
 /android/app/release
+/android/key.properties
+/android/app/*.jks
+/android/app/*.keystore
 /android/local.properties
 /android/.gradle/
 /android/build/

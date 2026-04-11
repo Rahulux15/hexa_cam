@@ -53,16 +53,10 @@ class PermissionController extends GetxController {
     final sdkInt = (await DeviceInfoPlugin().androidInfo).version.sdkInt;
     await Permission.camera.request();
     await Permission.microphone.request();
-    // Android 11+ (API 30): scoped storage; avoid relying on deprecated [Permission.storage].
-    final manage = sdkInt >= 30
-        ? await Permission.manageExternalStorage.request()
-        : PermissionStatus.denied;
-    final storage = sdkInt < 30
-        ? await Permission.storage.request()
-        : PermissionStatus.denied;
-    isStorageGranted.value = manage.isGranted || storage.isGranted;
+    final storageOk = await _requestAndroidMediaOrStoragePermission(sdkInt);
+    isStorageGranted.value = storageOk;
     logDebug(
-      'PermissionController android startup sdk=$sdkInt manage=${manage.name} storage=${storage.name}',
+      'PermissionController android startup sdk=$sdkInt storageReady=$storageOk',
     );
   }
 
@@ -122,9 +116,7 @@ class PermissionController extends GetxController {
       final sdkInt = (await DeviceInfoPlugin().androidInfo).version.sdkInt;
       final cam = await Permission.camera.status;
       final mic = await Permission.microphone.status;
-      final manage = await Permission.manageExternalStorage.status;
-      final storage = await Permission.storage.status;
-      final storageOk = sdkInt >= 30 ? _statusOk(manage) : _statusOk(storage);
+      final storageOk = await _hasAndroidMediaOrStoragePermission(sdkInt);
       return _statusOk(cam) && _statusOk(mic) && storageOk;
     }
     if (Platform.isIOS) {
@@ -150,8 +142,9 @@ class PermissionController extends GetxController {
       return [
         await Permission.camera.status,
         await Permission.microphone.status,
-        if (sdkInt >= 30) await Permission.manageExternalStorage.status,
-        if (sdkInt < 30) await Permission.storage.status,
+        if (sdkInt >= 33) await Permission.photos.status,
+        if (sdkInt >= 33) await Permission.videos.status,
+        if (sdkInt < 33) await Permission.storage.status,
       ];
     }
     if (Platform.isIOS) {
@@ -171,14 +164,30 @@ class PermissionController extends GetxController {
     }
     if (isStorageGranted.value) return true;
     final sdkInt = (await DeviceInfoPlugin().androidInfo).version.sdkInt;
-    final manage = sdkInt >= 30
-        ? await Permission.manageExternalStorage.request()
-        : PermissionStatus.denied;
-    final storage = sdkInt < 30
-        ? await Permission.storage.request()
-        : PermissionStatus.denied;
-    isStorageGranted.value = manage.isGranted || storage.isGranted;
+    isStorageGranted.value = await _requestAndroidMediaOrStoragePermission(
+      sdkInt,
+    );
     return isStorageGranted.value;
+  }
+
+  Future<bool> _requestAndroidMediaOrStoragePermission(int sdkInt) async {
+    if (sdkInt >= 33) {
+      final photos = await Permission.photos.request();
+      final videos = await Permission.videos.request();
+      return _statusOk(photos) && _statusOk(videos);
+    }
+    final storage = await Permission.storage.request();
+    return _statusOk(storage);
+  }
+
+  Future<bool> _hasAndroidMediaOrStoragePermission(int sdkInt) async {
+    if (sdkInt >= 33) {
+      final photos = await Permission.photos.status;
+      final videos = await Permission.videos.status;
+      return _statusOk(photos) && _statusOk(videos);
+    }
+    final storage = await Permission.storage.status;
+    return _statusOk(storage);
   }
 
   Future<void> clearPermissionState() async {
