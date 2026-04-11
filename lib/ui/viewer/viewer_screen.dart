@@ -734,7 +734,9 @@ class ViewerScreenState extends State<ViewerScreen> {
       final hit = pickAnnotationAt(p, _annotations, maxDist: 54);
       Annotation? labelHit;
       var bestLabelDistance = 220.0;
-      for (final a in _annotations.reversed) {
+      // Match painted labels (_annotationsForPaint); stored [measurement] may be
+      // stale/null while showMeasurements supplies computed text.
+      for (final a in _annotationsForPaint().reversed) {
         final d = annotationLabelHitDistance(
           p,
           a,

@@ -4916,11 +4916,14 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
     final useDisplay = _cameraPreviewDisplaySize.width > 0 &&
         _cameraPreviewDisplaySize.height > 0;
     var closestDistance = useDisplay ? 120.0 : maxDistance;
-    for (var i = _annotations.length - 1; i >= 0; i--) {
+    // Must match what's painted (_syncedAnnotations); raw [_annotations] can
+    // have null [measurement] while the UI shows a computed label.
+    final forHit = _syncedAnnotations();
+    for (var i = forHit.length - 1; i >= 0; i--) {
       final d = useDisplay
           ? annotationLabelHitDistancePreviewDisplay(
               point,
-              _annotations[i],
+              forHit[i],
               sourceSize: _lastSourceSize,
               displaySize: _cameraPreviewDisplaySize,
               fit: _cameraPreviewFit,
@@ -4930,7 +4933,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
             )
           : annotationLabelHitDistance(
               point,
-              _annotations[i],
+              forHit[i],
               sourceSize: _lastSourceSize,
             );
       if (d < closestDistance) {
