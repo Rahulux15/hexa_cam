@@ -55,8 +55,12 @@ class MarkedMediaRenderer {
     required bool mirrorY,
     required int rotation,
     Size? annotationSourceSize,
+    int? maxDecodeEdge,
   }) async {
-    final image = await _decodeImage(baseImageBytes);
+    final image = await _decodeImage(
+      baseImageBytes,
+      maxDecodeEdge: maxDecodeEdge,
+    );
     final sourceSize = Size(image.width.toDouble(), image.height.toDouble());
     final normalizedAnnotations = normalizeAnnotationsToTarget(
       annotations: annotations,
@@ -223,10 +227,33 @@ class MarkedMediaRenderer {
     return (inBoundsRatio * 0.8) + (spread * 0.2);
   }
 
-  static Future<ui.Image> _decodeImage(Uint8List bytes) {
-    final completer = Completer<ui.Image>();
-    ui.decodeImageFromList(bytes, completer.complete);
-    return completer.future;
+  static Future<ui.Image> _decodeImage(
+    Uint8List bytes, {
+    int? maxDecodeEdge,
+  }) async {
+    final edge = maxDecodeEdge;
+    if (edge == null || edge <= 0) {
+      final completer = Completer<ui.Image>();
+      ui.decodeImageFromList(bytes, completer.complete);
+      return completer.future;
+    }
+    final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
+    final descriptor = await ui.ImageDescriptor.encoded(buffer);
+    final width = descriptor.width;
+    final height = descriptor.height;
+    final longest = width > height ? width : height;
+    final scale = longest > edge ? (edge / longest) : 1.0;
+    final targetWidth = (width * scale).round().clamp(1, edge);
+    final targetHeight = (height * scale).round().clamp(1, edge);
+    final codec = await descriptor.instantiateCodec(
+      targetWidth: targetWidth,
+      targetHeight: targetHeight,
+    );
+    final frame = await codec.getNextFrame();
+    codec.dispose();
+    descriptor.dispose();
+    buffer.dispose();
+    return frame.image;
   }
 
   /// Decodes raster dimensions (without rendering annotations).

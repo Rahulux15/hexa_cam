@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../data/models/annotation.dart';
 import '../../data/models/point.dart';
+import '../../utils/annotation_geometry.dart';
 
 /// Distance from [p] to annotation geometry in **source** space (for hit / erase).
 double annotationHitDistance(HexaPoint p, Annotation a) {
@@ -270,6 +271,120 @@ double _distPointToRect(HexaPoint p, Rect r) {
   final dx = p.x - cx;
   final dy = p.y - cy;
   return sqrt(dx * dx + dy * dy);
+}
+
+double _distOffsetToRect(Offset p, Rect r) {
+  final cx = p.dx.clamp(r.left, r.right);
+  final cy = p.dy.clamp(r.top, r.bottom);
+  final dx = p.dx - cx;
+  final dy = p.dy - cy;
+  return sqrt(dx * dx + dy * dy);
+}
+
+/// Label hit distance in **preview display pixels** (rotation / fit aware).
+/// Use on camera preview where gestures are in source space but labels are painted rotated.
+double annotationLabelHitDistancePreviewDisplay(
+  HexaPoint pSource,
+  Annotation a, {
+  required Size sourceSize,
+  required Size displaySize,
+  BoxFit fit = BoxFit.contain,
+  bool mirrorX = false,
+  bool mirrorY = false,
+  int rotation = 0,
+}) {
+  if (a.points.isEmpty) return double.infinity;
+  if (displaySize.width <= 0 || displaySize.height <= 0) {
+    return annotationLabelHitDistance(pSource, a, sourceSize: sourceSize);
+  }
+
+  final pDisp = mapSourcePointToPreviewDisplay(
+    pSource,
+    sourceSize: sourceSize,
+    displaySize: displaySize,
+    fit: fit,
+    mirrorX: mirrorX,
+    mirrorY: mirrorY,
+    rotation: rotation,
+  );
+
+  if (a.type == AnnotationType.text) {
+    final anchorD = mapSourcePointToPreviewDisplay(
+      a.points.first,
+      sourceSize: sourceSize,
+      displaySize: displaySize,
+      fit: fit,
+      mirrorX: mirrorX,
+      mirrorY: mirrorY,
+      rotation: rotation,
+    );
+    final labelDeltaD = mapSourceLabelDeltaToPreviewDisplay(
+      HexaPoint(x: a.labelOffsetX, y: a.labelOffsetY),
+      sourceSize: sourceSize,
+      displaySize: displaySize,
+      fit: fit,
+      mirrorX: mirrorX,
+      mirrorY: mirrorY,
+      rotation: rotation,
+    );
+    final text = (a.text ?? '').trim();
+    final charCount = text.isEmpty ? 1 : text.runes.length.clamp(1, 42);
+    final fontSize = (a.labelFontSize ?? (10.0 + (a.strokeWidth * 0.9))).clamp(
+      8.0,
+      120.0,
+    );
+    final textW = (fontSize * 0.58 * charCount).clamp(28.0, 520.0);
+    final textH = (fontSize * 1.22).clamp(14.0, 128.0);
+    const gap = 10.0;
+    var left = (anchorD.dx - textW - gap)
+        .clamp(8.0, displaySize.width - textW - 8.0);
+    var top = (anchorD.dy - textH - gap)
+        .clamp(8.0, displaySize.height - textH - 8.0);
+    if (top >= anchorD.dy - 2) {
+      top =
+          (anchorD.dy + gap).clamp(8.0, displaySize.height - textH - 8.0);
+    }
+    final rect = Rect.fromLTWH(
+      left + labelDeltaD.dx,
+      top + labelDeltaD.dy,
+      textW,
+      textH,
+    ).inflate(28);
+    return _distOffsetToRect(pDisp, rect);
+  }
+
+  if (a.measurement != null && a.measurement!.trim().isNotEmpty) {
+    final sourceRect = _labelRectForMeasurement(a, sourceSize: sourceSize);
+    final corners = [
+      Offset(sourceRect.left, sourceRect.top),
+      Offset(sourceRect.right, sourceRect.top),
+      Offset(sourceRect.left, sourceRect.bottom),
+      Offset(sourceRect.right, sourceRect.bottom),
+    ];
+    var minXd = double.infinity;
+    var minYd = double.infinity;
+    var maxXd = -double.infinity;
+    var maxYd = -double.infinity;
+    for (final c in corners) {
+      final d = mapSourcePointToPreviewDisplay(
+        HexaPoint(x: c.dx, y: c.dy),
+        sourceSize: sourceSize,
+        displaySize: displaySize,
+        fit: fit,
+        mirrorX: mirrorX,
+        mirrorY: mirrorY,
+        rotation: rotation,
+      );
+      minXd = min(minXd, d.dx);
+      maxXd = max(maxXd, d.dx);
+      minYd = min(minYd, d.dy);
+      maxYd = max(maxYd, d.dy);
+    }
+    final rect = Rect.fromLTRB(minXd, minYd, maxXd, maxYd).inflate(20);
+    return _distOffsetToRect(pDisp, rect);
+  }
+
+  return double.infinity;
 }
 
 /// Nearest annotation within [maxDist] source pixels, or null.

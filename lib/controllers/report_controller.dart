@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:path/path.dart' as p;
+import 'package:share_plus/share_plus.dart' show ShareResult, ShareResultStatus;
 import 'package:path_provider/path_provider.dart';
 
 import '../data/models/image_data.dart';
@@ -80,19 +81,26 @@ class ReportController extends GetxController {
     if (image.annotations.isEmpty || image.isMarkingsBaked == true) {
       return baseBytes;
     }
-    return MarkedMediaRenderer.renderPhotoWithAnnotations(
-      baseImageBytes: baseBytes,
-      annotations: image.annotations,
-      mirrorX: image.mirrored ?? false,
-      mirrorY: false,
-      rotation: image.rotation ?? 0,
-      annotationSourceSize: (image.sourceWidth != null &&
-              image.sourceHeight != null &&
-              image.sourceWidth! > 0 &&
-              image.sourceHeight! > 0)
-          ? Size(image.sourceWidth!, image.sourceHeight!)
-          : null,
-    );
+    try {
+      final safeDecodeEdge = Platform.isIOS ? 2600 : null;
+      return MarkedMediaRenderer.renderPhotoWithAnnotations(
+        baseImageBytes: baseBytes,
+        annotations: image.annotations,
+        mirrorX: image.mirrored ?? false,
+        mirrorY: false,
+        rotation: image.rotation ?? 0,
+        annotationSourceSize: (image.sourceWidth != null &&
+                image.sourceHeight != null &&
+                image.sourceWidth! > 0 &&
+                image.sourceHeight! > 0)
+            ? Size(image.sourceWidth!, image.sourceHeight!)
+            : null,
+        maxDecodeEdge: safeDecodeEdge,
+      );
+    } catch (e) {
+      logDebug('ReportController.prepareMediaBytes fallback to base image: $e');
+      return baseBytes;
+    }
   }
 
   Future<bool> downloadReport({
@@ -120,36 +128,14 @@ class ReportController extends GetxController {
         return true;
       }
       if (Platform.isIOS) {
-        // Fast path: direct user-visible save first; avoid extra duplicate writes.
-        const reportFolder = 'Hexa Cam Reports';
-        try {
-          logDebug('ReportController.downloadReport iOS saveToDownloads start');
-          onProgress?.call('Saving report to Downloads…', 0.3);
-          final downloadPath = await FileService.saveToDownloads(
-            bytes: bytes,
-            filename: filename,
-            folderName: reportFolder,
-            onProgress: (p) => onProgress?.call(
-              'Saving report to Downloads…',
-              0.3 + (p * 0.65),
-            ),
-          );
-          if (downloadPath.isNotEmpty) {
-            onProgress?.call('Report saved', 1.0);
-            showMessage(
-              'Report saved to Files → Downloads/$reportFolder',
-              Colors.green,
-            );
-            return true;
-          }
-        } catch (e) {
-          logDebug(
-              'ReportController.downloadReport iOS saveToDownloads failed: $e');
-        }
+        // iOS: system share sheet (Save to Files, AirDrop, …). [ShareResult]
+        // tells us if the user dismissed without acting — avoid fake "saved".
+        onProgress?.call('Preparing PDF…', 0.25);
+        ShareResult shareResult = ShareResult.unavailable;
         try {
           logDebug('ReportController.downloadReport iOS share start');
-          onProgress?.call('Opening share sheet…', 0.82);
-          await FileService.sharePdfToDevice(
+          onProgress?.call('Opening share sheet…', 0.55);
+          shareResult = await FileService.sharePdfToDevice(
             bytes,
             filename,
             sharePositionOrigin: sharePositionOrigin,
@@ -157,14 +143,30 @@ class ReportController extends GetxController {
         } catch (_) {
           logDebug(
               'ReportController.downloadReport iOS share retry without anchor');
-          onProgress?.call('Retrying share…', 0.96);
-          await FileService.sharePdfToDevice(
+          onProgress?.call('Retrying share…', 0.85);
+          shareResult = await FileService.sharePdfToDevice(
             bytes,
             filename,
             sharePositionOrigin: null,
           );
         }
         onProgress?.call('Done', 1.0);
+        if (shareResult.status == ShareResultStatus.dismissed) {
+          showMessage(
+            'Share cancelled — PDF not saved outside the app. Report stays in Hexa Cam.',
+            Colors.orange,
+          );
+        } else if (shareResult.status == ShareResultStatus.unavailable) {
+          showMessage(
+            'Use Save to Files in the share menu if you want a copy in Files',
+            Colors.green,
+          );
+        } else {
+          showMessage(
+            'In the share menu, choose Save to Files to keep the PDF',
+            Colors.green,
+          );
+        }
         logDebug('ReportController.downloadReport iOS done');
         return true;
       }

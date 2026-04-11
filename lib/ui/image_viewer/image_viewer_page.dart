@@ -51,6 +51,7 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
 
   /// When the stored image already had baked marks, only these ids were burned in.
   Set<String>? _bakedAnnotationIdsAtOpen;
+  List<Annotation> _bakedAnnotationsAtOpen = const <Annotation>[];
 
   @override
   void initState() {
@@ -73,6 +74,8 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
       );
       setState(() {
         _image = image;
+        _bakedAnnotationsAtOpen =
+            image.isMarkingsBaked == true ? List<Annotation>.from(image.annotations) : const <Annotation>[];
         // If markings are already baked into pixels, keep old ids for export
         // guards but do not paint them again as editable overlays.
         _annotations = image.isMarkingsBaked == true
@@ -560,18 +563,26 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
         );
       }
       if (!mounted) return;
+      final isVideo = image.type == MediaType.video;
+      final savedDesktop = !kIsWeb &&
+          exportDirectToGallery &&
+          (Platform.isWindows || Platform.isLinux || Platform.isMacOS);
       _showMessage(
-        image.type == MediaType.video
-            ? (exportDirectToGallery
-                ? (Platform.isIOS
-                    ? 'Video saved to Photos'
-                    : 'Video downloaded to Gallery')
-                : 'Share opened — save video to Files, Photos, or Downloads')
-            : (exportDirectToGallery
-                ? (Platform.isIOS
-                    ? 'Image saved to Photos'
-                    : 'Image downloaded to Gallery')
-                : 'Share opened — save image to Files, Photos, or Downloads'),
+        !exportDirectToGallery
+            ? (isVideo
+                ? 'Share opened — save video to Files, Photos, or Downloads'
+                : 'Share opened — save image to Files, Photos, or Downloads')
+            : savedDesktop
+                ? (isVideo
+                    ? 'Video saved — check Downloads/Hexa Cam'
+                    : 'Image saved — check Downloads/Hexa Cam')
+                : (isVideo
+                    ? (Platform.isIOS
+                        ? 'Video saved to Photos (Album: Hexa Cam)'
+                        : 'Video downloaded to Gallery')
+                    : (Platform.isIOS
+                        ? 'Image saved to Photos (Album: Hexa Cam)'
+                        : 'Image downloaded to Gallery')),
         AppTheme.success,
       );
     } catch (error) {
@@ -594,12 +605,18 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
       return;
     }
 
-    final reportAnnotations = _annotations.map((annotation) {
+    final editableAnnotations = _annotations.map((annotation) {
       if (annotation.type == AnnotationType.twoPointer) {
         return annotation.copyWith(measurement: _measurementFor(annotation));
       }
       return annotation;
     }).toList();
+    final allVisibleReportAnnotations = image.isMarkingsBaked == true
+        ? <Annotation>[
+            ..._bakedAnnotationsAtOpen,
+            ...editableAnnotations,
+          ]
+        : editableAnnotations;
 
     String? reportMediaId = image.mediaId;
     String? reportThumbId = image.thumbnailId;
@@ -618,6 +635,10 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
       // Fallback to existing source/media path if flatten capture fails.
     }
 
+    final reportAnnotations =
+        (image.isMarkingsBaked == true && !hasBakedCapture)
+            ? editableAnnotations
+            : allVisibleReportAnnotations;
     final forReport = ImageData(
       id: image.id,
       imageUrl: image.imageUrl,
@@ -625,8 +646,8 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
       thumbnailId: reportThumbId,
       timestamp: image.timestamp,
       cameraSettings: image.cameraSettings,
-      // Always send full visible markings to report flow; do not filter out
-      // baked ids here, otherwise report preview can lose overlays.
+      // If source pixels are already baked and flattening failed, send only
+      // editable overlays to avoid double-drawing baked marks.
       annotations: reportAnnotations,
       measurements: image.measurements,
       calibration: image.calibration,
@@ -640,17 +661,20 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
       showCalibrationStamp: image.showCalibrationStamp,
       sourceWidth: image.sourceWidth,
       sourceHeight: image.sourceHeight,
-      // Mark as baked only when flattened capture actually succeeded.
-      isMarkingsBaked: hasBakedCapture,
+      // Mark as baked when source already had baked pixels or flattened capture succeeded.
+      isMarkingsBaked: image.isMarkingsBaked == true || hasBakedCapture,
     );
 
     if (!mounted) return;
-    Get.toNamed<void>(
-      '/report/${widget.folderId}',
-      arguments: {
-        'images': [forReport.toJson()],
-      },
-    );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      Get.toNamed<void>(
+        '/report/${widget.folderId}',
+        arguments: {
+          'images': [forReport.toJson()],
+        },
+      );
+    });
   }
 
   void _schedulePersistAnnotations() {
@@ -665,8 +689,14 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
     final image = _image;
     if (image == null) return;
     final synced = _syncedAnnotations();
+    final merged = image.isMarkingsBaked == true
+        ? <String, Annotation>{
+            for (final annotation in _bakedAnnotationsAtOpen) annotation.id: annotation,
+            for (final annotation in synced) annotation.id: annotation,
+          }.values.toList(growable: false)
+        : synced;
     final updated = image.copyWith(
-      annotations: synced,
+      annotations: merged,
       mirrored: _flipH || _mirror,
       rotation: _rotation,
     );
@@ -676,6 +706,10 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
       updated,
     );
     _annotations = synced;
+    if (updated.isMarkingsBaked == true) {
+      _bakedAnnotationsAtOpen = List<Annotation>.from(updated.annotations);
+      _bakedAnnotationIdsAtOpen = _bakedAnnotationsAtOpen.map((a) => a.id).toSet();
+    }
     _image = updated;
   }
 
@@ -730,6 +764,7 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
       final overlay =
           _annotations.where((a) => !bakedIds.contains(a.id)).toList();
       if (overlay.isEmpty) return bytes;
+      final safeDecodeEdge = (!kIsWeb && Platform.isIOS) ? 2800 : null;
       final rendered = await MarkedMediaRenderer.renderPhotoWithAnnotations(
         baseImageBytes: bytes,
         annotations: overlay,
@@ -737,6 +772,7 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
         mirrorY: _flipV,
         rotation: _rotation,
         annotationSourceSize: annotationSourceSize,
+        maxDecodeEdge: safeDecodeEdge,
       );
       return kIsWeb
           ? compressMarkedStillForStore(rendered)
@@ -745,6 +781,7 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
 
     if (image.isMarkingsBaked == true) return bytes;
 
+    final safeDecodeEdge = (!kIsWeb && Platform.isIOS) ? 2800 : null;
     final rendered = await MarkedMediaRenderer.renderPhotoWithAnnotations(
       baseImageBytes: bytes,
       annotations: _annotations,
@@ -752,6 +789,7 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
       mirrorY: _flipV,
       rotation: _rotation,
       annotationSourceSize: annotationSourceSize,
+      maxDecodeEdge: safeDecodeEdge,
     );
     return kIsWeb
         ? compressMarkedStillForStore(rendered)

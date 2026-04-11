@@ -96,6 +96,9 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
   HexaPoint? _lastDrawPoint;
   final Uuid _uuid = const Uuid();
   Size _lastSourceSize = Size.zero;
+  /// Last camera preview viewport (for label hit-testing with rotation).
+  Size _cameraPreviewDisplaySize = Size.zero;
+  BoxFit _cameraPreviewFit = BoxFit.contain;
   double _pinchStartZoom = 1.0;
 
   /// True if this scale gesture used 2+ fingers (pinch); skip pan end / use zoom only.
@@ -907,6 +910,8 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
             final shouldCropToFill = !_useFourByThreeViewport &&
                 (sourceAspect - selectedAspect).abs() > 0.02;
             final previewFit = shouldCropToFill ? BoxFit.cover : BoxFit.contain;
+            _cameraPreviewDisplaySize = Size(viewport.width, viewport.height);
+            _cameraPreviewFit = previewFit;
             final uiTextScale = _annotationUiTextScale(context);
             return Stack(
               fit: StackFit.expand,
@@ -3514,12 +3519,16 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                             defaultName: defaultName,
                           );
                           if (!mounted) return;
-                          Get.toNamed<void>(
-                            '/report/${widget.folderId}',
-                            arguments: {
-                              'images': [previewMedia.toJson()],
-                            },
-                          );
+                          // Avoid navigating while the bottom sheet is tearing down (iOS crash).
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            if (!mounted) return;
+                            Get.toNamed<void>(
+                              '/report/${widget.folderId}',
+                              arguments: {
+                                'images': [previewMedia.toJson()],
+                              },
+                            );
+                          });
                         },
                         icon: const Icon(
                           Icons.picture_as_pdf_outlined,
@@ -3588,6 +3597,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
       final shouldBakeStillForExport =
           exportToDevice && annotations.isNotEmpty && !isVideo;
       if (shouldBakeStillForExport) {
+        final safeDecodeEdge = (!kIsWeb && Platform.isIOS) ? 2800 : null;
         finalBytes = await MarkedMediaRenderer.renderPhotoWithAnnotations(
           baseImageBytes: rawBytes,
           annotations: annotations,
@@ -3595,6 +3605,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
           mirrorY: _flipV,
           rotation: _rotation,
           annotationSourceSize: annotationSourceSize,
+          maxDecodeEdge: safeDecodeEdge,
         );
         finalBytes = kIsWeb
             ? compressMarkedStillForStore(finalBytes)
@@ -3751,19 +3762,27 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
         }
       }
 
+      final savedDesktop = exportToDevice &&
+          !kIsWeb &&
+          exportedDirectToGallery &&
+          (Platform.isWindows || Platform.isLinux || Platform.isMacOS);
       _showMessage(
         exportToDevice
             ? (isVideo
-                ? (exportedDirectToGallery
-                    ? (Platform.isIOS
-                        ? 'Video saved to Photos'
-                        : 'Video downloaded to Gallery')
-                    : 'Share opened — save video to Files, Photos, or Downloads')
-                : (exportedDirectToGallery
-                    ? (Platform.isIOS
-                        ? 'Image saved to Photos'
-                        : 'Image downloaded to Gallery')
-                    : 'Share opened — save image to Files, Photos, or Downloads'))
+                ? (!exportedDirectToGallery
+                    ? 'Share opened — save video to Files, Photos, or Downloads'
+                    : savedDesktop
+                        ? 'Video saved — check Downloads/Hexa Cam'
+                        : (Platform.isIOS
+                            ? 'Video saved to Photos (Album: Hexa Cam)'
+                            : 'Video downloaded to Gallery'))
+                : (!exportedDirectToGallery
+                    ? 'Share opened — save image to Files, Photos, or Downloads'
+                    : savedDesktop
+                        ? 'Image saved — check Downloads/Hexa Cam'
+                        : (Platform.isIOS
+                            ? 'Image saved to Photos (Album: Hexa Cam)'
+                            : 'Image downloaded to Gallery')))
             : (isVideo
                 ? 'Saved video to ${_folderLabel(_displayFolderName())}'
                 : 'Saved image to ${_folderLabel(_displayFolderName())}'),
@@ -4894,13 +4913,26 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
     required double maxDistance,
   }) {
     int? closestIndex;
-    var closestDistance = maxDistance;
+    final useDisplay = _cameraPreviewDisplaySize.width > 0 &&
+        _cameraPreviewDisplaySize.height > 0;
+    var closestDistance = useDisplay ? 120.0 : maxDistance;
     for (var i = _annotations.length - 1; i >= 0; i--) {
-      final d = annotationLabelHitDistance(
-        point,
-        _annotations[i],
-        sourceSize: _lastSourceSize,
-      );
+      final d = useDisplay
+          ? annotationLabelHitDistancePreviewDisplay(
+              point,
+              _annotations[i],
+              sourceSize: _lastSourceSize,
+              displaySize: _cameraPreviewDisplaySize,
+              fit: _cameraPreviewFit,
+              mirrorX: _flipH || _mirror,
+              mirrorY: _flipV,
+              rotation: _rotation,
+            )
+          : annotationLabelHitDistance(
+              point,
+              _annotations[i],
+              sourceSize: _lastSourceSize,
+            );
       if (d < closestDistance) {
         closestDistance = d;
         closestIndex = i;

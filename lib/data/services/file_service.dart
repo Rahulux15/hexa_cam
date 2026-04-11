@@ -6,7 +6,8 @@ import 'package:gal/gal.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:share_plus/share_plus.dart';
+import 'package:share_plus/share_plus.dart'
+    show SharePlus, ShareParams, XFile, ShareResult, ShareResultStatus;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 import 'package:device_info_plus/device_info_plus.dart';
@@ -21,6 +22,59 @@ class FileService {
   static const _startupPermissionKey = 'storage_permissions_requested';
   static const _mediaAlbumName = 'Hexa Cam';
   static Uint8List? _reportLogoBytesCache;
+
+  static bool get _isDesktop =>
+      !kIsWeb &&
+      (Platform.isWindows || Platform.isLinux || Platform.isMacOS);
+
+  /// Windows/macOS/Linux: save into Downloads/Hexa Cam (or app documents fallback).
+  static Future<bool> _saveImageBytesToDesktopDownloads(
+    Uint8List bytes,
+    String filename,
+  ) async {
+    try {
+      final downloads = await getDownloadsDirectory();
+      final baseDir = downloads ?? await getApplicationDocumentsDirectory();
+      final folder = Directory(p.join(baseDir.path, 'Hexa Cam'));
+      await folder.create(recursive: true);
+      final safe = _safeFilename(filename, fallbackExtension: '.jpg');
+      final baseName = p.basenameWithoutExtension(safe);
+      final ext = p.extension(safe).isEmpty ? '.jpg' : p.extension(safe);
+      final unique =
+          '$baseName-${DateTime.now().millisecondsSinceEpoch}$ext';
+      final file = File(p.join(folder.path, unique));
+      await file.writeAsBytes(bytes, flush: true);
+      logDebug('FileService desktop image saved ${file.path}');
+      return true;
+    } catch (e) {
+      logDebug('FileService._saveImageBytesToDesktopDownloads: $e');
+      return false;
+    }
+  }
+
+  static Future<bool> _copyVideoFileToDesktopDownloads(
+    String videoPath,
+    String filename,
+  ) async {
+    try {
+      final downloads = await getDownloadsDirectory();
+      final baseDir = downloads ?? await getApplicationDocumentsDirectory();
+      final folder = Directory(p.join(baseDir.path, 'Hexa Cam'));
+      await folder.create(recursive: true);
+      final safe = _safeFilename(filename, fallbackExtension: '.mp4');
+      final baseName = p.basenameWithoutExtension(safe);
+      final ext = p.extension(safe).isEmpty ? '.mp4' : p.extension(safe);
+      final unique =
+          '$baseName-${DateTime.now().millisecondsSinceEpoch}$ext';
+      final dest = p.join(folder.path, unique);
+      await File(videoPath).copy(dest);
+      logDebug('FileService desktop video saved $dest');
+      return true;
+    } catch (e) {
+      logDebug('FileService._copyVideoFileToDesktopDownloads: $e');
+      return false;
+    }
+  }
 
   /// UUID v4 from package:uuid — collision risk is negligible for app-scale IDs.
   static String generateAssetId([String prefix = 'media']) =>
@@ -132,21 +186,19 @@ class FileService {
       return true;
     }
     if (Platform.isIOS) {
-      // Match Android: save into Photos when allowed; share sheet as fallback.
+      // Always try Gal first. Do not gate on hasAccess(toAlbum: true) — with
+      // Limited Photo Library it can stay false while saving new assets still works.
       try {
         await _ensureGalleryExportPermissions(isVideo: false);
-        if (!await Gal.hasAccess(toAlbum: true)) {
-          await Gal.requestAccess(toAlbum: true);
-        }
-        if (await Gal.hasAccess(toAlbum: true)) {
-          final name = _galAssetBaseName(filename);
-          await Gal.putImageBytes(
-            bytes,
-            name: name,
-          );
-          logDebug('FileService.saveToDevice iOS Photos (Gal) name=$name');
-          return true;
-        }
+        await Gal.requestAccess(toAlbum: true);
+        final name = _galAssetBaseName(filename);
+        await Gal.putImageBytes(
+          bytes,
+          name: name,
+          album: _mediaAlbumName,
+        );
+        logDebug('FileService.saveToDevice iOS Photos (Gal) name=$name');
+        return true;
       } catch (e) {
         logDebug('FileService.saveToDevice iOS Gal failed, using share: $e');
       }
@@ -159,6 +211,10 @@ class FileService {
       );
       logDebug('FileService.saveToDevice iOS share flow done');
       return false;
+    }
+    if (_isDesktop) {
+      final ok = await _saveImageBytesToDesktopDownloads(bytes, filename);
+      if (ok) return true;
     }
     final sanitized =
         filename.replaceAll(RegExp(r'[<>:"/\\|?*\x00-\x1F]'), '-').trim();
@@ -200,7 +256,9 @@ class FileService {
     );
   }
 
-  static Future<void> sharePdfToDevice(
+  /// Result reflects whether the user completed an action on the share sheet
+  /// (when the platform supports [ShareResult]).
+  static Future<ShareResult> sharePdfToDevice(
     Uint8List bytes,
     String filename, {
     Rect? sharePositionOrigin,
@@ -208,7 +266,7 @@ class FileService {
     if (kIsWeb) {
       final name = _safeFilename(filename, fallbackExtension: '.pdf');
       await downloadBytesWeb(bytes, name, mimeType: 'application/pdf');
-      return;
+      return const ShareResult('web', ShareResultStatus.success);
     }
     final tempDir = await getTemporaryDirectory();
     final safeName = _safeFilename(filename, fallbackExtension: '.pdf');
@@ -219,7 +277,7 @@ class FileService {
     final tempFile = File(tempPath);
     await tempFile.writeAsBytes(bytes, flush: true);
     try {
-      await SharePlus.instance.share(
+      return await SharePlus.instance.share(
         ShareParams(
           files: [XFile(tempFile.path, mimeType: 'application/pdf')],
           title: safeName,
@@ -228,7 +286,7 @@ class FileService {
       );
     } catch (_) {
       // iOS fallback for popover-origin failures.
-      await SharePlus.instance.share(
+      return await SharePlus.instance.share(
         ShareParams(
           files: [XFile(tempFile.path, mimeType: 'application/pdf')],
           title: safeName,
@@ -244,24 +302,32 @@ class FileService {
     String filename, {
     Rect? sharePositionOrigin,
   }) async {
+    final pathForIO = _localMediaPath(videoPath);
     logDebug(
-        'FileService.saveVideoToDevice start filename=$filename path=$videoPath');
+        'FileService.saveVideoToDevice start filename=$filename path=$pathForIO');
     if (kIsWeb) {
       logDebug('FileService.saveVideoToDevice skipped on web');
       return false;
     }
     if (Platform.isIOS) {
+      final path = pathForIO;
+      final source = File(path);
+      if (!await source.exists()) {
+        logDebug(
+            'FileService.saveVideoToDevice iOS file missing: $path (raw=$videoPath)');
+        await shareVideoToDevice(
+          path,
+          filename,
+          sharePositionOrigin: sharePositionOrigin,
+        );
+        return false;
+      }
       try {
         await _ensureGalleryExportPermissions(isVideo: true);
-        if (!await Gal.hasAccess(toAlbum: true)) {
-          await Gal.requestAccess(toAlbum: true);
-        }
-        if (await Gal.hasAccess(toAlbum: true)) {
-          await Gal.putVideo(videoPath);
-          logDebug(
-              'FileService.saveVideoToDevice iOS Photos (Gal) path=$videoPath');
-          return true;
-        }
+        await Gal.requestAccess(toAlbum: true);
+        await Gal.putVideo(path, album: _mediaAlbumName);
+        logDebug('FileService.saveVideoToDevice iOS Photos (Gal) path=$path');
+        return true;
       } catch (e) {
         logDebug(
             'FileService.saveVideoToDevice iOS Gal failed, using share: $e');
@@ -269,18 +335,22 @@ class FileService {
       logDebug(
           'FileService.saveVideoToDevice iOS share flow filename=$filename');
       await shareVideoToDevice(
-        videoPath,
+        path,
         filename,
         sharePositionOrigin: sharePositionOrigin,
       );
       logDebug('FileService.saveVideoToDevice iOS share flow done');
       return false;
     }
-    logDebug('FileService.saveVideoToDevice gallery write path=$videoPath');
+    if (_isDesktop) {
+      final ok = await _copyVideoFileToDesktopDownloads(pathForIO, filename);
+      if (ok) return true;
+    }
+    logDebug('FileService.saveVideoToDevice gallery write path=$pathForIO');
     try {
       await _ensureGalleryExportPermissions(isVideo: true);
       await Gal.putVideo(
-        videoPath,
+        pathForIO,
         album: _mediaAlbumName,
       );
       logDebug('FileService.saveVideoToDevice gallery write done');
@@ -288,7 +358,7 @@ class FileService {
     } catch (e) {
       logDebug('FileService.saveVideoToDevice gallery failed, using share: $e');
       await shareVideoToDevice(
-        videoPath,
+        pathForIO,
         filename,
         sharePositionOrigin: sharePositionOrigin,
       );
@@ -296,7 +366,7 @@ class FileService {
     }
   }
 
-  static Future<void> shareImageToDevice(
+  static Future<ShareResult> shareImageToDevice(
     Uint8List bytes,
     String filename, {
     Rect? sharePositionOrigin,
@@ -305,7 +375,7 @@ class FileService {
     if (kIsWeb) {
       final name = _safeFilename(filename, fallbackExtension: '.jpg');
       await downloadBytesWeb(bytes, name, mimeType: 'image/jpeg');
-      return;
+      return const ShareResult('web', ShareResultStatus.success);
     }
     final tempDir = await getTemporaryDirectory();
     final safeName = _safeFilename(filename, fallbackExtension: '.jpg');
@@ -317,7 +387,7 @@ class FileService {
     await tempFile.writeAsBytes(bytes, flush: true);
     try {
       logDebug('FileService.shareImageToDevice share anchored path=$tempPath');
-      await SharePlus.instance.share(
+      final r = await SharePlus.instance.share(
         ShareParams(
           files: [XFile(tempFile.path, mimeType: 'image/jpeg')],
           title: safeName,
@@ -325,26 +395,28 @@ class FileService {
         ),
       );
       logDebug('FileService.shareImageToDevice share anchored done');
+      return r;
     } catch (_) {
       // iOS fallback for popover-origin failures.
       logDebug('FileService.shareImageToDevice fallback share path=$tempPath');
-      await SharePlus.instance.share(
+      final r = await SharePlus.instance.share(
         ShareParams(
           files: [XFile(tempFile.path, mimeType: 'image/jpeg')],
           title: safeName,
         ),
       );
       logDebug('FileService.shareImageToDevice fallback share done');
+      return r;
     }
   }
 
-  static Future<void> shareVideoToDevice(
+  static Future<ShareResult> shareVideoToDevice(
     String videoPath,
     String filename, {
     Rect? sharePositionOrigin,
   }) async {
     if (kIsWeb) {
-      return;
+      return ShareResult.unavailable;
     }
     final safeName = _safeFilename(filename, fallbackExtension: '.mp4');
     final tempDir = await getTemporaryDirectory();
@@ -357,7 +429,7 @@ class FileService {
     try {
       logDebug(
           'FileService.shareVideoToDevice share anchored path=${shareFile.path}');
-      await SharePlus.instance.share(
+      final r = await SharePlus.instance.share(
         ShareParams(
           files: [XFile(shareFile.path, mimeType: 'video/mp4')],
           title: safeName,
@@ -365,17 +437,19 @@ class FileService {
         ),
       );
       logDebug('FileService.shareVideoToDevice share anchored done');
+      return r;
     } catch (_) {
       // iOS fallback for popover-origin failures.
       logDebug(
           'FileService.shareVideoToDevice fallback share path=${shareFile.path}');
-      await SharePlus.instance.share(
+      final r = await SharePlus.instance.share(
         ShareParams(
           files: [XFile(shareFile.path, mimeType: 'video/mp4')],
           title: safeName,
         ),
       );
       logDebug('FileService.shareVideoToDevice fallback share done');
+      return r;
     }
   }
 
@@ -658,6 +732,19 @@ class FileService {
   }
 
   static String _normalizePath(String path) => path.replaceAll('\\', '/');
+
+  /// Strip `file://` and fix path for native file APIs (incl. Windows `file:///C:/...`).
+  static String _localMediaPath(String path) {
+    final t = path.trim();
+    if (t.startsWith('file://')) {
+      try {
+        return Uri.parse(t).toFilePath();
+      } catch (_) {
+        return t.replaceFirst(RegExp(r'^file://'), '');
+      }
+    }
+    return t;
+  }
 }
 
 bool _statusOk(PermissionStatus s) =>
