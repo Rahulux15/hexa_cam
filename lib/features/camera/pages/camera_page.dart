@@ -27,6 +27,7 @@ import '../widgets/camera_measurement_grid_painter.dart';
 import '../../../utils/app_logger.dart';
 import '../../../utils/annotation_painter.dart';
 import '../../../utils/calibration_calculator.dart';
+import '../../../utils/coordinate_transformer.dart';
 import '../../../utils/image_bytes_codec.dart';
 import '../../../utils/marked_media_renderer.dart';
 import '../../../utils/measurement_calculator.dart';
@@ -3813,19 +3814,23 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
     );
   }
 
-  /// Maps a gesture [point] to source (sensor) coordinates.
+  /// Maps a gesture [point] from preview layout space to source coordinates.
   ///
-  /// Touches are handled inside the same [Transform] as the preview (rotate /
-  /// mirror). Flutter hit-testing already inverse-maps into this child's
-  /// coordinate system, which matches raw preview buffer space — do **not** apply
-  /// [CoordinateTransformer.screenToImage] here (that would double-invert and
-  /// break strokes, arrows, and erase hit targets when rotated or flipped).
+  /// The preview is visually transformed (rotate/mirror/flip), so gestures must
+  /// be inverse-transformed back to source space before hit-testing or drawing.
   HexaPoint _displayToSource(Offset point) {
     final sw = _lastSourceSize.width <= 0 ? 1.0 : _lastSourceSize.width;
     final sh = _lastSourceSize.height <= 0 ? 1.0 : _lastSourceSize.height;
+    final mapped = CoordinateTransformer.screenToImage(
+      point,
+      imageSize: Size(sw, sh),
+      mirrorX: _flipH || _mirror,
+      mirrorY: _flipV,
+      rotation: _rotation,
+    );
     return HexaPoint(
-      x: point.dx.clamp(0.0, sw),
-      y: point.dy.clamp(0.0, sh),
+      x: mapped.dx.clamp(0.0, sw).toDouble(),
+      y: mapped.dy.clamp(0.0, sh).toDouble(),
     );
   }
 
