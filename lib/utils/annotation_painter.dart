@@ -81,13 +81,14 @@ class AnnotationPainter extends CustomPainter {
       case AnnotationType.text:
         if (ann.text != null) {
           final textScale = sqrt(uiTextScale.clamp(0.8, 4.0));
-          final fontSize =
-              (10.0 + (strokeWidth * 0.9) + ((textScale - 1.0) * 6.0))
-                  .clamp(14.0, 92.0)
-                  .toDouble();
+          final fontSize = (ann.labelFontSize ??
+                  (10.0 + (strokeWidth * 0.9) + ((textScale - 1.0) * 6.0)))
+              .clamp(10.0, 180.0)
+              .toDouble();
           final anchor = points[0];
           final maxW = (canvasSize.width * 0.55).clamp(120.0, 820.0).toDouble();
-          final strokeW = (1.4 + (strokeWidth * 0.12)).clamp(1.4, 6.0).toDouble();
+          final strokeW =
+              (1.4 + (strokeWidth * 0.12)).clamp(1.4, 6.0).toDouble();
           final lum = ann.color.computeLuminance();
           final fillColor = lum > 0.52 ? const Color(0xFF121212) : Colors.white;
           final strokeColor =
@@ -146,8 +147,12 @@ class AnnotationPainter extends CustomPainter {
                 )
                 .toDouble();
           }
-          strokeTp.paint(canvas, Offset(left, top));
-          fillTp.paint(canvas, Offset(left, top));
+          final labelOffset = _sourceDeltaToDisplayDelta(
+            HexaPoint(x: ann.labelOffsetX, y: ann.labelOffsetY),
+          );
+          final labelPos = Offset(left, top) + labelOffset;
+          strokeTp.paint(canvas, labelPos);
+          fillTp.paint(canvas, labelPos);
         }
         break;
       case AnnotationType.arrow:
@@ -211,6 +216,11 @@ class AnnotationPainter extends CustomPainter {
         canvasSize,
         ann.color,
         ann.type,
+        ann.strokeWidth,
+        ann.labelFontSize,
+        _sourceDeltaToDisplayDelta(
+          HexaPoint(x: ann.labelOffsetX, y: ann.labelOffsetY),
+        ),
       );
     }
   }
@@ -231,6 +241,19 @@ class AnnotationPainter extends CustomPainter {
         offsetY + ((v.y - minY) * zoomedScale),
       );
     }).toList();
+  }
+
+  Offset _sourceDeltaToDisplayDelta(HexaPoint sourceDelta) {
+    _ensureTransformCache();
+    final transformed = _cachedTransform!;
+    final zoomedScale = _cachedScale!;
+    final origin = transformed.transform3(Vector3(0, 0, 1));
+    final shifted =
+        transformed.transform3(Vector3(sourceDelta.x, sourceDelta.y, 1));
+    return Offset(
+      (shifted.x - origin.x) * zoomedScale,
+      (shifted.y - origin.y) * zoomedScale,
+    );
   }
 
   void _ensureTransformCache() {
@@ -286,20 +309,35 @@ class AnnotationPainter extends CustomPainter {
     Size canvasSize,
     Color annotationColor,
     AnnotationType type,
+    double strokeWidth,
+    double? labelFontSize,
+    Offset labelOffset,
   ) {
     if (points.isEmpty) return;
     final textScale = sqrt(uiTextScale.clamp(0.8, 4.0));
-    final mFont = (12.0 + ((textScale - 1.0) * 8.0)).clamp(12.0, 44.0).toDouble();
-    final strokeW = (1.35 + ((textScale - 1.0) * 1.15)).clamp(1.35, 4.2).toDouble();
-
-    final lum = annotationColor.computeLuminance();
-    final fillColor = lum > 0.52 ? const Color(0xFF121212) : Colors.white;
-    final strokeColor = lum > 0.52 ? Colors.white : const Color(0xFF121212);
-
+    final targetFont = (labelFontSize ??
+            (10.0 + (strokeWidth * 1.1) + ((textScale - 1.0) * 8.0)))
+        .clamp(8.0, 160.0)
+        .toDouble();
+    final maxLabelWidth =
+        (canvasSize.width - (_labelEdgePad * 2) - 4.0).clamp(64.0, 2400.0);
     const baseStyle = TextStyle(
       fontWeight: FontWeight.w700,
       height: 1.25,
     );
+    final mFont = _fitSingleLineFontSize(
+      text: text,
+      baseStyle: baseStyle,
+      targetFont: targetFont,
+      minFont: 8.0,
+      maxWidth: maxLabelWidth,
+    );
+    final strokeW =
+        (1.35 + ((textScale - 1.0) * 1.15)).clamp(1.35, 4.2).toDouble();
+
+    final lum = annotationColor.computeLuminance();
+    final fillColor = lum > 0.52 ? const Color(0xFF121212) : Colors.white;
+    final strokeColor = lum > 0.52 ? Colors.white : const Color(0xFF121212);
 
     final strokePainter = TextPainter(
       text: TextSpan(
@@ -317,8 +355,7 @@ class AnnotationPainter extends CustomPainter {
       textDirection: TextDirection.ltr,
       textAlign: TextAlign.center,
       maxLines: 1,
-      ellipsis: '…',
-    )..layout(minWidth: 0, maxWidth: 220);
+    )..layout(minWidth: 0, maxWidth: maxLabelWidth);
 
     final fillPainter = TextPainter(
       text: TextSpan(
@@ -331,36 +368,65 @@ class AnnotationPainter extends CustomPainter {
       textDirection: TextDirection.ltr,
       textAlign: TextAlign.center,
       maxLines: 1,
-      ellipsis: '…',
-    )..layout(minWidth: 0, maxWidth: 220);
+    )..layout(minWidth: 0, maxWidth: maxLabelWidth);
 
     final labelWidth = strokePainter.width;
     final labelHeight = strokePainter.height;
-    final textOffset = _measurementLabelTopLeft(
+    final baseOffset = _measurementLabelTopLeft(
       type: type,
       points: points,
       canvasSize: canvasSize,
       labelWidth: labelWidth,
       labelHeight: labelHeight,
     );
-    strokePainter.paint(canvas, textOffset);
-    fillPainter.paint(canvas, textOffset);
+    final shiftedOffset = Offset(
+      (baseOffset.dx + labelOffset.dx)
+          .clamp(_labelEdgePad,
+              max(_labelEdgePad, canvasSize.width - labelWidth - _labelEdgePad))
+          .toDouble(),
+      (baseOffset.dy + labelOffset.dy)
+          .clamp(
+              _labelEdgePad,
+              max(_labelEdgePad,
+                  canvasSize.height - labelHeight - _labelEdgePad))
+          .toDouble(),
+    );
+    strokePainter.paint(canvas, shiftedOffset);
+    fillPainter.paint(canvas, shiftedOffset);
   }
 
   static const double _labelEdgePad = 8.0;
   static const double _labelShapeGap = 10.0;
 
-  double _labelPlacementScore(
-    Offset topLeft,
-    double w,
-    double h,
-    Size canvas,
-  ) {
-    final cx = topLeft.dx + w / 2;
-    final cy = topLeft.dy + h / 2;
-    final dx = (cx - canvas.width / 2).abs();
-    final dy = (cy - canvas.height / 2).abs();
-    return (canvas.width + canvas.height) / 2 - dx - dy;
+  double _fitSingleLineFontSize({
+    required String text,
+    required TextStyle baseStyle,
+    required double targetFont,
+    required double minFont,
+    required double maxWidth,
+  }) {
+    var font = targetFont;
+    final probe = TextPainter(
+      textDirection: TextDirection.ltr,
+      maxLines: 1,
+    );
+    for (var i = 0; i < 18; i++) {
+      probe.text = TextSpan(
+        text: text,
+        style: baseStyle.copyWith(fontSize: font),
+      );
+      probe.layout(minWidth: 0, maxWidth: double.infinity);
+      final measured = probe.width;
+      if (measured <= maxWidth || font <= minFont + 0.05) break;
+      final ratio = maxWidth / measured;
+      final next = max(minFont, font * ratio * 0.985);
+      if ((font - next).abs() < 0.1) {
+        font = max(minFont, font - 0.6);
+      } else {
+        font = next;
+      }
+    }
+    return font;
   }
 
   Offset _measurementLabelTopLeft({
@@ -436,13 +502,8 @@ class AnnotationPainter extends CustomPainter {
             return Offset(clampX(cx), clampY(cy));
           }
 
-          final o1 = side(1);
-          final o2 = side(-1);
-          final s1 =
-              _labelPlacementScore(o1, labelWidth, labelHeight, canvasSize);
-          final s2 =
-              _labelPlacementScore(o2, labelWidth, labelHeight, canvasSize);
-          return s1 >= s2 ? o1 : o2;
+          // Keep label side deterministic to avoid side-switch jumps.
+          return side(1);
         }
         break;
       case AnnotationType.singlePointer:

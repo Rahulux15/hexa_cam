@@ -26,6 +26,7 @@ import '../../data/services/database_service.dart';
 import '../../data/services/file_service.dart';
 import '../../data/services/video_export_service.dart';
 import '../../state/app_registry.dart';
+import '../../utils/marked_media_renderer.dart';
 import '../../utils/responsive.dart';
 import '../common/media_image.dart';
 import '../common/responsive_action.dart';
@@ -42,7 +43,8 @@ class ReportPage extends StatefulWidget {
 }
 
 class _ReportPageState extends State<ReportPage> {
-  final ReportController _reportController = Get.put(ReportController(), permanent: true);
+  final ReportController _reportController =
+      Get.put(ReportController(), permanent: true);
   final AsyncActionController _asyncActions =
       Get.put(AsyncActionController(), permanent: true);
   final _orgController = TextEditingController(text: 'Organization Name');
@@ -52,6 +54,14 @@ class _ReportPageState extends State<ReportPage> {
   final _locationController = TextEditingController();
   List<Map<String, dynamic>> _items = [];
   Timer? _progressToastDebounce;
+  final Map<String, Uint8List?> _pdfImageBytesCache = <String, Uint8List?>{};
+  final List<_QueuedExportAction> _exportQueue = <_QueuedExportAction>[];
+  _QueuedExportAction? _activeExport;
+  _QueuedExportAction? _lastFailedExport;
+  bool _exportCancelRequested = false;
+  bool _processingExportQueue = false;
+  String _activeExportStatus = '';
+  double _activeExportProgress = 0.0;
 
   @override
   void initState() {
@@ -71,8 +81,8 @@ class _ReportPageState extends State<ReportPage> {
       _phoneController.text = reportForm.phone;
       _locationController.text = reportForm.location;
     }
-    WidgetsBinding.instance
-        .addPostFrameCallback((_) => _hydrateReportFieldsFromPrefs(notify: true));
+    WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _hydrateReportFieldsFromPrefs(notify: true));
   }
 
   /// Fills empty report fields from login / settings prefs (name, email; optional user_phone / user_address).
@@ -97,6 +107,7 @@ class _ReportPageState extends State<ReportPage> {
   @override
   void dispose() {
     _progressToastDebounce?.cancel();
+    _exportQueue.clear();
     _orgController.dispose();
     _nameController.dispose();
     _emailController.dispose();
@@ -107,6 +118,25 @@ class _ReportPageState extends State<ReportPage> {
 
   List<ImageData> get _reportImages =>
       _items.map((item) => ImageData.fromJson(item)).toList();
+
+  String _pdfImageCacheKey(ImageData image) {
+    final annSig = image.annotations
+        .map(
+          (a) =>
+              '${a.id}:${a.type.name}:${a.strokeWidth}:${a.labelFontSize ?? 0}:${a.labelOffsetX}:${a.labelOffsetY}:${a.measurement ?? ''}:${a.points.length}',
+        )
+        .join('|');
+    return [
+      image.id,
+      image.mediaId ?? '',
+      image.thumbnailId ?? '',
+      image.imageUrl,
+      image.rotation?.toString() ?? '',
+      image.mirrored?.toString() ?? '',
+      image.isMarkingsBaked?.toString() ?? '',
+      annSig,
+    ].join('::');
+  }
 
   ImageData? get _primaryImage =>
       _reportImages.isEmpty ? null : _reportImages.first;
@@ -123,413 +153,525 @@ class _ReportPageState extends State<ReportPage> {
       body: Stack(
         children: [
           Container(
-        color: AppTheme.bgPrimary,
-        child: Column(
-          children: [
-            SafeArea(
-              bottom: false,
-              child: Container(
-                padding: EdgeInsets.fromLTRB(pad, 14, pad, 10),
-                decoration: const BoxDecoration(
-                  color: Color(0xFF141430),
-                  border:
-                      Border(bottom: BorderSide(color: AppTheme.borderColor)),
-                ),
-                child: Row(
-                  children: [
-                    _circleButton(
-                        icon: Icons.arrow_back_rounded,
-                        onTap: _goBackSafely),
-                    const Spacer(),
-                    Flexible(
-                      child: LayoutBuilder(
-                        builder: (context, constraints) {
-                          final compact = constraints.maxWidth < 320;
-                          final buttonWidth = compact
-                              ? constraints.maxWidth
-                              : (constraints.maxWidth - 12) / 2;
-                          if (compact) {
-                            return Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                SizedBox(
-                                  width: constraints.maxWidth,
-                                  child: ResponsiveActionButton(
-                                    actionKey: 'report_download',
-                                    asyncController: _asyncActions,
-                                    onPressed: _downloadReport,
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: const Color(0xFF232651),
-                                      shadowColor: Colors.transparent,
-                                      padding: EdgeInsets.zero,
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(18),
-                                      ),
-                                    ),
-                                    child: const Row(
-                                      mainAxisAlignment: MainAxisAlignment.center,
-                                      children: [
-                                        Icon(Icons.download_outlined, color: Colors.white),
-                                        SizedBox(width: 10),
-                                        Text(
-                                          'Download',
-                                          style: TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 16,
-                                            fontWeight: FontWeight.w500,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-                                SizedBox(
-                                  width: constraints.maxWidth,
-                                  child: ResponsiveActionButton(
-                                    actionKey: 'report_save',
-                                    asyncController: _asyncActions,
-                                    onPressed: _saveReport,
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: Colors.transparent,
-                                      shadowColor: Colors.transparent,
-                                      padding: EdgeInsets.zero,
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(18),
-                                      ),
-                                    ),
-                                    child: const Row(
-                                      mainAxisAlignment: MainAxisAlignment.center,
-                                      children: [
-                                        Icon(Icons.save_alt_outlined, color: Colors.white),
-                                        SizedBox(width: 10),
-                                        Text(
-                                          'Save',
-                                          style: TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 16,
-                                            fontWeight: FontWeight.w500,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            );
-                          }
-                          return Wrap(
-                            alignment: WrapAlignment.end,
-                            spacing: 12,
-                            runSpacing: 8,
-                            children: [
-                              SizedBox(
-                                width: buttonWidth.clamp(120.0, 190.0),
-                                child: ResponsiveActionButton(
-                                  actionKey: 'report_download',
-                                  asyncController: _asyncActions,
-                                  onPressed: _downloadReport,
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: const Color(0xFF232651),
-                                    shadowColor: Colors.transparent,
-                                    padding: EdgeInsets.zero,
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(18),
-                                    ),
-                                  ),
-                                  child: const Row(
-                                    mainAxisAlignment:
-                                        MainAxisAlignment.center,
-                                    children: [
-                                      Icon(Icons.download_outlined,
-                                          color: Colors.white),
-                                      SizedBox(width: 10),
-                                      Text(
-                                        'Download',
-                                        style: TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.w500,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                              SizedBox(
-                                width: buttonWidth.clamp(110.0, 160.0),
-                                child: ResponsiveActionButton(
-                                  actionKey: 'report_save',
-                                  asyncController: _asyncActions,
-                                  onPressed: _saveReport,
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: Colors.transparent,
-                                    shadowColor: Colors.transparent,
-                                    padding: EdgeInsets.zero,
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(18),
-                                    ),
-                                  ),
-                                  child: const Row(
-                                    mainAxisAlignment:
-                                        MainAxisAlignment.center,
-                                    children: [
-                                      Icon(Icons.save_alt_outlined,
-                                          color: Colors.white),
-                                      SizedBox(width: 10),
-                                      Text(
-                                        'Save',
-                                        style: TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.w500,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ],
-                          );
-                        },
-                      ),
+            color: AppTheme.bgPrimary,
+            child: Column(
+              children: [
+                SafeArea(
+                  bottom: false,
+                  child: Container(
+                    padding: EdgeInsets.fromLTRB(pad, 14, pad, 10),
+                    decoration: const BoxDecoration(
+                      color: Color(0xFF141430),
+                      border: Border(
+                          bottom: BorderSide(color: AppTheme.borderColor)),
                     ),
-                  ],
-                ),
-              ),
-            ),
-            Expanded(
-              child: SingleChildScrollView(
-                padding: EdgeInsets.fromLTRB(
-                  pad,
-                  26,
-                  pad,
-                  32 + MediaQuery.paddingOf(context).bottom,
-                ),
-                child: Center(
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(maxWidth: maxWidth),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                    child: Row(
                       children: [
-                        _sectionCard(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  const Icon(Icons.description_outlined,
-                                      color: Color(0xFF7472FF), size: 28),
-                                  const SizedBox(width: 12),
-                                  Text(
-                                    'Report Details',
-                                    style: TextStyle(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.w700,
-                                      fontSize: isTab ? 20 : 17,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              SizedBox(height: isTab ? 26 : 20),
-                              LayoutBuilder(
-                                builder: (context, constraints) {
-                                  final twoColumns = constraints.maxWidth > 640;
-                                  final fieldWidth = twoColumns
-                                      ? (constraints.maxWidth - 24) / 2
-                                      : constraints.maxWidth;
-                                  final fields = [
-                                    _FieldData(
-                                        'Organization Name',
-                                        _orgController,
-                                        Icons.apartment_rounded,
-                                        'Organization Name'),
-                                    _FieldData(
-                                        'Full Name',
-                                        _nameController,
-                                        Icons.person_outline_rounded,
-                                        'Enter your name'),
-                                    _FieldData(
-                                        'Email Address',
-                                        _emailController,
-                                        Icons.alternate_email_rounded,
-                                        'your.email@example.com'),
-                                    _FieldData(
-                                        'Phone Number',
-                                        _phoneController,
-                                        Icons.call_rounded,
-                                        'Enter your phone number'),
-                                    _FieldData(
-                                        'Location',
-                                        _locationController,
-                                        Icons.location_on_outlined,
-                                        'City, Country'),
-                                  ];
-                                  return Wrap(
-                                    spacing: 24,
-                                    runSpacing: 24,
-                                    children: fields
-                                        .map((field) => SizedBox(
-                                            width: fieldWidth,
-                                            child: _inputField(field)))
-                                        .toList(),
-                                  );
-                                },
-                              ),
-                            ],
-                          ),
-                        ),
-                        SizedBox(height: isTab ? 28 : 22),
-                        _sectionCard(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  const Icon(
-                                      Icons.settings_input_component_outlined,
-                                      color: Color(0xFF7472FF),
-                                      size: 26),
-                                  const SizedBox(width: 12),
-                                  Text(
-                                    'Camera Settings',
-                                    style: TextStyle(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.w700,
-                                      fontSize: isTab ? 20 : 17,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              SizedBox(height: isTab ? 24 : 20),
-                              Wrap(
-                                spacing: 16,
-                                runSpacing: 16,
-                                children: [
-                                  _MetricCard(
-                                      label: 'Exposure',
-                                      value:
-                                          '${(image?.cameraSettings.exposure ?? 100).round()}%'),
-                                  _MetricCard(
-                                      label: 'ISO',
-                                      value:
-                                          '${(image?.cameraSettings.iso ?? 400).round()}'),
-                                  _MetricCard(
-                                      label: 'Temperature',
-                                      value:
-                                          '${(image?.cameraSettings.temperature ?? 6500).round()}K'),
-                                  _MetricCard(
-                                      label: 'Tint',
-                                      value:
-                                          '${(image?.cameraSettings.tint ?? 0).round()}'),
-                                  _MetricCard(
-                                      label: 'Objective',
-                                      value: image?.lens ?? '4X',
-                                      highlight: true),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-                        SizedBox(height: isTab ? 28 : 22),
-                        if (image != null)
-                          _sectionCard(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'Marked Image',
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: isTab ? 20 : 17,
-                                  ),
-                                ),
-                                const SizedBox(height: 18),
-                                ClipRRect(
-                                  borderRadius: BorderRadius.circular(18),
-                                  child: Container(
-                                    width: double.infinity,
-                                    constraints: BoxConstraints(
-                                        minHeight: isTab ? 360 : 280),
-                                    color: const Color(0xFF1D284D),
-                                    child: _buildPreviewImage(image),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        if (image != null) SizedBox(height: isTab ? 28 : 22),
-                        _sectionCard(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Summary',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: isTab ? 20 : 17,
-                                ),
-                              ),
-                              SizedBox(height: isTab ? 24 : 20),
-                              Wrap(
-                                spacing: 56,
-                                runSpacing: 18,
-                                children: [
-                                  _summaryMetric('Total Annotations',
-                                      '${annotations.length}'),
-                                  _summaryMetric(
-                                      'Measurement Mode',
-                                      annotations.any((annotation) =>
-                                              (annotation.measurement ?? '')
-                                                  .isNotEmpty)
-                                          ? 'ON'
-                                          : 'OFF'),
-                                ],
-                              ),
-                              if (annotations.isNotEmpty) ...[
-                                SizedBox(height: isTab ? 24 : 20),
-                                const Divider(color: AppTheme.borderColor),
-                                SizedBox(height: isTab ? 18 : 14),
-                                ...annotations.asMap().entries.map(
-                                      (entry) => Padding(
-                                        padding:
-                                            const EdgeInsets.only(bottom: 12),
-                                        child: _annotationRow(
-                                            entry.key + 1, entry.value),
+                        _circleButton(
+                            icon: Icons.arrow_back_rounded,
+                            onTap: _goBackSafely),
+                        const Spacer(),
+                        Flexible(
+                          child: LayoutBuilder(
+                            builder: (context, constraints) {
+                              final compact = constraints.maxWidth < 320;
+                              final buttonWidth = compact
+                                  ? constraints.maxWidth
+                                  : (constraints.maxWidth - 12) / 2;
+                              if (compact) {
+                                return Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
+                                  children: [
+                                    SizedBox(
+                                      width: constraints.maxWidth,
+                                      child: ResponsiveActionButton(
+                                        actionKey: 'report_download',
+                                        asyncController: _asyncActions,
+                                        onPressed: _downloadReport,
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor:
+                                              const Color(0xFF232651),
+                                          shadowColor: Colors.transparent,
+                                          padding: EdgeInsets.zero,
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius:
+                                                BorderRadius.circular(18),
+                                          ),
+                                        ),
+                                        child: const Row(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.center,
+                                          children: [
+                                            Icon(Icons.download_outlined,
+                                                color: Colors.white),
+                                            SizedBox(width: 10),
+                                            Text(
+                                              'Download',
+                                              style: TextStyle(
+                                                color: Colors.white,
+                                                fontSize: 16,
+                                                fontWeight: FontWeight.w500,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
                                       ),
                                     ),
-                              ],
-                              if (annotations.isEmpty &&
-                                  image != null &&
-                                  image.isMarkingsBaked == true) ...[
-                                SizedBox(height: isTab ? 20 : 16),
-                                Text(
-                                  'Markings are embedded in the marked image above '
-                                  '(saved as one raster). There is no separate line-by-line list for this capture.',
-                                  style: const TextStyle(
-                                    color: Color(0xFFAFC0E4),
-                                    height: 1.4,
-                                    fontSize: 13,
+                                    const SizedBox(height: 8),
+                                    SizedBox(
+                                      width: constraints.maxWidth,
+                                      child: ResponsiveActionButton(
+                                        actionKey: 'report_save',
+                                        asyncController: _asyncActions,
+                                        onPressed: _saveReport,
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: Colors.transparent,
+                                          shadowColor: Colors.transparent,
+                                          padding: EdgeInsets.zero,
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius:
+                                                BorderRadius.circular(18),
+                                          ),
+                                        ),
+                                        child: const Row(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.center,
+                                          children: [
+                                            Icon(Icons.save_alt_outlined,
+                                                color: Colors.white),
+                                            SizedBox(width: 10),
+                                            Text(
+                                              'Save',
+                                              style: TextStyle(
+                                                color: Colors.white,
+                                                fontSize: 16,
+                                                fontWeight: FontWeight.w500,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                );
+                              }
+                              return Wrap(
+                                alignment: WrapAlignment.end,
+                                spacing: 12,
+                                runSpacing: 8,
+                                children: [
+                                  SizedBox(
+                                    width: buttonWidth.clamp(120.0, 190.0),
+                                    child: ResponsiveActionButton(
+                                      actionKey: 'report_download',
+                                      asyncController: _asyncActions,
+                                  onPressed: _downloadReport,
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor:
+                                            const Color(0xFF232651),
+                                        shadowColor: Colors.transparent,
+                                        padding: EdgeInsets.zero,
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(18),
+                                        ),
+                                      ),
+                                      child: const Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.center,
+                                        children: [
+                                          Icon(Icons.download_outlined,
+                                              color: Colors.white),
+                                          SizedBox(width: 10),
+                                          Text(
+                                            'Download',
+                                            style: TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 16,
+                                              fontWeight: FontWeight.w500,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
                                   ),
-                                ),
-                              ],
-                            ],
+                                  SizedBox(
+                                    width: buttonWidth.clamp(110.0, 160.0),
+                                    child: ResponsiveActionButton(
+                                      actionKey: 'report_save',
+                                      asyncController: _asyncActions,
+                                  onPressed: _saveReport,
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: Colors.transparent,
+                                        shadowColor: Colors.transparent,
+                                        padding: EdgeInsets.zero,
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(18),
+                                        ),
+                                      ),
+                                      child: const Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.center,
+                                        children: [
+                                          Icon(Icons.save_alt_outlined,
+                                              color: Colors.white),
+                                          SizedBox(width: 10),
+                                          Text(
+                                            'Save',
+                                            style: TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 16,
+                                              fontWeight: FontWeight.w500,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              );
+                            },
                           ),
                         ),
-                        SizedBox(height: isTab ? 30 : 24),
-                        _footerBrand(),
                       ],
                     ),
                   ),
                 ),
-              ),
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: EdgeInsets.fromLTRB(
+                      pad,
+                      26,
+                      pad,
+                      32 + MediaQuery.paddingOf(context).bottom,
+                    ),
+                    child: Center(
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(maxWidth: maxWidth),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _sectionCard(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      const Icon(Icons.description_outlined,
+                                          color: Color(0xFF7472FF), size: 28),
+                                      const SizedBox(width: 12),
+                                      Text(
+                                        'Report Details',
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.w700,
+                                          fontSize: isTab ? 20 : 17,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  SizedBox(height: isTab ? 26 : 20),
+                                  LayoutBuilder(
+                                    builder: (context, constraints) {
+                                      final twoColumns =
+                                          constraints.maxWidth > 640;
+                                      final fieldWidth = twoColumns
+                                          ? (constraints.maxWidth - 24) / 2
+                                          : constraints.maxWidth;
+                                      final fields = [
+                                        _FieldData(
+                                            'Organization Name',
+                                            _orgController,
+                                            Icons.apartment_rounded,
+                                            'Organization Name'),
+                                        _FieldData(
+                                            'Full Name',
+                                            _nameController,
+                                            Icons.person_outline_rounded,
+                                            'Enter your name'),
+                                        _FieldData(
+                                            'Email Address',
+                                            _emailController,
+                                            Icons.alternate_email_rounded,
+                                            'your.email@example.com'),
+                                        _FieldData(
+                                            'Phone Number',
+                                            _phoneController,
+                                            Icons.call_rounded,
+                                            'Enter your phone number'),
+                                        _FieldData(
+                                            'Location',
+                                            _locationController,
+                                            Icons.location_on_outlined,
+                                            'City, Country'),
+                                      ];
+                                      return Wrap(
+                                        spacing: 24,
+                                        runSpacing: 24,
+                                        children: fields
+                                            .map((field) => SizedBox(
+                                                width: fieldWidth,
+                                                child: _inputField(field)))
+                                            .toList(),
+                                      );
+                                    },
+                                  ),
+                                ],
+                              ),
+                            ),
+                            SizedBox(height: isTab ? 28 : 22),
+                            _sectionCard(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      const Icon(
+                                          Icons
+                                              .settings_input_component_outlined,
+                                          color: Color(0xFF7472FF),
+                                          size: 26),
+                                      const SizedBox(width: 12),
+                                      Text(
+                                        'Camera Settings',
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.w700,
+                                          fontSize: isTab ? 20 : 17,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  SizedBox(height: isTab ? 24 : 20),
+                                  Wrap(
+                                    spacing: 16,
+                                    runSpacing: 16,
+                                    children: [
+                                      _MetricCard(
+                                          label: 'Exposure',
+                                          value:
+                                              '${(image?.cameraSettings.exposure ?? 100).round()}%'),
+                                      _MetricCard(
+                                          label: 'ISO',
+                                          value:
+                                              '${(image?.cameraSettings.iso ?? 400).round()}'),
+                                      _MetricCard(
+                                          label: 'Temperature',
+                                          value:
+                                              '${(image?.cameraSettings.temperature ?? 6500).round()}K'),
+                                      _MetricCard(
+                                          label: 'Tint',
+                                          value:
+                                              '${(image?.cameraSettings.tint ?? 0).round()}'),
+                                      _MetricCard(
+                                          label: 'Objective',
+                                          value: image?.lens ?? '4X',
+                                          highlight: true),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                            SizedBox(height: isTab ? 28 : 22),
+                            if (image != null)
+                              _sectionCard(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Marked Image',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: isTab ? 20 : 17,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 18),
+                                    ClipRRect(
+                                      borderRadius: BorderRadius.circular(18),
+                                      child: Container(
+                                        width: double.infinity,
+                                        constraints: BoxConstraints(
+                                            minHeight: isTab ? 360 : 280),
+                                        color: const Color(0xFF1D284D),
+                                        child: _buildPreviewImage(image),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            if (image != null)
+                              SizedBox(height: isTab ? 28 : 22),
+                            _sectionCard(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Summary',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: isTab ? 20 : 17,
+                                    ),
+                                  ),
+                                  SizedBox(height: isTab ? 24 : 20),
+                                  Wrap(
+                                    spacing: 56,
+                                    runSpacing: 18,
+                                    children: [
+                                      _summaryMetric('Total Annotations',
+                                          '${annotations.length}'),
+                                      _summaryMetric(
+                                          'Measurement Mode',
+                                          annotations.any((annotation) =>
+                                                  (annotation.measurement ?? '')
+                                                      .isNotEmpty)
+                                              ? 'ON'
+                                              : 'OFF'),
+                                    ],
+                                  ),
+                                  if (annotations.isNotEmpty) ...[
+                                    SizedBox(height: isTab ? 24 : 20),
+                                    const Divider(color: AppTheme.borderColor),
+                                    SizedBox(height: isTab ? 18 : 14),
+                                    ...annotations.asMap().entries.map(
+                                          (entry) => Padding(
+                                            padding: const EdgeInsets.only(
+                                                bottom: 12),
+                                            child: _annotationRow(
+                                                entry.key + 1, entry.value),
+                                          ),
+                                        ),
+                                  ],
+                                  if (annotations.isEmpty &&
+                                      image != null &&
+                                      image.isMarkingsBaked == true) ...[
+                                    SizedBox(height: isTab ? 20 : 16),
+                                    Text(
+                                      'Markings are embedded in the marked image above '
+                                      '(saved as one raster). There is no separate line-by-line list for this capture.',
+                                      style: const TextStyle(
+                                        color: Color(0xFFAFC0E4),
+                                        height: 1.4,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
+                            SizedBox(height: isTab ? 30 : 24),
+                            _footerBrand(),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
           ),
+          if (_activeExport != null || _exportQueue.isNotEmpty)
+            _buildExportQueueOverlay(context),
         ],
+      ),
+    );
+  }
+
+  Widget _buildExportQueueOverlay(BuildContext context) {
+    final queuedCount = _exportQueue.length;
+    final active = _activeExport;
+    final canCancel = active != null && !_exportCancelRequested;
+    final canRetry = _lastFailedExport != null && active == null;
+    return Positioned(
+      left: 14,
+      right: 14,
+      bottom: 14 + MediaQuery.paddingOf(context).bottom,
+      child: Material(
+        color: const Color(0xE61A1D38),
+        borderRadius: BorderRadius.circular(14),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.sync_rounded,
+                      color: Colors.white70, size: 16),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      active == null
+                          ? 'Export queue ready'
+                          : '${active.label} in progress',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                  if (queuedCount > 0)
+                    Text(
+                      '$queuedCount queued',
+                      style:
+                          const TextStyle(color: Colors.white70, fontSize: 11),
+                    ),
+                ],
+              ),
+              if (active != null) ...[
+                const SizedBox(height: 8),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(999),
+                  child: LinearProgressIndicator(
+                    value: _activeExportProgress <= 0
+                        ? null
+                        : _activeExportProgress.clamp(0.0, 1.0),
+                    minHeight: 4,
+                    backgroundColor: Colors.white12,
+                    valueColor: const AlwaysStoppedAnimation<Color>(
+                        AppTheme.primaryLight),
+                  ),
+                ),
+                if (_activeExportStatus.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    _activeExportStatus,
+                    style: const TextStyle(color: Colors.white70, fontSize: 11),
+                  ),
+                ],
+              ],
+              if (canCancel || canRetry || queuedCount > 0) ...[
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 6,
+                  children: [
+                    if (canCancel)
+                      TextButton(
+                        onPressed: _requestCancelActiveExport,
+                        child: const Text('Cancel current'),
+                      ),
+                    if (canRetry)
+                      TextButton(
+                        onPressed: _retryLastFailedExport,
+                        child: const Text('Retry failed'),
+                      ),
+                    if (queuedCount > 0 && active == null)
+                      TextButton(
+                        onPressed: _processExportQueue,
+                        child: const Text('Run queue'),
+                      ),
+                  ],
+                ),
+              ],
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -537,17 +679,28 @@ class _ReportPageState extends State<ReportPage> {
   Widget _buildPreviewImage(ImageData image) {
     final previewMediaId = image.type == MediaType.video
         ? ((image.thumbnailId?.isNotEmpty == true)
-              ? image.thumbnailId
-              : image.mediaId)
+            ? image.thumbnailId
+            : image.mediaId)
         : image.mediaId;
+    final hasSeparateVideoThumb = image.type == MediaType.video &&
+        image.thumbnailId != null &&
+        image.thumbnailId!.isNotEmpty &&
+        image.thumbnailId != image.mediaId;
+    final videoNeedsOverlay = image.type == MediaType.video &&
+        image.annotations.isNotEmpty &&
+        !hasSeparateVideoThumb;
+
     return MediaImage(
       source: image.imageUrl,
       mediaId: previewMediaId,
-      // Video thumbnails are prepared in capture/viewer flows; reburning here
-      // causes doubled overlays in mirror/flip scenarios.
-      annotations: image.type == MediaType.video ? const [] : image.annotations,
+      // For videos, reburn only when there is no dedicated thumbnail asset.
+      // Dedicated video thumbnails are generated in capture/viewer flows and
+      // may already include markings.
+      annotations: videoNeedsOverlay
+          ? image.annotations
+          : (image.type == MediaType.video ? const [] : image.annotations),
       burnAnnotationsIntoPreview: image.type == MediaType.video
-          ? false
+          ? videoNeedsOverlay
           : (image.annotations.isNotEmpty && image.isMarkingsBaked != true),
       mirrorX: image.mirrored ?? false,
       rotation: image.rotation ?? 0,
@@ -752,15 +905,91 @@ class _ReportPageState extends State<ReportPage> {
     );
   }
 
+  Future<void> _enqueueExportAction(_QueuedExportAction action) async {
+    if (_activeExport != null) {
+      _exportQueue.add(action);
+      if (mounted) setState(() {});
+      _showMessage('${action.label} queued', AppTheme.success);
+      return;
+    }
+    _exportQueue.add(action);
+    if (mounted) setState(() {});
+    await _processExportQueue();
+  }
+
+  Future<void> _processExportQueue() async {
+    if (_processingExportQueue) return;
+    _processingExportQueue = true;
+    try {
+      while (_exportQueue.isNotEmpty) {
+        final action = _exportQueue.removeAt(0);
+        _activeExport = action;
+        _activeExportStatus = 'Preparing ${action.label.toLowerCase()}';
+        _activeExportProgress = 0.0;
+        _exportCancelRequested = false;
+        if (mounted) setState(() {});
+        try {
+          await _runExportAction(action);
+          _lastFailedExport = null;
+        } on _ExportCancelled {
+          _showMessage('${action.label} cancelled', AppTheme.warning);
+        } catch (_) {
+          _lastFailedExport = action;
+          _showMessage(
+              '${action.label} failed. You can retry.', AppTheme.danger);
+        } finally {
+          _activeExport = null;
+          _activeExportStatus = '';
+          _activeExportProgress = 0.0;
+          _exportCancelRequested = false;
+          if (mounted) setState(() {});
+        }
+      }
+    } finally {
+      _processingExportQueue = false;
+      if (mounted) setState(() {});
+    }
+  }
+
+  Future<void> _runExportAction(_QueuedExportAction action) async {
+    _throwIfExportCancelled();
+    if (action == _QueuedExportAction.download) {
+      await _downloadReportNow();
+    } else {
+      await _saveReportNow();
+    }
+  }
+
+  void _requestCancelActiveExport() {
+    _exportCancelRequested = true;
+    _activeExportStatus = 'Cancelling current export...';
+    if (mounted) setState(() {});
+  }
+
+  void _retryLastFailedExport() {
+    final failed = _lastFailedExport;
+    if (failed == null) return;
+    _lastFailedExport = null;
+    _exportQueue.insert(0, failed);
+    if (mounted) setState(() {});
+    unawaited(_processExportQueue());
+  }
+
+  void _throwIfExportCancelled() {
+    if (_exportCancelRequested) {
+      throw const _ExportCancelled();
+    }
+  }
+
   Future<_ReportArtifacts> _buildReportArtifacts() async {
+    _throwIfExportCancelled();
     await _hydrateReportFieldsFromPrefs();
     final reportImages = _reportImages;
-    final imageBytes = <Uint8List?>[];
-    for (final image in reportImages) {
-      imageBytes.add(await _collectPdfImageBytes(image));
-      // Let the UI frame between heavy steps (annotation render + isolate optimize).
-      await Future<void>.delayed(Duration.zero);
-    }
+    _throwIfExportCancelled();
+    final imageBytes = await Future.wait<Uint8List?>(
+      reportImages.map(_collectPdfImageBytes),
+    );
+    _throwIfExportCancelled();
     final logoBytes = await _loadReportLogoBytes();
     final pdfFonts = await _loadReportPdfFonts();
     final fonts = pdfFonts;
@@ -771,8 +1000,8 @@ class _ReportPageState extends State<ReportPage> {
     final installId = await InstallIdService.getOrCreateId();
     Folder? folder;
     try {
-      folder = foldersController.folders
-          .firstWhere((f) => f.id == widget.folderId);
+      folder =
+          foldersController.folders.firstWhere((f) => f.id == widget.folderId);
     } catch (_) {
       folder = null;
     }
@@ -782,11 +1011,9 @@ class _ReportPageState extends State<ReportPage> {
       'App version: $appVer',
       'Non-secret install ID: $installId',
       'Report generated (UTC): ${DateTime.now().toUtc().toIso8601String()}',
-      if (folder != null &&
-          (folder.inspectionSiteId?.isNotEmpty ?? false))
+      if (folder != null && (folder.inspectionSiteId?.isNotEmpty ?? false))
         'Inspection site / asset: ${folder.inspectionSiteId}',
-      if (folder != null &&
-          (folder.inspectionOutcome?.isNotEmpty ?? false))
+      if (folder != null && (folder.inspectionOutcome?.isNotEmpty ?? false))
         'Inspection outcome: ${folder.inspectionOutcome}',
       if (folder != null && (folder.inspectionNotes?.isNotEmpty ?? false))
         'Inspection notes: ${folder.inspectionNotes}',
@@ -795,7 +1022,8 @@ class _ReportPageState extends State<ReportPage> {
       final shot = reportImages[i];
       final lens = shot.lens;
       final ts = shot.timestamp;
-      final cal = lens == null ? null : calibrationController.calibrations[lens];
+      final cal =
+          lens == null ? null : calibrationController.calibrations[lens];
       provenanceLines.add(
         'Media ${i + 1}: lens=${lens ?? '-'}, capture=$ts, '
         'calibration saved=${cal?.createdAt ?? 'n/a'}',
@@ -822,7 +1050,8 @@ class _ReportPageState extends State<ReportPage> {
       'fullName': _nameController.text.isEmpty ? '-' : _nameController.text,
       'email': _emailController.text.isEmpty ? '-' : _emailController.text,
       'phone': _phoneController.text.isEmpty ? '-' : _phoneController.text,
-      'location': _locationController.text.isEmpty ? '-' : _locationController.text,
+      'location':
+          _locationController.text.isEmpty ? '-' : _locationController.text,
       'date': DateTime.now().toIso8601String(),
       'reportDownloadStamp': _formatReportDownloadStamp(DateTime.now()),
       'logoBytes': logoBytes,
@@ -833,18 +1062,22 @@ class _ReportPageState extends State<ReportPage> {
               ? 100
               : reportImages.first.cameraSettings.exposure)
           .round(),
-      'primaryIso': (reportImages.isEmpty ? 400 : reportImages.first.cameraSettings.iso)
-          .round(),
+      'primaryIso':
+          (reportImages.isEmpty ? 400 : reportImages.first.cameraSettings.iso)
+              .round(),
       'primaryTemperature': (reportImages.isEmpty
               ? 6500
               : reportImages.first.cameraSettings.temperature)
           .round(),
-      'primaryTint': (reportImages.isEmpty ? 0 : reportImages.first.cameraSettings.tint)
-          .round(),
-      'entries': List<Map<String, dynamic>>.generate(reportImages.length, (index) {
+      'primaryTint':
+          (reportImages.isEmpty ? 0 : reportImages.first.cameraSettings.tint)
+              .round(),
+      'entries':
+          List<Map<String, dynamic>>.generate(reportImages.length, (index) {
         final image = reportImages[index];
         return {
-          'title': reportImages.length > 1 ? 'Media ${index + 1}' : 'Marked Image',
+          'title':
+              reportImages.length > 1 ? 'Media ${index + 1}' : 'Marked Image',
           'imageBytes': imageBytes[index],
           'imageAspect': _imageAspectFromBytes(imageBytes[index]),
           'annotations': image.annotations
@@ -873,7 +1106,8 @@ class _ReportPageState extends State<ReportPage> {
 
   Future<({Uint8List regular, Uint8List bold})?> _loadReportPdfFonts() async {
     try {
-      final regular = await rootBundle.load('assets/fonts/NotoSans-Regular.ttf');
+      final regular =
+          await rootBundle.load('assets/fonts/NotoSans-Regular.ttf');
       final bold = await rootBundle.load('assets/fonts/NotoSans-Bold.ttf');
       final r = regular.buffer.asUint8List();
       final b = bold.buffer.asUint8List();
@@ -920,9 +1154,15 @@ class _ReportPageState extends State<ReportPage> {
   }
 
   Future<void> _downloadReport() async {
+    await _enqueueExportAction(_QueuedExportAction.download);
+  }
+
+  Future<void> _downloadReportNow() async {
     if (!_validateForm()) return;
     try {
+      _throwIfExportCancelled();
       final artifacts = await _buildReportArtifacts();
+      _throwIfExportCancelled();
       final bytes = artifacts.pdfBytes;
       final filename = 'report-${DateTime.now().millisecondsSinceEpoch}.pdf';
       final ok = await _reportController.downloadReport(
@@ -934,6 +1174,7 @@ class _ReportPageState extends State<ReportPage> {
         showMessage: _showMessage,
         onProgress: _showProgress,
       );
+      _throwIfExportCancelled();
       if (!ok) return;
 
       final assetId = FileService.generateAssetId('report');
@@ -964,6 +1205,7 @@ class _ReportPageState extends State<ReportPage> {
         sourceImages: _items,
       );
       await foldersController.addReport(widget.folderId, report);
+      _throwIfExportCancelled();
       if (!mounted) return;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
@@ -976,6 +1218,11 @@ class _ReportPageState extends State<ReportPage> {
 
   Future<Uint8List?> _collectPdfImageBytes(ImageData? image) async {
     if (image == null) return null;
+    _throwIfExportCancelled();
+    final cacheKey = _pdfImageCacheKey(image);
+    if (_pdfImageBytesCache.containsKey(cacheKey)) {
+      return _pdfImageBytesCache[cacheKey];
+    }
     try {
       final assetCandidates = <String>[
         // Video report previews should use still thumbnails first.
@@ -990,21 +1237,52 @@ class _ReportPageState extends State<ReportPage> {
           image.thumbnailId!,
       ];
       for (final assetId in assetCandidates) {
+        _throwIfExportCancelled();
         final bytes = await MediaDatabase.getAsset(assetId);
         if (bytes == null || bytes.isEmpty) continue;
-        // Video path: use thumbnail as-is. It may already include burned marks
-        // from capture/viewer and reburning causes duplicate overlays.
         if (image.type == MediaType.video) {
-          return await _optimizePdfImageBytesAsync(bytes);
+          final hasSeparateThumb = image.thumbnailId != null &&
+              image.thumbnailId!.isNotEmpty &&
+              image.thumbnailId != image.mediaId;
+          final usingThumb = image.thumbnailId != null &&
+              image.thumbnailId!.isNotEmpty &&
+              assetId == image.thumbnailId;
+          final shouldOverlay = image.annotations.isNotEmpty &&
+              (!hasSeparateThumb || !usingThumb);
+          if (!shouldOverlay) {
+            final out = await _optimizePdfImageBytesAsync(bytes);
+            _pdfImageBytesCache[cacheKey] = out;
+            return out;
+          }
+          final prepared = await MarkedMediaRenderer.renderPhotoWithAnnotations(
+            baseImageBytes: bytes,
+            annotations: image.annotations,
+            mirrorX: image.mirrored ?? false,
+            mirrorY: false,
+            rotation: image.rotation ?? 0,
+            annotationSourceSize: (image.sourceWidth != null &&
+                    image.sourceHeight != null &&
+                    image.sourceWidth! > 0 &&
+                    image.sourceHeight! > 0)
+                ? Size(image.sourceWidth!, image.sourceHeight!)
+                : null,
+          );
+          final out = await _optimizePdfImageBytesAsync(prepared);
+          _pdfImageBytesCache[cacheKey] = out;
+          return out;
         }
         if (image.isMarkingsBaked == true) {
-          return await _optimizePdfImageBytesAsync(bytes);
+          final out = await _optimizePdfImageBytesAsync(bytes);
+          _pdfImageBytesCache[cacheKey] = out;
+          return out;
         }
         final prepared = await _reportController.prepareMediaBytes(
           image: image,
           baseBytes: bytes,
         );
-        return await _optimizePdfImageBytesAsync(prepared);
+        final out = await _optimizePdfImageBytesAsync(prepared);
+        _pdfImageBytesCache[cacheKey] = out;
+        return out;
       }
       final source = image.imageUrl;
       if (kIsWeb && source.isNotEmpty) {
@@ -1015,7 +1293,9 @@ class _ReportPageState extends State<ReportPage> {
               image: image,
               baseBytes: bytes,
             );
-            return await _optimizePdfImageBytesAsync(prepared);
+            final out = await _optimizePdfImageBytesAsync(prepared);
+            _pdfImageBytesCache[cacheKey] = out;
+            return out;
           }
         } catch (_) {}
         if (source.startsWith('data:image/')) {
@@ -1029,7 +1309,9 @@ class _ReportPageState extends State<ReportPage> {
                   image: image,
                   baseBytes: bytes,
                 );
-                return await _optimizePdfImageBytesAsync(prepared);
+                final out = await _optimizePdfImageBytesAsync(prepared);
+                _pdfImageBytesCache[cacheKey] = out;
+                return out;
               }
             } catch (_) {}
           }
@@ -1046,7 +1328,9 @@ class _ReportPageState extends State<ReportPage> {
               image: image,
               baseBytes: thumb,
             );
-            return await _optimizePdfImageBytesAsync(prepared);
+            final out = await _optimizePdfImageBytesAsync(prepared);
+            _pdfImageBytesCache[cacheKey] = out;
+            return out;
           }
         }
         final bytes = await FileService.readBytes(filePath);
@@ -1054,7 +1338,9 @@ class _ReportPageState extends State<ReportPage> {
           image: image,
           baseBytes: bytes,
         );
-        return await _optimizePdfImageBytesAsync(prepared);
+        final out = await _optimizePdfImageBytesAsync(prepared);
+        _pdfImageBytesCache[cacheKey] = out;
+        return out;
       }
       if (!kIsWeb &&
           source.isNotEmpty &&
@@ -1070,7 +1356,9 @@ class _ReportPageState extends State<ReportPage> {
               image: image,
               baseBytes: thumb,
             );
-            return await _optimizePdfImageBytesAsync(prepared);
+            final out = await _optimizePdfImageBytesAsync(prepared);
+            _pdfImageBytesCache[cacheKey] = out;
+            return out;
           }
         }
         final bytes = await FileService.readBytes(source);
@@ -1078,7 +1366,9 @@ class _ReportPageState extends State<ReportPage> {
           image: image,
           baseBytes: bytes,
         );
-        return await _optimizePdfImageBytesAsync(prepared);
+        final out = await _optimizePdfImageBytesAsync(prepared);
+        _pdfImageBytesCache[cacheKey] = out;
+        return out;
       }
       if (source.startsWith('http://') || source.startsWith('https://')) {
         try {
@@ -1088,12 +1378,16 @@ class _ReportPageState extends State<ReportPage> {
               image: image,
               baseBytes: Uint8List.fromList(response.bodyBytes),
             );
-            return await _optimizePdfImageBytesAsync(prepared);
+            final out = await _optimizePdfImageBytesAsync(prepared);
+            _pdfImageBytesCache[cacheKey] = out;
+            return out;
           }
         } catch (_) {}
       }
+      _pdfImageBytesCache[cacheKey] = null;
       return null;
     } catch (_) {
+      _pdfImageBytesCache[cacheKey] = null;
       return null;
     }
   }
@@ -1112,9 +1406,15 @@ class _ReportPageState extends State<ReportPage> {
   }
 
   Future<void> _saveReport() async {
+    await _enqueueExportAction(_QueuedExportAction.save);
+  }
+
+  Future<void> _saveReportNow() async {
     if (!_validateForm()) return;
     try {
+      _throwIfExportCancelled();
       final artifacts = await _buildReportArtifacts();
+      _throwIfExportCancelled();
       final bytes = artifacts.pdfBytes;
       final filename = 'report-${DateTime.now().millisecondsSinceEpoch}.pdf';
       final ok = await _reportController.saveReport(
@@ -1125,6 +1425,7 @@ class _ReportPageState extends State<ReportPage> {
         showMessage: _showMessage,
         onProgress: _showProgress,
       );
+      _throwIfExportCancelled();
       if (!ok) return;
       final assetId = FileService.generateAssetId('report');
       await MediaDatabase.saveAsset(assetId, bytes);
@@ -1154,6 +1455,7 @@ class _ReportPageState extends State<ReportPage> {
         sourceImages: _items,
       );
       await foldersController.addReport(widget.folderId, report);
+      _throwIfExportCancelled();
       if (!mounted) return;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
@@ -1183,8 +1485,7 @@ class _ReportPageState extends State<ReportPage> {
   }) async {
     if (image == null) return null;
     try {
-      final previewBytes =
-          cachedBytes ?? await _collectPdfImageBytes(image);
+      final previewBytes = cachedBytes ?? await _collectPdfImageBytes(image);
       if (previewBytes == null || previewBytes.isEmpty) return null;
       final previewAssetId = FileService.generateAssetId('report-preview');
       await MediaDatabase.saveAsset(previewAssetId, previewBytes);
@@ -1196,6 +1497,9 @@ class _ReportPageState extends State<ReportPage> {
 
   void _showProgress(String text, double progress) {
     if (!mounted) return;
+    _activeExportStatus = text;
+    _activeExportProgress = progress.clamp(0.0, 1.0);
+    if (_exportCancelRequested) return;
     final p = progress.clamp(0.0, 1.0);
     // Final tick would schedule after [showMessage] and steal the overlay — skip.
     if (p >= 1.0) {
@@ -1254,6 +1558,18 @@ class _ReportArtifacts {
 
   final Uint8List pdfBytes;
   final Uint8List? primaryPreviewBytes;
+}
+
+enum _QueuedExportAction {
+  download('Download report'),
+  save('Save report');
+
+  const _QueuedExportAction(this.label);
+  final String label;
+}
+
+class _ExportCancelled implements Exception {
+  const _ExportCancelled();
 }
 
 class _FieldData {
@@ -1327,7 +1643,8 @@ Uint8List _reportPdfOptimizeImageBytes(Uint8List bytes) {
   return Uint8List.fromList(img.encodeJpg(resized, quality: 92));
 }
 
-Future<Uint8List> _generateReportPdfInBackground(Map<String, dynamic> payload) async {
+Future<Uint8List> _generateReportPdfInBackground(
+    Map<String, dynamic> payload) async {
   final regularBytes = payload['fontRegular'] as Uint8List?;
   final boldBytes = payload['fontBold'] as Uint8List?;
   final hasFonts = regularBytes != null &&
@@ -1394,7 +1711,8 @@ Future<Uint8List> _generateReportPdfInBackground(Map<String, dynamic> payload) a
                   crossAxisAlignment: pw.CrossAxisAlignment.start,
                   children: [
                     pw.Text(
-                      payload['organizationName'] as String? ?? 'Organization Name',
+                      payload['organizationName'] as String? ??
+                          'Organization Name',
                       style: pw.TextStyle(
                         fontSize: 18,
                         fontWeight: pw.FontWeight.bold,
@@ -1404,12 +1722,14 @@ Future<Uint8List> _generateReportPdfInBackground(Map<String, dynamic> payload) a
                     pw.SizedBox(height: 6),
                     pw.Text(
                       'Email: ${payload['email']}    Full name: ${payload['fullName']}',
-                      style: pw.TextStyle(fontSize: 9, color: PdfColors.grey700),
+                      style:
+                          pw.TextStyle(fontSize: 9, color: PdfColors.grey700),
                     ),
                     pw.SizedBox(height: 2),
                     pw.Text(
                       'Phone: ${payload['phone']}    Address: ${payload['location']}',
-                      style: pw.TextStyle(fontSize: 9, color: PdfColors.grey700),
+                      style:
+                          pw.TextStyle(fontSize: 9, color: PdfColors.grey700),
                     ),
                   ],
                 ),
@@ -1478,17 +1798,20 @@ Future<Uint8List> _generateReportPdfInBackground(Map<String, dynamic> payload) a
         ...entries.asMap().entries.expand((entry) {
           final section = entry.value;
           final bytes = section['imageBytes'] as Uint8List?;
-          final aspect = (section['imageAspect'] as num?)?.toDouble() ?? (4 / 3);
+          final aspect =
+              (section['imageAspect'] as num?)?.toDouble() ?? (4 / 3);
           final safeAspect = aspect <= 0 ? (4 / 3) : aspect;
-          final imageHeight = (340.0 / (safeAspect / (4 / 3))).clamp(220.0, 420.0).toDouble();
-          final annotations = (section['annotations'] as List<dynamic>? ?? const <dynamic>[])
-              .map(
-                (e) => _pdfSafeText(
-                  e.toString(),
-                  forceAsciiUnits: asciiFallback,
-                ),
-              )
-              .toList();
+          final imageHeight =
+              (340.0 / (safeAspect / (4 / 3))).clamp(220.0, 420.0).toDouble();
+          final annotations =
+              (section['annotations'] as List<dynamic>? ?? const <dynamic>[])
+                  .map(
+                    (e) => _pdfSafeText(
+                      e.toString(),
+                      forceAsciiUnits: asciiFallback,
+                    ),
+                  )
+                  .toList();
           // Inseparable: [MultiPage] Column can split children across pages; keep title + image + markings together.
           return [
             pw.Inseparable(
@@ -1501,7 +1824,8 @@ Future<Uint8List> _generateReportPdfInBackground(Map<String, dynamic> payload) a
                     decoration: pw.BoxDecoration(
                       color: PdfColors.white,
                       borderRadius: pw.BorderRadius.circular(4),
-                      border: pw.Border.all(color: PdfColors.grey400, width: 0.5),
+                      border:
+                          pw.Border.all(color: PdfColors.grey400, width: 0.5),
                     ),
                     child: pw.Inseparable(
                       child: pw.Column(
@@ -1520,18 +1844,22 @@ Future<Uint8List> _generateReportPdfInBackground(Map<String, dynamic> payload) a
                             pw.Container(
                               height: imageHeight,
                               width: double.infinity,
-                              decoration: const pw.BoxDecoration(color: PdfColors.white),
-                              child: pw.Image(pw.MemoryImage(bytes), fit: pw.BoxFit.contain),
+                              decoration: const pw.BoxDecoration(
+                                  color: PdfColors.white),
+                              child: pw.Image(pw.MemoryImage(bytes),
+                                  fit: pw.BoxFit.contain),
                             )
                           else
                             pw.Container(
                               height: 340,
                               width: double.infinity,
                               alignment: pw.Alignment.center,
-                              decoration: const pw.BoxDecoration(color: PdfColors.white),
+                              decoration: const pw.BoxDecoration(
+                                  color: PdfColors.white),
                               child: pw.Text(
                                 'No image available',
-                                style: pw.TextStyle(fontSize: 9, color: PdfColors.grey600),
+                                style: pw.TextStyle(
+                                    fontSize: 9, color: PdfColors.grey600),
                               ),
                             ),
                         ],
@@ -1554,7 +1882,8 @@ Future<Uint8List> _generateReportPdfInBackground(Map<String, dynamic> payload) a
                           ? 'Markings are embedded in the image above (rasterized). '
                               'No separate line-by-line list was stored for this capture.'
                           : 'No markings available',
-                      style: pw.TextStyle(fontSize: 9, color: PdfColors.grey700),
+                      style:
+                          pw.TextStyle(fontSize: 9, color: PdfColors.grey700),
                     )
                   else
                     ...annotations.map(
@@ -1562,7 +1891,8 @@ Future<Uint8List> _generateReportPdfInBackground(Map<String, dynamic> payload) a
                         padding: const pw.EdgeInsets.only(bottom: 6),
                         child: pw.Text(
                           text,
-                          style: pw.TextStyle(fontSize: 9, color: PdfColors.grey800),
+                          style: pw.TextStyle(
+                              fontSize: 9, color: PdfColors.grey800),
                         ),
                       ),
                     ),
@@ -1587,14 +1917,14 @@ Future<Uint8List> _generateReportPdfInBackground(Map<String, dynamic> payload) a
           pw.SizedBox(height: 8),
           ...(payload['provenanceLines'] as List<dynamic>? ?? const <dynamic>[])
               .map(
-                (e) => pw.Padding(
-                  padding: const pw.EdgeInsets.only(bottom: 3),
-                  child: pw.Text(
-                    e.toString(),
-                    style: pw.TextStyle(fontSize: 8, color: PdfColors.grey700),
-                  ),
-                ),
+            (e) => pw.Padding(
+              padding: const pw.EdgeInsets.only(bottom: 3),
+              child: pw.Text(
+                e.toString(),
+                style: pw.TextStyle(fontSize: 8, color: PdfColors.grey700),
               ),
+            ),
+          ),
           pw.SizedBox(height: 8),
           pw.Text(
             'SHA-256 (canonical metadata): ${payload['provenanceHash']}',

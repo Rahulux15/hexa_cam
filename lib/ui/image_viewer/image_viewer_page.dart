@@ -851,10 +851,11 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
     final lens = _image?.lens;
     final calibration =
         lens == null ? null : calibrationController.calibrations[lens];
+    if (calibration == null) return null;
     return MeasurementCalculator.getMeasurementText(
       annotation,
-      pixelsPerUnit: calibration?.pixelsPerUnit,
-      unit: calibration?.unit,
+      pixelsPerUnit: calibration.pixelsPerUnit,
+      unit: calibration.unit,
     );
   }
 

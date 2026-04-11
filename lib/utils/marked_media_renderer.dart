@@ -10,18 +10,11 @@ import '../data/models/point.dart';
 import 'annotation_painter.dart';
 
 class MarkedMediaRenderer {
-  // Exports are usually downscaled in folder cards / reports. Use a stronger
-  // line scale so burned markings do not become too thin after resize.
-  static double _exportLineScale(Size sourceSize) {
-    final shortSide = sourceSize.shortestSide <= 0 ? 1.0 : sourceSize.shortestSide;
-    return (shortSide / 900.0).clamp(1.25, 3.0).toDouble();
-  }
+  // Keep export paint scale neutral for strict WYSIWYG parity across
+  // capture-preview, save/download, and report media.
+  static double _exportLineScale(Size sourceSize) => 1.0;
 
-  // Keep text growth gentler than line growth to avoid oversized labels.
-  static double _exportTextScale(Size sourceSize) {
-    final line = _exportLineScale(sourceSize);
-    return sqrt(line).clamp(1.05, 1.75).toDouble();
-  }
+  static double _exportTextScale(Size sourceSize) => 1.0;
 
   static Future<Uint8List> renderAnnotationOverlay({
     required Size sourceSize,
@@ -174,6 +167,13 @@ class MarkedMediaRenderer {
           (annotation) => annotation.copyWith(
             strokeWidth:
                 (annotation.strokeWidth * strokeScale).clamp(0.5, 240.0),
+            labelFontSize: annotation.labelFontSize == null
+                ? null
+                : (annotation.labelFontSize! * strokeScale)
+                    .clamp(8.0, 240.0)
+                    .toDouble(),
+            labelOffsetX: annotation.labelOffsetX * sx,
+            labelOffsetY: annotation.labelOffsetY * sy,
             points: annotation.points
                 .map((p) => HexaPoint(x: p.x * sx, y: p.y * sy))
                 .toList(),

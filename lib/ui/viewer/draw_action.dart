@@ -122,6 +122,42 @@ class DAMove extends DrawAction {
   }
 }
 
+/// Move only label position (measurement/text) without moving geometry.
+class DALabelMove extends DrawAction {
+  final String id;
+  final double beforeX;
+  final double beforeY;
+  final double afterX;
+  final double afterY;
+  const DALabelMove({
+    required this.id,
+    required this.beforeX,
+    required this.beforeY,
+    required this.afterX,
+    required this.afterY,
+  });
+
+  @override
+  void undo(List<Annotation> annotations) {
+    final i = annotations.indexWhere((a) => a.id == id);
+    if (i < 0) return;
+    annotations[i] = annotations[i].copyWith(
+      labelOffsetX: beforeX,
+      labelOffsetY: beforeY,
+    );
+  }
+
+  @override
+  void redo(List<Annotation> annotations) {
+    final i = annotations.indexWhere((a) => a.id == id);
+    if (i < 0) return;
+    annotations[i] = annotations[i].copyWith(
+      labelOffsetX: afterX,
+      labelOffsetY: afterY,
+    );
+  }
+}
+
 /// Manages undo/redo for annotation lists.
 class DrawHistory {
   /// Keeps memory stable during long drawing sessions (drops oldest history).

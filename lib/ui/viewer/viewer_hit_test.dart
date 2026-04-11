@@ -16,12 +16,24 @@ double annotationHitDistance(HexaPoint p, Annotation a) {
       }
       return d;
     case AnnotationType.text:
-      return (p.x - a.points.first.x).abs() + (p.y - a.points.first.y).abs();
+      final anchor = a.points.first;
+      final base = (p.x - anchor.x).abs() + (p.y - anchor.y).abs();
+      final textRect = _labelRectForText(a);
+      final textRectDistance = _distPointToRect(p, textRect);
+      return min(base, textRectDistance);
     case AnnotationType.arrow:
     case AnnotationType.arrowOneWay:
     case AnnotationType.twoPointer:
       if (a.points.length < 2) return double.infinity;
-      return _distPointToSegment(p, a.points.first, a.points.last);
+      final lineDist = _distPointToSegment(p, a.points.first, a.points.last);
+      if (a.type == AnnotationType.twoPointer &&
+          a.measurement != null &&
+          a.measurement!.trim().isNotEmpty) {
+        final labelRect = _labelRectForMeasurement(a);
+        final labelDist = _distPointToRect(p, labelRect);
+        return min(lineDist, labelDist);
+      }
+      return lineDist;
     case AnnotationType.singlePointer:
       return _dist(p, a.points.first);
     case AnnotationType.square:
@@ -41,6 +53,130 @@ double annotationHitDistance(HexaPoint p, Annotation a) {
       final c = a.points.first;
       return (_dist(p, c) - radius).abs();
   }
+}
+
+/// Label-only hit test in source coordinates (for move-label tool).
+double annotationLabelHitDistance(HexaPoint p, Annotation a) {
+  if (a.points.isEmpty) return double.infinity;
+  if (a.type == AnnotationType.text) {
+    return _distPointToRect(p, _labelRectForText(a));
+  }
+  if (a.measurement != null && a.measurement!.trim().isNotEmpty) {
+    return _distPointToRect(p, _labelRectForMeasurement(a));
+  }
+  return double.infinity;
+}
+
+Rect _labelRectForText(Annotation a) {
+  final anchor = a.points.first;
+  final text = (a.text ?? '').trim();
+  final charCount = text.isEmpty ? 1 : text.runes.length.clamp(1, 42);
+  final fontSize = (a.labelFontSize ?? (10.0 + (a.strokeWidth * 0.9))).clamp(
+    8.0,
+    180.0,
+  );
+  final textWidth = (fontSize * 0.58 * charCount).clamp(28.0, 520.0);
+  final textHeight = (fontSize * 1.22).clamp(14.0, 128.0);
+  const gap = 10.0;
+  return Rect.fromLTWH(
+    anchor.x - textWidth - gap + a.labelOffsetX,
+    anchor.y - textHeight - gap + a.labelOffsetY,
+    textWidth.toDouble(),
+    textHeight.toDouble(),
+  );
+}
+
+Rect _labelRectForMeasurement(Annotation a) {
+  final text = (a.measurement ?? '').trim();
+  final chars = text.runes.length.clamp(1, 40);
+  final fontSize = (a.labelFontSize ?? (10.0 + (a.strokeWidth * 1.1))).clamp(
+    8.0,
+    160.0,
+  );
+  final w = (fontSize * 0.56 * chars).clamp(28.0, 520.0);
+  final h = (fontSize * 1.22).clamp(14.0, 120.0);
+  const gap = 10.0;
+  late double left;
+  late double top;
+
+  switch (a.type) {
+    case AnnotationType.circle:
+      if (a.points.length >= 2) {
+        final c = a.points.first;
+        final r = _dist(a.points[1], c);
+        left = c.x - (w / 2);
+        top = c.y - r - gap - h;
+        break;
+      }
+      left = a.points.first.x - (w / 2);
+      top = a.points.first.y - h - gap;
+      break;
+    case AnnotationType.rectangle:
+    case AnnotationType.square:
+      if (a.points.length >= 2) {
+        final leftX = min(a.points.first.x, a.points.last.x);
+        final rightX = max(a.points.first.x, a.points.last.x);
+        final topY = min(a.points.first.y, a.points.last.y);
+        left = ((leftX + rightX) / 2) - (w / 2);
+        top = topY - gap - h;
+        break;
+      }
+      left = a.points.first.x - (w / 2);
+      top = a.points.first.y - h - gap;
+      break;
+    case AnnotationType.twoPointer:
+    case AnnotationType.arrow:
+    case AnnotationType.arrowOneWay:
+      if (a.points.length >= 2) {
+        final p0 = a.points.first;
+        final p1 = a.points.last;
+        final mid = HexaPoint(x: (p0.x + p1.x) / 2, y: (p0.y + p1.y) / 2);
+        final dx = p1.x - p0.x;
+        final dy = p1.y - p0.y;
+        final len = sqrt(dx * dx + dy * dy);
+        if (len < 1e-6) {
+          left = mid.x - (w / 2);
+          top = mid.y - h - gap;
+          break;
+        }
+        final nx = -dy / len;
+        final ny = dx / len;
+        final dist = gap + h * 0.35 + 10.0;
+        left = mid.x + nx * dist - (w / 2);
+        top = mid.y + ny * dist - (h / 2);
+        break;
+      }
+      left = a.points.first.x - (w / 2);
+      top = a.points.first.y - h - gap;
+      break;
+    case AnnotationType.singlePointer:
+      left = a.points.first.x - (w / 2);
+      top = a.points.first.y - h - gap;
+      break;
+    case AnnotationType.draw:
+      var minX = a.points.first.x;
+      var maxX = a.points.first.x;
+      var minY = a.points.first.y;
+      for (final p in a.points) {
+        minX = min(minX, p.x);
+        maxX = max(maxX, p.x);
+        minY = min(minY, p.y);
+      }
+      left = ((minX + maxX) / 2) - (w / 2);
+      top = minY - h - gap;
+      break;
+    case AnnotationType.text:
+      left = a.points.first.x - (w / 2);
+      top = a.points.first.y - h - gap;
+      break;
+  }
+
+  return Rect.fromLTWH(
+    left + a.labelOffsetX,
+    top + a.labelOffsetY,
+    w.toDouble(),
+    h.toDouble(),
+  );
 }
 
 double _dist(HexaPoint a, HexaPoint b) {

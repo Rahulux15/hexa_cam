@@ -18,6 +18,7 @@ import '../../state/app_registry.dart';
 import '../../utils/calibration_guard.dart';
 import '../../utils/annotation_painter.dart';
 import '../../utils/calibration_calculator.dart';
+import '../../utils/coordinate_transformer.dart';
 import '../../utils/measurement_calculator.dart';
 import '../../utils/responsive.dart';
 import 'draw_action.dart';
@@ -110,6 +111,7 @@ class ViewerScreenState extends State<ViewerScreen> {
 
   Color _drawingColor = const Color(0xFFFF00FF);
   double _drawingStrokeWidth = 4.0;
+  double _drawingLabelSize = 18.0;
   bool _showColorRow = false;
   bool _showToolsPanel = false;
 
@@ -119,6 +121,10 @@ class ViewerScreenState extends State<ViewerScreen> {
 
   String? _moveId;
   List<HexaPoint>? _moveBefore;
+  HexaPoint? _moveStartCursor;
+  String? _moveLabelId;
+  double? _moveLabelBeforeX;
+  double? _moveLabelBeforeY;
   HexaPoint? _lastDrawPoint;
 
   final List<DARemoveEntry> _eraserRemoved = [];
@@ -149,6 +155,12 @@ class ViewerScreenState extends State<ViewerScreen> {
       _annotations = widget.initialAnnotations
           .where((a) => !widget.hiddenAnnotationIds.contains(a.id))
           .toList();
+      _moveId = null;
+      _moveBefore = null;
+      _moveStartCursor = null;
+      _moveLabelId = null;
+      _moveLabelBeforeX = null;
+      _moveLabelBeforeY = null;
       if (imageChanged) {
         _history.clear();
       }
@@ -220,6 +232,10 @@ class ViewerScreenState extends State<ViewerScreen> {
       _isDrawing = false;
       _moveId = null;
       _moveBefore = null;
+      _moveStartCursor = null;
+      _moveLabelId = null;
+      _moveLabelBeforeX = null;
+      _moveLabelBeforeY = null;
       _eraserRemoved.clear();
     });
     _history.clear();
@@ -248,6 +264,10 @@ class ViewerScreenState extends State<ViewerScreen> {
   }
 
   List<Annotation> _annotationsForPaint() {
+    if (_canMove && (_moveId != null || _moveLabelId != null)) {
+      // Keep labels as-is while dragging to reduce per-frame allocations.
+      return _annotations;
+    }
     if (!widget.showMeasurements) {
       return _annotations.map((a) => a.copyWith(measurement: null)).toList();
     }
@@ -287,7 +307,7 @@ class ViewerScreenState extends State<ViewerScreen> {
                 child: AnimatedPadding(
                   duration: const Duration(milliseconds: 160),
                   padding: EdgeInsets.only(
-                    bottom: MediaQuery.viewInsetsOf(ctx).bottom > 0 ? 8 : 0,
+                    bottom: MediaQuery.viewInsetsOf(ctx).bottom + 8,
                   ),
                   child: ConstrainedBox(
                     constraints: BoxConstraints(
@@ -557,19 +577,27 @@ class ViewerScreenState extends State<ViewerScreen> {
     final lens = widget.image.lens;
     final calibration =
         lens == null ? null : calibrationController.calibrations[lens];
+    if (calibration == null) return null;
     return MeasurementCalculator.getMeasurementText(
       annotation,
-      pixelsPerUnit: calibration?.pixelsPerUnit,
-      unit: calibration?.unit,
+      pixelsPerUnit: calibration.pixelsPerUnit,
+      unit: calibration.unit,
     );
   }
 
   HexaPoint _displayToSource(Offset point) {
     final sw = _lastSourceSize.width <= 0 ? 1.0 : _lastSourceSize.width;
     final sh = _lastSourceSize.height <= 0 ? 1.0 : _lastSourceSize.height;
+    final mapped = CoordinateTransformer.screenToImage(
+      point,
+      imageSize: Size(sw, sh),
+      mirrorX: widget.mirrorX,
+      mirrorY: widget.mirrorY,
+      rotation: widget.rotation,
+    );
     return HexaPoint(
-      x: point.dx.clamp(0.0, sw),
-      y: point.dy.clamp(0.0, sh),
+      x: mapped.dx.clamp(0.0, sw).toDouble(),
+      y: mapped.dy.clamp(0.0, sh).toDouble(),
     );
   }
 
@@ -592,60 +620,89 @@ class ViewerScreenState extends State<ViewerScreen> {
   Future<void> _promptText(Offset local) async {
     final source = _displayToSource(local);
     final controller = TextEditingController();
-    final text = await showDialog<String>(
+    var textSize = _drawingStrokeWidth.clamp(8.0, 52.0).toDouble();
+    final result = await showDialog<Map<String, dynamic>>(
       context: context,
-      builder: (ctx) => Dialog(
-        backgroundColor: const Color(0xFF232651),
-        insetPadding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
-        child: AnimatedPadding(
-          duration: const Duration(milliseconds: 160),
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.viewInsetsOf(ctx).bottom > 0 ? 8 : 0,
-          ),
-          child: ConstrainedBox(
-            constraints: BoxConstraints(
-              maxWidth: 420,
-              maxHeight: MediaQuery.sizeOf(ctx).height * 0.85,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => Dialog(
+          backgroundColor: const Color(0xFF232651),
+          insetPadding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
+          child: AnimatedPadding(
+            duration: const Duration(milliseconds: 160),
+            padding: EdgeInsets.only(
+              bottom: MediaQuery.viewInsetsOf(ctx).bottom + 8,
             ),
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('Label', style: TextStyle(color: Colors.white)),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: controller,
-                    style: const TextStyle(color: Colors.white),
-                    decoration: const InputDecoration(
-                      hintText: 'Enter text',
-                      hintStyle: TextStyle(color: Colors.white38),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: 420,
+                maxHeight: MediaQuery.sizeOf(ctx).height * 0.85,
+              ),
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Label', style: TextStyle(color: Colors.white)),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: controller,
+                      style: const TextStyle(color: Colors.white),
+                      decoration: const InputDecoration(
+                        hintText: 'Enter text',
+                        hintStyle: TextStyle(color: Colors.white38),
+                      ),
+                      autofocus: true,
                     ),
-                    autofocus: true,
-                  ),
-                  const SizedBox(height: 16),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(ctx),
-                        child: const Text(
-                          'Cancel',
-                          style: TextStyle(color: Colors.white54),
+                    const SizedBox(height: 14),
+                    Row(
+                      children: [
+                        const Text(
+                          'Font size',
+                          style: TextStyle(color: Colors.white70),
                         ),
-                      ),
-                      TextButton(
-                        onPressed: () =>
-                            Navigator.pop(ctx, controller.text.trim()),
-                        child: const Text(
-                          'OK',
-                          style: TextStyle(color: AppTheme.primaryLight),
+                        const Spacer(),
+                        Text(
+                          '${textSize.toStringAsFixed(1)} px',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
+                          ),
                         ),
-                      ),
-                    ],
-                  ),
-                ],
+                      ],
+                    ),
+                    Slider(
+                      min: 8.0,
+                      max: 52.0,
+                      divisions: 44,
+                      value: textSize,
+                      onChanged: (v) => setDialogState(() => textSize = v),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(ctx),
+                          child: const Text(
+                            'Cancel',
+                            style: TextStyle(color: Colors.white54),
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: () => Navigator.pop(ctx, {
+                            'text': controller.text.trim(),
+                            'size': textSize,
+                          }),
+                          child: const Text(
+                            'OK',
+                            style: TextStyle(color: AppTheme.primaryLight),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -653,14 +710,17 @@ class ViewerScreenState extends State<ViewerScreen> {
       ),
     );
     controller.dispose();
+    final text = result?['text'] as String?;
     if (text == null || text.isEmpty || !mounted) return;
+    final size = (result?['size'] as num?)?.toDouble() ?? _drawingStrokeWidth;
     final ann = Annotation(
       id: _uuid.v4(),
       type: AnnotationType.text,
       points: [source],
       text: text,
       color: _drawingColor,
-      strokeWidth: _drawingStrokeWidth,
+      strokeWidth: size.clamp(8.0, 52.0).toDouble(),
+      labelFontSize: size.clamp(8.0, 52.0).toDouble(),
       timestamp: DateTime.now().toIso8601String(),
     );
     setState(() => _annotations.add(ann));
@@ -671,10 +731,33 @@ class ViewerScreenState extends State<ViewerScreen> {
     if (_locked || _editingPaused) return;
     if (_tool == ViewerDrawTool.move) {
       final p = _displayToSource(details.localPosition);
-      final hit = pickAnnotationAt(p, _annotations);
-      if (hit != null) {
-        _moveId = hit.id;
-        _moveBefore = List.from(hit.points);
+      final hit = pickAnnotationAt(p, _annotations, maxDist: 54);
+      Annotation? labelHit;
+      var bestLabelDistance = 60.0;
+      for (final a in _annotations) {
+        final d = annotationLabelHitDistance(p, a);
+        if (d < bestLabelDistance) {
+          bestLabelDistance = d;
+          labelHit = a;
+        }
+      }
+      if (hit != null || labelHit != null) {
+        final selectedLabel = labelHit;
+        if (selectedLabel != null) {
+          _moveLabelId = selectedLabel.id;
+          _moveLabelBeforeX = selectedLabel.labelOffsetX;
+          _moveLabelBeforeY = selectedLabel.labelOffsetY;
+          _moveId = null;
+          _moveBefore = null;
+          _moveStartCursor = null;
+        } else if (hit != null) {
+          _moveId = hit.id;
+          _moveBefore = List.from(hit.points);
+          _moveStartCursor = p;
+          _moveLabelId = null;
+          _moveLabelBeforeX = null;
+          _moveLabelBeforeY = null;
+        }
       }
       return;
     }
@@ -713,25 +796,67 @@ class ViewerScreenState extends State<ViewerScreen> {
   void _onPanUpdate(DragUpdateDetails details) {
     if (_locked || _editingPaused) return;
     if (_tool == ViewerDrawTool.move && _moveId != null) {
-      final p0 = _displayToSource(details.localPosition - details.delta);
+      final delta = details.delta;
+      if ((delta.dx * delta.dx + delta.dy * delta.dy) < 0.35) {
+        return;
+      }
       final p1 = _displayToSource(details.localPosition);
-      final dx = p1.x - p0.x;
-      final dy = p1.y - p0.y;
+      final before = _moveBefore;
+      final startCursor = _moveStartCursor;
+      if (before == null || startCursor == null || before.isEmpty) {
+        return;
+      }
+      final dx = p1.x - startCursor.x;
+      final dy = p1.y - startCursor.y;
       setState(() {
         final i = _annotations.indexWhere((a) => a.id == _moveId);
         if (i >= 0) {
           final sw = _lastSourceSize.width <= 0 ? 1.0 : _lastSourceSize.width;
           final sh = _lastSourceSize.height <= 0 ? 1.0 : _lastSourceSize.height;
-          final pts = _annotations[i]
-              .points
+          var minX = before.first.x;
+          var maxX = before.first.x;
+          var minY = before.first.y;
+          var maxY = before.first.y;
+          for (final p in before) {
+            minX = min(minX, p.x);
+            maxX = max(maxX, p.x);
+            minY = min(minY, p.y);
+            maxY = max(maxY, p.y);
+          }
+          final appliedDx = dx.clamp(-minX, sw - maxX).toDouble();
+          final appliedDy = dy.clamp(-minY, sh - maxY).toDouble();
+          final pts = before
               .map(
                 (e) => HexaPoint(
-                  x: (e.x + dx).clamp(0.0, sw),
-                  y: (e.y + dy).clamp(0.0, sh),
+                  x: e.x + appliedDx,
+                  y: e.y + appliedDy,
                 ),
               )
               .toList();
           _annotations[i] = _annotations[i].copyWith(points: pts);
+        }
+      });
+      return;
+    }
+    if (_tool == ViewerDrawTool.move && _moveLabelId != null) {
+      final delta = details.delta;
+      if ((delta.dx * delta.dx + delta.dy * delta.dy) < 0.35) {
+        return;
+      }
+      final p0 = _displayToSource(details.localPosition - details.delta);
+      final p1 = _displayToSource(details.localPosition);
+      final dx = p1.x - p0.x;
+      final dy = p1.y - p0.y;
+      setState(() {
+        final i = _annotations.indexWhere((a) => a.id == _moveLabelId);
+        if (i >= 0) {
+          final ann = _annotations[i];
+          _annotations[i] = ann.copyWith(
+            labelOffsetX:
+                (ann.labelOffsetX + dx).clamp(-1200.0, 1200.0).toDouble(),
+            labelOffsetY:
+                (ann.labelOffsetY + dy).clamp(-1200.0, 1200.0).toDouble(),
+          );
         }
       });
       return;
@@ -776,6 +901,36 @@ class ViewerScreenState extends State<ViewerScreen> {
       }
       _moveId = null;
       _moveBefore = null;
+      _moveStartCursor = null;
+      return;
+    }
+    if (_tool == ViewerDrawTool.move &&
+        _moveLabelId != null &&
+        _moveLabelBeforeX != null &&
+        _moveLabelBeforeY != null) {
+      final id = _moveLabelId!;
+      final beforeX = _moveLabelBeforeX!;
+      final beforeY = _moveLabelBeforeY!;
+      final i = _annotations.indexWhere((a) => a.id == id);
+      if (i >= 0) {
+        final after = _annotations[i];
+        if ((after.labelOffsetX - beforeX).abs() > 0.001 ||
+            (after.labelOffsetY - beforeY).abs() > 0.001) {
+          _history.record(
+            DALabelMove(
+              id: id,
+              beforeX: beforeX,
+              beforeY: beforeY,
+              afterX: after.labelOffsetX,
+              afterY: after.labelOffsetY,
+            ),
+          );
+          _notify();
+        }
+      }
+      _moveLabelId = null;
+      _moveLabelBeforeX = null;
+      _moveLabelBeforeY = null;
       return;
     }
     if (_tool == ViewerDrawTool.eraser) {
@@ -817,6 +972,7 @@ class ViewerScreenState extends State<ViewerScreen> {
       timestamp: DateTime.now().toIso8601String(),
       measurement:
           measurement != null && measurement.isNotEmpty ? measurement : null,
+      labelFontSize: _drawingLabelSize,
     );
     setState(() {
       _annotations.add(ann);
@@ -1299,6 +1455,13 @@ class ViewerScreenState extends State<ViewerScreen> {
   }
 
   Widget _buildThicknessControl(BuildContext context) {
+    const label = 'Thickness';
+    const minValue = 2.0;
+    const maxValue = 16.0;
+    const divisions = 28;
+    final sliderValue =
+        _drawingStrokeWidth.clamp(minValue, maxValue).toDouble();
+    final labelSize = _drawingLabelSize.clamp(8.0, 160.0).toDouble();
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
@@ -1306,45 +1469,93 @@ class ViewerScreenState extends State<ViewerScreen> {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: Colors.white12),
       ),
-      child: Row(
+      child: Column(
         children: [
-          const Icon(Icons.line_weight_rounded,
-              color: Colors.white70, size: 18),
-          const SizedBox(width: 8),
-          const Text(
-            'Thickness',
-            style: TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.w700,
-              fontSize: 12,
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: Slider(
-                min: 2.0,
-                max: 16.0,
-                divisions: 28,
-                value: _drawingStrokeWidth,
-                onChanged: _locked
-                    ? null
-                    : (value) => setState(() => _drawingStrokeWidth = value),
+          Row(
+            children: [
+              const Icon(Icons.line_weight_rounded,
+                  color: Colors.white70, size: 18),
+              const SizedBox(width: 8),
+              Text(
+                label,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 12,
+                ),
               ),
-            ),
-          ),
-          SizedBox(
-            width: 52,
-            child: Text(
-              '${_drawingStrokeWidth.toStringAsFixed(1)} px',
-              textAlign: TextAlign.right,
-              style: const TextStyle(
-                color: Colors.white70,
-                fontWeight: FontWeight.w600,
-                fontSize: 11,
+              const SizedBox(width: 10),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: Slider(
+                    min: minValue,
+                    max: maxValue,
+                    divisions: divisions,
+                    value: sliderValue,
+                    onChanged: _locked
+                        ? null
+                        : (value) =>
+                            setState(() => _drawingStrokeWidth = value),
+                  ),
+                ),
               ),
-            ),
+              SizedBox(
+                width: 52,
+                child: Text(
+                  '${sliderValue.toStringAsFixed(1)} px',
+                  textAlign: TextAlign.right,
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 11,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Row(
+            children: [
+              const Icon(Icons.format_size_rounded,
+                  color: Colors.white70, size: 18),
+              const SizedBox(width: 8),
+              const Text(
+                'Label Size',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 12,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: Slider(
+                    min: 8.0,
+                    max: 160.0,
+                    divisions: 152,
+                    value: labelSize,
+                    onChanged: _locked
+                        ? null
+                        : (value) => setState(() => _drawingLabelSize = value),
+                  ),
+                ),
+              ),
+              SizedBox(
+                width: 52,
+                child: Text(
+                  '${labelSize.toStringAsFixed(1)} px',
+                  textAlign: TextAlign.right,
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 11,
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),

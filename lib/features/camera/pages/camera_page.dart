@@ -79,6 +79,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
   AnnotationType? _selectedTool;
   Color _drawingColor = const Color(0xFFFF00FF);
   double _drawingStrokeWidth = 4.0;
+  double _drawingLabelSize = 18.0;
 
   final List<Annotation> _annotations = [];
   final List<Annotation> _redoStack = [];
@@ -87,6 +88,10 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
   int? _activeAnnotationIndex;
   List<HexaPoint>? _moveStartPoints;
   HexaPoint? _moveStartCursor;
+  int? _activeLabelAnnotationIndex;
+  HexaPoint? _labelMoveStartCursor;
+  double? _labelMoveStartX;
+  double? _labelMoveStartY;
   HexaPoint? _lastDrawPoint;
   final Uuid _uuid = const Uuid();
   Size _lastSourceSize = Size.zero;
@@ -1909,6 +1914,13 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
   }
 
   Widget _buildThicknessSection(bool isTablet) {
+    const label = 'Marking Thickness';
+    const minValue = 2.0;
+    const maxValue = 16.0;
+    const divisions = 28;
+    final sliderValue =
+        _drawingStrokeWidth.clamp(minValue, maxValue).toDouble();
+    final labelSize = _drawingLabelSize.clamp(8.0, 160.0).toDouble();
     return Container(
       width: double.infinity,
       padding: EdgeInsets.all(isTablet ? 12 : 10),
@@ -1930,7 +1942,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  'Marking Thickness',
+                  label,
                   style: TextStyle(
                     color: Colors.white,
                     fontSize: isTablet ? 13 : 12,
@@ -1942,7 +1954,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
               ),
               const SizedBox(width: 6),
               Text(
-                '${_drawingStrokeWidth.toStringAsFixed(1)} px',
+                '${sliderValue.toStringAsFixed(1)} px',
                 style: TextStyle(
                   color: const Color(0xFFD9DCF4),
                   fontSize: isTablet ? 12 : 11,
@@ -1955,13 +1967,59 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 10),
             child: Slider(
-              min: 2.0,
-              max: 16.0,
-              divisions: 28,
-              value: _drawingStrokeWidth,
+              min: minValue,
+              max: maxValue,
+              divisions: divisions,
+              value: sliderValue,
               onChanged: (value) {
                 setState(() {
                   _drawingStrokeWidth = value;
+                });
+              },
+            ),
+          ),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              const Icon(
+                Icons.format_size_rounded,
+                color: Color(0xFFAFB5D9),
+                size: 16,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Label Size',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: isTablet ? 13 : 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                '${labelSize.toStringAsFixed(1)} px',
+                style: TextStyle(
+                  color: const Color(0xFFD9DCF4),
+                  fontSize: isTablet ? 12 : 11,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            child: Slider(
+              min: 8.0,
+              max: 160.0,
+              divisions: 152,
+              value: labelSize,
+              onChanged: (value) {
+                setState(() {
+                  _drawingLabelSize = value;
                 });
               },
             ),
@@ -2457,11 +2515,16 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
       return;
     }
     setState(() {
-      _selectedTool = _selectedTool == tool ? null : tool;
+      final nextTool = _selectedTool == tool ? null : tool;
+      _selectedTool = nextTool;
       _moveMode = false;
       _eraserMode = false;
-      // Auto-collapse tools panel when a tool is selected
-      if (_viewMode == CameraViewMode.toolsExpanded) {
+      if (nextTool != null) {
+        _showThicknessSection = true;
+        // Keep UX simple: selecting a drawing tool starts drawing immediately.
+        _viewMode = CameraViewMode.defaultOpen;
+      }
+      if (_viewMode == CameraViewMode.toolsExpanded && nextTool == null) {
         _viewMode = CameraViewMode.defaultOpen;
       }
     });
@@ -2787,6 +2850,14 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
               _moveStartPoints = null;
             });
           }
+          if (_moveMode && _activeLabelAnnotationIndex != null) {
+            setState(() {
+              _activeLabelAnnotationIndex = null;
+              _labelMoveStartCursor = null;
+              _labelMoveStartX = null;
+              _labelMoveStartY = null;
+            });
+          }
           _setZoom(_pinchStartZoom * details.scale);
           return;
         }
@@ -2833,12 +2904,30 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
     }
 
     if (_moveMode) {
-      final index = _findClosestAnnotationIndex(point, maxDistance: 40);
-      if (index == null) return;
+      final markIndex = _findClosestAnnotationIndex(point, maxDistance: 56);
+      final labelIndex =
+          _findClosestLabelAnnotationIndex(point, maxDistance: 64);
+      if (markIndex == null && labelIndex == null) return;
       setState(() {
-        _activeAnnotationIndex = index;
-        _moveStartCursor = point;
-        _moveStartPoints = List<HexaPoint>.from(_annotations[index].points);
+        if (labelIndex != null) {
+          final ann = _annotations[labelIndex];
+          _activeLabelAnnotationIndex = labelIndex;
+          _labelMoveStartCursor = point;
+          _labelMoveStartX = ann.labelOffsetX;
+          _labelMoveStartY = ann.labelOffsetY;
+          _activeAnnotationIndex = null;
+          _moveStartCursor = null;
+          _moveStartPoints = null;
+        } else if (markIndex != null) {
+          _activeAnnotationIndex = markIndex;
+          _moveStartCursor = point;
+          _moveStartPoints =
+              List<HexaPoint>.from(_annotations[markIndex].points);
+          _activeLabelAnnotationIndex = null;
+          _labelMoveStartCursor = null;
+          _labelMoveStartX = null;
+          _labelMoveStartY = null;
+        }
         _viewMode = CameraViewMode.defaultOpen;
       });
       return;
@@ -2888,26 +2977,63 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
       return;
     }
 
-    if (_moveMode) {
+    if (_moveMode && _activeAnnotationIndex != null) {
       final index = _activeAnnotationIndex;
       final startCursor = _moveStartCursor;
       final startPoints = _moveStartPoints;
       if (index == null || startCursor == null || startPoints == null) return;
       final dx = point.x - startCursor.x;
       final dy = point.y - startCursor.y;
+      // Avoid heavy full-tree rebuilds on tiny pointer jitter.
+      if ((dx * dx + dy * dy) < 0.35) return;
       final sourceW = _lastSourceSize.width <= 0 ? 1.0 : _lastSourceSize.width;
       final sourceH =
           _lastSourceSize.height <= 0 ? 1.0 : _lastSourceSize.height;
+      var minX = startPoints.first.x;
+      var maxX = startPoints.first.x;
+      var minY = startPoints.first.y;
+      var maxY = startPoints.first.y;
+      for (final p in startPoints) {
+        minX = math.min(minX, p.x);
+        maxX = math.max(maxX, p.x);
+        minY = math.min(minY, p.y);
+        maxY = math.max(maxY, p.y);
+      }
+      final appliedDx = dx.clamp(-minX, sourceW - maxX).toDouble();
+      final appliedDy = dy.clamp(-minY, sourceH - maxY).toDouble();
       setState(() {
         final movedPoints = startPoints
             .map(
               (p) => HexaPoint(
-                x: (p.x + dx).clamp(0.0, sourceW),
-                y: (p.y + dy).clamp(0.0, sourceH),
+                x: p.x + appliedDx,
+                y: p.y + appliedDy,
               ),
             )
             .toList();
         _annotations[index] = _annotations[index].copyWith(points: movedPoints);
+      });
+      return;
+    }
+
+    if (_moveMode && _activeLabelAnnotationIndex != null) {
+      final index = _activeLabelAnnotationIndex;
+      final startCursor = _labelMoveStartCursor;
+      final startX = _labelMoveStartX;
+      final startY = _labelMoveStartY;
+      if (index == null ||
+          startCursor == null ||
+          startX == null ||
+          startY == null) {
+        return;
+      }
+      final dx = point.x - startCursor.x;
+      final dy = point.y - startCursor.y;
+      if ((dx * dx + dy * dy) < 0.35) return;
+      setState(() {
+        _annotations[index] = _annotations[index].copyWith(
+          labelOffsetX: (startX + dx).clamp(-1200.0, 1200.0).toDouble(),
+          labelOffsetY: (startY + dy).clamp(-1200.0, 1200.0).toDouble(),
+        );
       });
       return;
     }
@@ -2938,6 +3064,10 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
         _activeAnnotationIndex = null;
         _moveStartCursor = null;
         _moveStartPoints = null;
+        _activeLabelAnnotationIndex = null;
+        _labelMoveStartCursor = null;
+        _labelMoveStartX = null;
+        _labelMoveStartY = null;
       });
       _refreshAnnotationMeasurements();
       return;
@@ -2959,6 +3089,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
         strokeWidth: _drawingStrokeWidth,
         timestamp: DateTime.now().toIso8601String(),
         measurement: measurement,
+        labelFontSize: _drawingLabelSize,
       );
       _annotations.add(
         Annotation(
@@ -2969,6 +3100,9 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
           strokeWidth: createdAnnotation.strokeWidth,
           timestamp: createdAnnotation.timestamp,
           measurement: createdAnnotation.measurement,
+          labelFontSize: createdAnnotation.labelFontSize,
+          labelOffsetX: createdAnnotation.labelOffsetX,
+          labelOffsetY: createdAnnotation.labelOffsetY,
         ),
       );
       _redoStack.clear();
@@ -3079,6 +3213,11 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: (sheetContext) {
+        final videoPreviewThumbFuture = isVideo && !kIsWeb
+            ? VideoExportService.extractVideoThumbnailBytes(
+                sourcePath: filePath,
+              )
+            : null;
         final extension = isVideo ? '.mp4' : '.jpg';
         final defaultName =
             'hexa_cam_${DateTime.now().millisecondsSinceEpoch}$extension';
@@ -3125,10 +3264,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                                     ),
                                   )
                                 : FutureBuilder<Uint8List?>(
-                                    future: VideoExportService
-                                        .extractVideoThumbnailBytes(
-                                      sourcePath: filePath,
-                                    ),
+                                    future: videoPreviewThumbFuture,
                                     builder: (context, snapshot) {
                                       if (snapshot.connectionState ==
                                           ConnectionState.waiting) {
@@ -3450,10 +3586,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
         if (!kIsWeb) {
           await File(mediaSourcePath).writeAsBytes(finalBytes, flush: true);
         }
-      } else if (isVideo &&
-          exportToDevice &&
-          annotations.isNotEmpty &&
-          !kIsWeb) {
+      } else if (isVideo && annotations.isNotEmpty && !kIsWeb) {
         final exported = await VideoExportService.burnAnnotationsIntoVideo(
           sourcePath: mediaSourcePath,
           annotations: annotations,
@@ -3653,11 +3786,11 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
   ) {
     if (!uiStateController.measurementMode) return null;
     final effectiveCalibration = _effectiveCalibrationForLens(_selectedLens);
-    final needsCalibrationLabel = effectiveCalibration == null &&
+    final needsCalibration = effectiveCalibration == null &&
         type != AnnotationType.text &&
         type != AnnotationType.singlePointer;
-    if (needsCalibrationLabel) {
-      return 'Calibration not set';
+    if (needsCalibration) {
+      return null;
     }
     return MeasurementCalculator.getMeasurementText(
       Annotation(
@@ -3863,10 +3996,9 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
     Uint8List? stillBytes,
   }) async {
     if (annotations.isEmpty) return (annotations, null);
-    final sourceSize =
-        _lastSourceSize.width > 0 && _lastSourceSize.height > 0
-            ? _lastSourceSize
-            : null;
+    final sourceSize = _lastSourceSize.width > 0 && _lastSourceSize.height > 0
+        ? _lastSourceSize
+        : null;
     if (sourceSize == null) return (annotations, null);
     if (isVideo) {
       final path = videoPath;
@@ -3887,9 +4019,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
     final bytes = stillBytes;
     if (bytes == null || bytes.isEmpty) return (annotations, sourceSize);
     final targetSize = await MarkedMediaRenderer.decodeImageSize(bytes);
-    if (targetSize == null ||
-        targetSize.width <= 0 ||
-        targetSize.height <= 0) {
+    if (targetSize == null || targetSize.width <= 0 || targetSize.height <= 0) {
       return (annotations, sourceSize);
     }
     final normalized = MarkedMediaRenderer.normalizeAnnotationsToTarget(
@@ -4001,12 +4131,24 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
             measurement: showMeasurements
                 ? _buildMeasurementForPoints(annotation.points, annotation.type)
                 : null,
+            labelFontSize: annotation.labelFontSize,
+            labelOffsetX: annotation.labelOffsetX,
+            labelOffsetY: annotation.labelOffsetY,
           ),
         )
         .toList();
   }
 
-  List<Annotation> _displayAnnotations() => _syncedAnnotations();
+  List<Annotation> _displayAnnotations() {
+    // During move-drag, keep current annotation measurements/text as-is to
+    // prevent expensive recompute every frame (source of move lag on tablets).
+    if (_moveMode &&
+        (_activeAnnotationIndex != null ||
+            _activeLabelAnnotationIndex != null)) {
+      return _annotations;
+    }
+    return _syncedAnnotations();
+  }
 
   StoredCalibration? _effectiveCalibrationForLens(String lens) {
     final microEntry =
@@ -4137,71 +4279,100 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
 
   Future<void> _showTextDialog(HexaPoint tapPoint) async {
     final TextEditingController controller = TextEditingController();
-    final text = await showDialog<String>(
+    var textSize = _drawingStrokeWidth.clamp(8.0, 52.0).toDouble();
+    final result = await showDialog<Map<String, dynamic>>(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) => Dialog(
-        backgroundColor: const Color(0xFF2B295C),
-        insetPadding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
-        child: AnimatedPadding(
-          duration: const Duration(milliseconds: 160),
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.viewInsetsOf(ctx).bottom > 0 ? 8 : 0,
-          ),
-          child: ConstrainedBox(
-            constraints: BoxConstraints(
-              maxWidth: 420,
-              maxHeight: MediaQuery.sizeOf(ctx).height * 0.85,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => Dialog(
+          backgroundColor: const Color(0xFF2B295C),
+          insetPadding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
+          child: AnimatedPadding(
+            duration: const Duration(milliseconds: 160),
+            padding: EdgeInsets.only(
+              bottom: MediaQuery.viewInsetsOf(ctx).bottom + 8,
             ),
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Add Text',
-                    style: TextStyle(color: Colors.white, fontSize: 18),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: controller,
-                    autofocus: true,
-                    style: const TextStyle(color: Colors.white),
-                    decoration: const InputDecoration(
-                      hintText: 'Enter text',
-                      hintStyle: TextStyle(color: Color(0xFFAFB5D9)),
-                      enabledBorder: UnderlineInputBorder(
-                        borderSide: BorderSide(color: Color(0xFF4A57AA)),
-                      ),
-                      focusedBorder: UnderlineInputBorder(
-                        borderSide: BorderSide(color: AppTheme.primary),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: 420,
+                maxHeight: MediaQuery.sizeOf(ctx).height * 0.85,
+              ),
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Add Text',
+                      style: TextStyle(color: Colors.white, fontSize: 18),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: controller,
+                      autofocus: true,
+                      style: const TextStyle(color: Colors.white),
+                      decoration: const InputDecoration(
+                        hintText: 'Enter text',
+                        hintStyle: TextStyle(color: Color(0xFFAFB5D9)),
+                        enabledBorder: UnderlineInputBorder(
+                          borderSide: BorderSide(color: Color(0xFF4A57AA)),
+                        ),
+                        focusedBorder: UnderlineInputBorder(
+                          borderSide: BorderSide(color: AppTheme.primary),
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 16),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(ctx),
-                        child: const Text(
-                          'Cancel',
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        const Text(
+                          'Font size',
                           style: TextStyle(color: Colors.white70),
                         ),
-                      ),
-                      ElevatedButton(
-                        onPressed: () =>
-                            Navigator.pop(ctx, controller.text.trim()),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppTheme.primary,
+                        const Spacer(),
+                        Text(
+                          '${textSize.toStringAsFixed(1)} px',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
+                          ),
                         ),
-                        child: const Text('Add',
-                            style: TextStyle(color: Colors.white)),
-                      ),
-                    ],
-                  ),
-                ],
+                      ],
+                    ),
+                    Slider(
+                      min: 8.0,
+                      max: 52.0,
+                      divisions: 44,
+                      value: textSize,
+                      onChanged: (v) => setDialogState(() => textSize = v),
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(ctx),
+                          child: const Text(
+                            'Cancel',
+                            style: TextStyle(color: Colors.white70),
+                          ),
+                        ),
+                        ElevatedButton(
+                          onPressed: () => Navigator.pop(ctx, {
+                            'text': controller.text.trim(),
+                            'size': textSize,
+                          }),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppTheme.primary,
+                          ),
+                          child: const Text('Add',
+                              style: TextStyle(color: Colors.white)),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -4209,15 +4380,18 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
       ),
     );
     controller.dispose();
+    final text = result?['text'] as String?;
     if (text == null || text.isEmpty || !mounted) return;
+    final size = (result?['size'] as num?)?.toDouble() ?? _drawingStrokeWidth;
     final annotation = Annotation(
       id: _uuid.v4(),
       type: AnnotationType.text,
       points: [tapPoint],
       color: _drawingColor,
-      strokeWidth: _drawingStrokeWidth,
+      strokeWidth: size.clamp(8.0, 52.0).toDouble(),
       timestamp: DateTime.now().toIso8601String(),
       text: text,
+      labelFontSize: size.clamp(8.0, 52.0).toDouble(),
     );
     setState(() {
       _annotations.add(annotation);
@@ -4311,9 +4485,9 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
               padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
               child: AnimatedPadding(
                 duration: const Duration(milliseconds: 160),
+                curve: Curves.easeOut,
                 padding: EdgeInsets.only(
-                  bottom:
-                      MediaQuery.viewInsetsOf(dialogContext).bottom > 0 ? 8 : 0,
+                  bottom: MediaQuery.viewInsetsOf(dialogContext).bottom + 8,
                 ),
                 child: ConstrainedBox(
                   constraints: BoxConstraints(
@@ -4693,6 +4867,22 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
     var closestDistance = maxDistance;
     for (var i = 0; i < _annotations.length; i++) {
       final d = annotationHitDistance(point, _annotations[i]);
+      if (d < closestDistance) {
+        closestDistance = d;
+        closestIndex = i;
+      }
+    }
+    return closestIndex;
+  }
+
+  int? _findClosestLabelAnnotationIndex(
+    HexaPoint point, {
+    required double maxDistance,
+  }) {
+    int? closestIndex;
+    var closestDistance = maxDistance;
+    for (var i = 0; i < _annotations.length; i++) {
+      final d = annotationLabelHitDistance(point, _annotations[i]);
       if (d < closestDistance) {
         closestDistance = d;
         closestIndex = i;

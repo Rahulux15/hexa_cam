@@ -23,6 +23,9 @@ class Annotation {
   final String timestamp;
   final String? measurement;
   final String coordinateSpace;
+  final double? labelFontSize;
+  final double labelOffsetX;
+  final double labelOffsetY;
 
   Annotation({
     required this.id,
@@ -34,6 +37,9 @@ class Annotation {
     required this.timestamp,
     this.measurement,
     this.coordinateSpace = 'source',
+    this.labelFontSize,
+    this.labelOffsetX = 0,
+    this.labelOffsetY = 0,
   });
 
   Annotation copyWith({
@@ -41,6 +47,9 @@ class Annotation {
     String? coordinateSpace,
     String? measurement,
     double? strokeWidth,
+    double? labelFontSize,
+    double? labelOffsetX,
+    double? labelOffsetY,
   }) =>
       Annotation(
         id: id,
@@ -52,6 +61,9 @@ class Annotation {
         timestamp: timestamp,
         measurement: measurement ?? this.measurement,
         coordinateSpace: coordinateSpace ?? this.coordinateSpace,
+        labelFontSize: labelFontSize ?? this.labelFontSize,
+        labelOffsetX: labelOffsetX ?? this.labelOffsetX,
+        labelOffsetY: labelOffsetY ?? this.labelOffsetY,
       );
 
   factory Annotation.fromJson(Map<String, dynamic> json) => Annotation(
@@ -65,6 +77,9 @@ class Annotation {
         timestamp: json['timestamp'],
         measurement: json['measurement'],
         coordinateSpace: json['coordinateSpace'] ?? 'source',
+        labelFontSize: (json['labelFontSize'] as num?)?.toDouble(),
+        labelOffsetX: (json['labelOffsetX'] as num?)?.toDouble() ?? 0,
+        labelOffsetY: (json['labelOffsetY'] as num?)?.toDouble() ?? 0,
       );
 
   Map<String, dynamic> toJson() => {
@@ -77,6 +92,9 @@ class Annotation {
         'timestamp': timestamp,
         if (measurement != null) 'measurement': measurement,
         'coordinateSpace': coordinateSpace,
+        if (labelFontSize != null) 'labelFontSize': labelFontSize,
+        if (labelOffsetX != 0) 'labelOffsetX': labelOffsetX,
+        if (labelOffsetY != 0) 'labelOffsetY': labelOffsetY,
       };
 
   static Color _parseColor(dynamic raw) {

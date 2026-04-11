@@ -12,6 +12,7 @@ import 'package:sqflite/sqflite.dart';
 import '../../config/constants.dart';
 import 'backup_media_export.dart';
 import 'backup_result.dart';
+import 'file_service.dart';
 import 'storage_service.dart';
 
 Future<BackupResult> runBackup(StorageService storage) async {
@@ -46,31 +47,37 @@ Future<BackupResult> runBackup(StorageService storage) async {
 
     await appendHumanReadableExportToArchive(archive, foldersData);
 
-    final zipBytes = ZipEncoder().encode(archive);
-
-    // Prefer a user-visible folder on Android (Downloads); iOS has no public
-    // Downloads API — app Documents + UIFileSharingEnabled + share sheet.
-    var parent = await getApplicationDocumentsDirectory();
-    if (Platform.isAndroid) {
-      final downloads = await getDownloadsDirectory();
-      if (downloads != null) {
-        try {
-          await Directory(p.join(downloads.path, 'HexaCamBackups'))
-              .create(recursive: true);
-          parent = downloads;
-        } catch (_) {
-          // Scoped storage or permission — keep app documents.
-        }
-      }
+    final zipData = ZipEncoder().encode(archive);
+    if (zipData.isEmpty) {
+      return const BackupResult(
+        ok: false,
+        message: 'Could not create backup archive.',
+      );
     }
+    final zipBytes = Uint8List.fromList(zipData);
 
-    final backupDir = Directory(p.join(parent.path, 'HexaCamBackups'));
-    if (!await backupDir.exists()) {
-      await backupDir.create(recursive: true);
-    }
     final name = 'hexacam-backup-${DateTime.now().millisecondsSinceEpoch}.zip';
-    final outFile = File(p.join(backupDir.path, name));
-    await outFile.writeAsBytes(zipBytes, flush: true);
+    String outPath = '';
+    try {
+      // Best-effort user-visible location on both Android and iOS.
+      outPath = await FileService.saveToDownloads(
+        bytes: zipBytes,
+        filename: name,
+        folderName: 'HexaCamBackups',
+        subdirectory: 'backups',
+      );
+    } catch (_) {
+      // Fall back to app documents if public write fails.
+      final docs = await getApplicationDocumentsDirectory();
+      final backupDir = Directory(p.join(docs.path, 'HexaCamBackups'));
+      if (!await backupDir.exists()) {
+        await backupDir.create(recursive: true);
+      }
+      final outFile = File(p.join(backupDir.path, name));
+      await outFile.writeAsBytes(zipBytes, flush: true);
+      outPath = outFile.path;
+    }
+    final outFile = File(outPath);
 
     unawaited(() async {
       try {
@@ -78,7 +85,7 @@ Future<BackupResult> runBackup(StorageService storage) async {
           ShareParams(
             files: [
               XFile(
-                outFile.path,
+                outPath,
                 mimeType: 'application/zip',
                 name: name,
               ),
@@ -95,9 +102,9 @@ Future<BackupResult> runBackup(StorageService storage) async {
     }());
 
     final hint = Platform.isIOS
-        ? 'Files app → On My iPhone → Hexa Cam → Documents → HexaCamBackups'
+        ? 'Files app → On My iPhone → Hexa Cam → Downloads/HexaCamBackups'
         : Platform.isAndroid
-            ? 'Or find ZIP under Download/HexaCamBackups (if allowed) — path below'
+            ? 'Find ZIP under Download/HexaCamBackups (or fallback path below)'
             : 'Path:';
 
     return BackupResult(

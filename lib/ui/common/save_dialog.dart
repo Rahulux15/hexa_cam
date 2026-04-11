@@ -66,7 +66,8 @@ class _SaveDialogState extends State<SaveDialog> {
   Future<void> _loadDontAskAgainState() async {
     final prefs = await SharedPreferences.getInstance();
     if (!mounted) return;
-    setState(() => _dontAskAgain = prefs.getBool(SaveDialog.dontAskAgainKey) == true);
+    setState(() =>
+        _dontAskAgain = prefs.getBool(SaveDialog.dontAskAgainKey) == true);
   }
 
   final _filenameController = TextEditingController();
@@ -89,79 +90,112 @@ class _SaveDialogState extends State<SaveDialog> {
       backgroundColor: Colors.transparent,
       insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
       child: ConstrainedBox(
-        constraints: BoxConstraints(maxWidth: isTab ? 420 : 360),
+        constraints: BoxConstraints(
+          maxWidth: isTab ? 420 : 360,
+          maxHeight: MediaQuery.sizeOf(context).height * 0.9,
+        ),
         child: AnimatedPadding(
           duration: const Duration(milliseconds: 160),
-          padding: EdgeInsets.only(bottom: keyboardInset > 0 ? 8 : 0),
+          padding: EdgeInsets.only(bottom: keyboardInset + 8),
           child: Container(
             padding: EdgeInsets.all(isTab ? 26 : 22),
-            decoration: AppTheme.softCardDecoration(borderRadius: BorderRadius.circular(22), color: const Color(0xFF2A295D)),
+            decoration: AppTheme.softCardDecoration(
+                borderRadius: BorderRadius.circular(22),
+                color: const Color(0xFF2A295D)),
             child: SingleChildScrollView(
-              child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('Save Capture', style: TextStyle(color: Colors.white, fontSize: isTab ? 22 : 18, fontWeight: FontWeight.w700)),
-            const SizedBox(height: 18),
-            if (widget.imageUrl != null)
-              Container(
-                width: double.infinity,
-                height: isTab ? 160 : 138,
-                decoration: BoxDecoration(color: const Color(0xFF191737), borderRadius: BorderRadius.circular(16)),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(16),
-                  child: MediaImage(
-                    source: widget.imageUrl!,
-                    mediaId: widget.mediaId,
-                    annotations: widget.annotations,
-                    fit: BoxFit.contain,
-                    errorWidget: const Center(child: Icon(Icons.image_outlined, color: AppTheme.textMuted, size: 28)),
-                  ),
-                ),
-              ),
-            const SizedBox(height: 18),
-            _field(_filenameController, 'Enter file name'),
-            const SizedBox(height: 14),
-            _field(_descriptionController, 'Description', maxLines: 4),
-            const SizedBox(height: 14),
-            Row(children: [
-              const Expanded(child: Text("Don't Ask me Again", style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600))),
-              Switch(value: _dontAskAgain, onChanged: (value) => setState(() => _dontAskAgain = value), activeThumbColor: Colors.white, activeTrackColor: AppTheme.primary, inactiveThumbColor: Colors.white70, inactiveTrackColor: Colors.white24),
-            ]),
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                Expanded(
-                  child: _actionButton(label: 'Cancel', onTap: widget.onCancel),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: _actionButton(
-                    label: _saving ? 'Saving…' : 'Save',
-                    gradient: true,
-                    busy: _saving,
-                    onTap: _saving
-                        ? null
-                        : () async {
-                            setState(() => _saving = true);
-                            try {
-                              final prefs = await SharedPreferences.getInstance();
-                              if (_dontAskAgain) {
-                                await prefs.setBool(SaveDialog.dontAskAgainKey, true);
-                              } else {
-                                await prefs.remove(SaveDialog.dontAskAgainKey);
-                              }
-                              await widget.onSave(
-                                _filenameController.text,
-                                _descriptionController.text,
-                              );
-                              if (context.mounted) Navigator.pop(context);
-                            } finally {
-                              if (mounted) setState(() => _saving = false);
-                            }
-                          },
-                  ),
-                ),
-              ],
-            ),
-              ]),
+              child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Save Capture',
+                        style: TextStyle(
+                            color: Colors.white,
+                            fontSize: isTab ? 22 : 18,
+                            fontWeight: FontWeight.w700)),
+                    const SizedBox(height: 18),
+                    if (widget.imageUrl != null)
+                      Container(
+                        width: double.infinity,
+                        height: isTab ? 160 : 138,
+                        decoration: BoxDecoration(
+                            color: const Color(0xFF191737),
+                            borderRadius: BorderRadius.circular(16)),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(16),
+                          child: MediaImage(
+                            source: widget.imageUrl!,
+                            mediaId: widget.mediaId,
+                            annotations: widget.annotations,
+                            fit: BoxFit.contain,
+                            errorWidget: const Center(
+                                child: Icon(Icons.image_outlined,
+                                    color: AppTheme.textMuted, size: 28)),
+                          ),
+                        ),
+                      ),
+                    const SizedBox(height: 18),
+                    _field(_filenameController, 'Enter file name'),
+                    const SizedBox(height: 14),
+                    _field(_descriptionController, 'Description', maxLines: 4),
+                    const SizedBox(height: 14),
+                    Row(children: [
+                      const Expanded(
+                          child: Text("Don't Ask me Again",
+                              style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w600))),
+                      Switch(
+                          value: _dontAskAgain,
+                          onChanged: (value) =>
+                              setState(() => _dontAskAgain = value),
+                          activeThumbColor: Colors.white,
+                          activeTrackColor: AppTheme.primary,
+                          inactiveThumbColor: Colors.white70,
+                          inactiveTrackColor: Colors.white24),
+                    ]),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _actionButton(
+                              label: 'Cancel', onTap: widget.onCancel),
+                        ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: _actionButton(
+                            label: _saving ? 'Saving…' : 'Save',
+                            gradient: true,
+                            busy: _saving,
+                            onTap: _saving
+                                ? null
+                                : () async {
+                                    setState(() => _saving = true);
+                                    try {
+                                      final prefs =
+                                          await SharedPreferences.getInstance();
+                                      if (_dontAskAgain) {
+                                        await prefs.setBool(
+                                            SaveDialog.dontAskAgainKey, true);
+                                      } else {
+                                        await prefs
+                                            .remove(SaveDialog.dontAskAgainKey);
+                                      }
+                                      await widget.onSave(
+                                        _filenameController.text,
+                                        _descriptionController.text,
+                                      );
+                                      if (context.mounted)
+                                        Navigator.pop(context);
+                                    } finally {
+                                      if (mounted)
+                                        setState(() => _saving = false);
+                                    }
+                                  },
+                          ),
+                        ),
+                      ],
+                    ),
+                  ]),
             ),
           ),
         ),
@@ -169,7 +203,8 @@ class _SaveDialogState extends State<SaveDialog> {
     );
   }
 
-  Widget _field(TextEditingController controller, String hint, {int maxLines = 1}) {
+  Widget _field(TextEditingController controller, String hint,
+      {int maxLines = 1}) {
     return TextField(
       controller: controller,
       maxLines: maxLines,
@@ -179,10 +214,17 @@ class _SaveDialogState extends State<SaveDialog> {
         hintStyle: const TextStyle(color: AppTheme.textMuted),
         filled: true,
         fillColor: const Color(0xFF1D284D),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: const BorderSide(color: Color(0xFF2E4A73))),
-        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: const BorderSide(color: Color(0xFF2E4A73))),
-        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: const BorderSide(color: AppTheme.primaryLight)),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(16),
+            borderSide: const BorderSide(color: Color(0xFF2E4A73))),
+        enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(16),
+            borderSide: const BorderSide(color: Color(0xFF2E4A73))),
+        focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(16),
+            borderSide: const BorderSide(color: AppTheme.primaryLight)),
       ),
     );
   }
@@ -198,15 +240,25 @@ class _SaveDialogState extends State<SaveDialog> {
       height: 48,
       child: ElevatedButton(
         onPressed: onTap,
-        style: ElevatedButton.styleFrom(backgroundColor: gradient ? Colors.transparent : const Color(0xFF1D284D), shadowColor: Colors.transparent, padding: EdgeInsets.zero, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18))),
+        style: ElevatedButton.styleFrom(
+            backgroundColor:
+                gradient ? Colors.transparent : const Color(0xFF1D284D),
+            shadowColor: Colors.transparent,
+            padding: EdgeInsets.zero,
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(18))),
         child: Ink(
-          decoration: BoxDecoration(gradient: gradient ? AppTheme.buttonGradient : null, color: gradient ? null : const Color(0xFF1D284D), borderRadius: BorderRadius.circular(18)),
+          decoration: BoxDecoration(
+              gradient: gradient ? AppTheme.buttonGradient : null,
+              color: gradient ? null : const Color(0xFF1D284D),
+              borderRadius: BorderRadius.circular(18)),
           child: Center(
             child: busy
                 ? const SizedBox(
                     width: 22,
                     height: 22,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: Colors.white),
                   )
                 : Text(
                     label,

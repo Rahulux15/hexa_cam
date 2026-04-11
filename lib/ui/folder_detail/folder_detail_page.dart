@@ -914,11 +914,20 @@ class _FolderDetailPageState extends State<FolderDetailPage> {
         shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
         ),
-        builder: (ctx) => Padding(
-          padding: EdgeInsets.fromLTRB(20, 16, 20, 20 + bottomPad),
+        builder: (ctx) => AnimatedPadding(
+          duration: const Duration(milliseconds: 160),
+          curve: Curves.easeOut,
+          padding: EdgeInsets.fromLTRB(
+            20,
+            16,
+            20,
+            20 + bottomPad + MediaQuery.viewInsetsOf(ctx).bottom,
+          ),
           child: StatefulBuilder(
             builder: (ctx, setModal) {
               return SingleChildScrollView(
+                keyboardDismissBehavior:
+                    ScrollViewKeyboardDismissBehavior.onDrag,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   mainAxisSize: MainAxisSize.min,

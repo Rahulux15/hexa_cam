@@ -19,6 +19,7 @@ import 'web_download_stub.dart' if (dart.library.html) 'web_download_web.dart';
 class FileService {
   static const _uuid = Uuid();
   static const _startupPermissionKey = 'storage_permissions_requested';
+  static Uint8List? _reportLogoBytesCache;
 
   /// UUID v4 from package:uuid — collision risk is negligible for app-scale IDs.
   static String generateAssetId([String prefix = 'media']) =>
@@ -28,8 +29,8 @@ class FileService {
   static Future<Uint8List> _encodeBytesForExport(Uint8List bytes) async {
     try {
       if (!await ExportPrefs.watermarkEnabled()) return bytes;
-      final logo = await rootBundle.load('assets/images/report_logo.png');
-      final logoBytes = logo.buffer.asUint8List();
+      final logoBytes = await _loadReportLogoBytes();
+      if (logoBytes == null || logoBytes.isEmpty) return bytes;
       var out = applyReportLogoWatermark(bytes, logoBytes);
       if (out == null) {
         final normalized = reencodeImageBytesAsJpegForWatermark(bytes);
@@ -42,6 +43,22 @@ class FileService {
       logDebug('FileService._encodeBytesForExport watermark skipped: $e');
       return bytes;
     }
+  }
+
+  static Future<Uint8List?> _loadReportLogoBytes() async {
+    final cached = _reportLogoBytesCache;
+    if (cached != null && cached.isNotEmpty) return cached;
+    try {
+      final logo = await rootBundle.load('assets/images/report_logo.png');
+      final bytes = logo.buffer.asUint8List();
+      if (bytes.isNotEmpty) {
+        _reportLogoBytesCache = bytes;
+        return bytes;
+      }
+    } catch (e) {
+      logDebug('FileService._loadReportLogoBytes failed: $e');
+    }
+    return null;
   }
 
   /// Photos / media library access for Gal on Android 13+ and iOS (with plugin prompt).
@@ -79,7 +96,8 @@ class FileService {
     String filename, {
     Rect? sharePositionOrigin,
   }) async {
-    logDebug('FileService.saveToDevice start filename=$filename bytes=${bytes.length}');
+    logDebug(
+        'FileService.saveToDevice start filename=$filename bytes=${bytes.length}');
     bytes = await _encodeBytesForExport(bytes);
     if (kIsWeb) {
       final name = _safeFilename(filename, fallbackExtension: '.jpg');
@@ -108,7 +126,8 @@ class FileService {
       } catch (e) {
         logDebug('FileService.saveToDevice iOS Gal failed, using share: $e');
       }
-      logDebug('FileService.saveToDevice iOS share fallback filename=$filename');
+      logDebug(
+          'FileService.saveToDevice iOS share fallback filename=$filename');
       await shareImageToDevice(
         bytes,
         filename,
@@ -117,9 +136,8 @@ class FileService {
       logDebug('FileService.saveToDevice iOS share flow done');
       return false;
     }
-    final sanitized = filename
-        .replaceAll(RegExp(r'[<>:"/\\|?*\x00-\x1F]'), '-')
-        .trim();
+    final sanitized =
+        filename.replaceAll(RegExp(r'[<>:"/\\|?*\x00-\x1F]'), '-').trim();
     final name = sanitized.isEmpty
         ? 'hexacam-${DateTime.now().millisecondsSinceEpoch}'
         : sanitized;
@@ -198,7 +216,8 @@ class FileService {
     String filename, {
     Rect? sharePositionOrigin,
   }) async {
-    logDebug('FileService.saveVideoToDevice start filename=$filename path=$videoPath');
+    logDebug(
+        'FileService.saveVideoToDevice start filename=$filename path=$videoPath');
     if (kIsWeb) {
       logDebug('FileService.saveVideoToDevice skipped on web');
       return false;
@@ -211,13 +230,16 @@ class FileService {
         }
         if (await Gal.hasAccess(toAlbum: true)) {
           await Gal.putVideo(videoPath, album: 'Hexa Cam');
-          logDebug('FileService.saveVideoToDevice iOS Photos (Gal) path=$videoPath');
+          logDebug(
+              'FileService.saveVideoToDevice iOS Photos (Gal) path=$videoPath');
           return true;
         }
       } catch (e) {
-        logDebug('FileService.saveVideoToDevice iOS Gal failed, using share: $e');
+        logDebug(
+            'FileService.saveVideoToDevice iOS Gal failed, using share: $e');
       }
-      logDebug('FileService.saveVideoToDevice iOS share flow filename=$filename');
+      logDebug(
+          'FileService.saveVideoToDevice iOS share flow filename=$filename');
       await shareVideoToDevice(
         videoPath,
         filename,
@@ -302,7 +324,8 @@ class FileService {
     );
     final shareFile = await source.copy(safePath);
     try {
-      logDebug('FileService.shareVideoToDevice share anchored path=${shareFile.path}');
+      logDebug(
+          'FileService.shareVideoToDevice share anchored path=${shareFile.path}');
       await SharePlus.instance.share(
         ShareParams(
           files: [XFile(shareFile.path, mimeType: 'video/mp4')],
@@ -313,7 +336,8 @@ class FileService {
       logDebug('FileService.shareVideoToDevice share anchored done');
     } catch (_) {
       // iOS fallback for popover-origin failures.
-      logDebug('FileService.shareVideoToDevice fallback share path=${shareFile.path}');
+      logDebug(
+          'FileService.shareVideoToDevice fallback share path=${shareFile.path}');
       await SharePlus.instance.share(
         ShareParams(
           files: [XFile(shareFile.path, mimeType: 'video/mp4')],
@@ -474,11 +498,8 @@ class FileService {
     return mediaDir;
   }
 
-  static Future<File> _atomicWriteBytes(
-    String destination,
-    Uint8List bytes,
-    {void Function(double progress)? onProgress}
-  ) async {
+  static Future<File> _atomicWriteBytes(String destination, Uint8List bytes,
+      {void Function(double progress)? onProgress}) async {
     final target = File(destination);
     final temp = File('$destination.tmp');
     final sink = temp.openWrite();
@@ -535,12 +556,14 @@ class FileService {
   static String buildPublicDownloadPath({
     required String filename,
     required String downloadsRoot,
-  }) => _normalizePath(p.join(downloadsRoot, _safeFilename(filename)));
+  }) =>
+      _normalizePath(p.join(downloadsRoot, _safeFilename(filename)));
 
   static String buildFallbackDownloadPath({
     required String filename,
     required String downloadsRoot,
-  }) => _normalizePath(p.join(downloadsRoot, _safeFilename(filename)));
+  }) =>
+      _normalizePath(p.join(downloadsRoot, _safeFilename(filename)));
 
   static Future<Uint8List> readBytes(String path) async {
     return File(path).readAsBytes();
@@ -558,9 +581,8 @@ class FileService {
   }
 
   static String _safeFilename(String value, {String fallbackExtension = ''}) {
-    var cleaned = value
-        .replaceAll(RegExp(r'[<>:"/\\|?*\x00-\x1F]'), '-')
-        .trim();
+    var cleaned =
+        value.replaceAll(RegExp(r'[<>:"/\\|?*\x00-\x1F]'), '-').trim();
     cleaned = cleaned.replaceAll(RegExp(r'-{2,}'), '-');
     if (cleaned.isEmpty) {
       final extension = fallbackExtension.isEmpty ? '' : fallbackExtension;

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -16,6 +17,12 @@ import '../../utils/marked_media_renderer.dart';
 /// main isolate. A Dart [Isolate] cannot host `ffmpeg_kit` without a separate
 /// helper process; use UI-level progress (e.g. loading overlays) for long jobs.
 class VideoExportService {
+  static final Map<String, Uint8List> _thumbnailCache = <String, Uint8List>{};
+  static final Map<String, Future<Uint8List?>> _thumbnailInFlight =
+      <String, Future<Uint8List?>>{};
+  static const int _maxThumbnailCacheEntries = 24;
+  static Future<void> _ffmpegChain = Future<void>.value();
+
   /// Returns decoded video frame size (after container/orientation handling).
   static Future<Size?> getVideoDimensions(String sourcePath) async {
     if (kIsWeb) return null;
@@ -50,33 +57,66 @@ class VideoExportService {
         : sourcePath;
     final inputFile = File(inputPath);
     if (!await inputFile.exists()) return null;
+    final cacheKey = '$inputPath::$timeMs';
+    final cached = _thumbnailCache[cacheKey];
+    if (cached != null && cached.isNotEmpty) {
+      return cached;
+    }
+    final inFlight = _thumbnailInFlight[cacheKey];
+    if (inFlight != null) {
+      return inFlight;
+    }
 
-    final tempDir = await getTemporaryDirectory();
-    final thumbPath = p.join(
-      tempDir.path,
-      'thumb-${DateTime.now().millisecondsSinceEpoch}.jpg',
-    );
-    final args = <String>[
-      '-y',
-      '-ss',
-      (timeMs / 1000.0).toStringAsFixed(2),
-      '-i',
-      inputPath,
-      '-frames:v',
-      '1',
-      '-q:v',
-      '2',
-      thumbPath,
-    ];
-    final ok = await _runFfmpeg(args);
-    if (!ok) return null;
-    final thumbFile = File(thumbPath);
-    if (!await thumbFile.exists()) return null;
-    final bytes = await thumbFile.readAsBytes();
+    final task = () async {
+      final tempDir = await getTemporaryDirectory();
+      final candidates = {
+        timeMs,
+        0,
+        250,
+        500,
+        1000,
+      }.toList();
+      for (var i = 0; i < candidates.length; i++) {
+        final ms = candidates[i];
+        final thumbPath = p.join(
+          tempDir.path,
+          'thumb-${DateTime.now().millisecondsSinceEpoch}-$i.jpg',
+        );
+        final args = <String>[
+          '-y',
+          '-ss',
+          (ms / 1000.0).toStringAsFixed(2),
+          '-i',
+          inputPath,
+          '-frames:v',
+          '1',
+          '-q:v',
+          '2',
+          thumbPath,
+        ];
+        final ok = await _runFfmpeg(args);
+        if (!ok) continue;
+        final thumbFile = File(thumbPath);
+        if (!await thumbFile.exists()) continue;
+        final bytes = await thumbFile.readAsBytes();
+        try {
+          await thumbFile.delete();
+        } catch (_) {}
+        if (bytes.isEmpty) continue;
+        _thumbnailCache[cacheKey] = bytes;
+        if (_thumbnailCache.length > _maxThumbnailCacheEntries) {
+          _thumbnailCache.remove(_thumbnailCache.keys.first);
+        }
+        return bytes;
+      }
+      return null;
+    }();
+    _thumbnailInFlight[cacheKey] = task;
     try {
-      await thumbFile.delete();
-    } catch (_) {}
-    return bytes.isEmpty ? null : bytes;
+      return await task;
+    } finally {
+      _thumbnailInFlight.remove(cacheKey);
+    }
   }
 
   static Future<String?> burnAnnotationsIntoVideo({
@@ -380,9 +420,18 @@ class VideoExportService {
   }
 
   static Future<bool> _runFfmpeg(List<String> args) async {
-    final session = await FFmpegKit.executeWithArguments(args);
-    final returnCode = await session.getReturnCode();
-    if (returnCode == null) return false;
-    return ReturnCode.isSuccess(returnCode);
+    final completion = Completer<bool>();
+    _ffmpegChain = _ffmpegChain.catchError((_) {}).then((_) async {
+      final session = await FFmpegKit.executeWithArguments(args);
+      final returnCode = await session.getReturnCode();
+      if (returnCode == null) {
+        completion.complete(false);
+        return;
+      }
+      completion.complete(ReturnCode.isSuccess(returnCode));
+    }).catchError((_) {
+      if (!completion.isCompleted) completion.complete(false);
+    });
+    return completion.future;
   }
 }
