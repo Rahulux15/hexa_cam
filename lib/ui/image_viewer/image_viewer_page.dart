@@ -480,14 +480,34 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
         final synced = _syncedAnnotations();
         String pathToExport = videoPath;
         if (synced.isNotEmpty) {
+          final videoSize = await VideoExportService.getVideoDimensions(
+            videoPath,
+          );
+          final annotationSourceSize = (image.sourceWidth != null &&
+                  image.sourceHeight != null &&
+                  image.sourceWidth! > 0 &&
+                  image.sourceHeight! > 0)
+              ? Size(image.sourceWidth!, image.sourceHeight!)
+              : (_videoController?.value.isInitialized ?? false)
+                  ? _videoController!.value.size
+                  : null;
+          final burnTargetSize = videoSize ??
+              annotationSourceSize ??
+              Size(_videoBurnWidth(image), _videoBurnHeight(image));
+          final burnReadyAnnotations =
+              MarkedMediaRenderer.normalizeAnnotationsToTarget(
+            annotations: synced,
+            annotationSourceSize: annotationSourceSize,
+            targetSize: burnTargetSize,
+          );
           final burned = await VideoExportService.burnAnnotationsIntoVideo(
             sourcePath: videoPath,
-            annotations: synced,
+            annotations: burnReadyAnnotations,
             mirrorX: _flipH || _mirror,
             mirrorY: _flipV,
             rotation: _rotation,
-            sourceWidth: _videoBurnWidth(image),
-            sourceHeight: _videoBurnHeight(image),
+            sourceWidth: burnTargetSize.width,
+            sourceHeight: burnTargetSize.height,
             outputFilename: image.filename ??
                 'hexa-cam-${DateTime.now().millisecondsSinceEpoch}.mp4',
           );
@@ -851,7 +871,7 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
     final lens = _image?.lens;
     final calibration =
         lens == null ? null : calibrationController.calibrations[lens];
-    if (calibration == null) return null;
+    if (calibration == null) return 'Calibration not set';
     return MeasurementCalculator.getMeasurementText(
       annotation,
       pixelsPerUnit: calibration.pixelsPerUnit,

@@ -3493,6 +3493,13 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                         onPressed: () async {
                           Navigator.pop(sheetContext);
                           if (!mounted) return;
+                          if (isVideo) {
+                            _showMessage(
+                              'PDF reports use still images. Save/download the marked video instead.',
+                              backgroundColor: AppTheme.danger,
+                            );
+                            return;
+                          }
                           final previewMedia =
                               await _buildPreviewMediaForReport(
                             filePath: filePath,
@@ -3587,15 +3594,15 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
           await File(mediaSourcePath).writeAsBytes(finalBytes, flush: true);
         }
       } else if (isVideo && annotations.isNotEmpty && !kIsWeb) {
+        final burnSize = annotationSourceSize;
         final exported = await VideoExportService.burnAnnotationsIntoVideo(
           sourcePath: mediaSourcePath,
           annotations: annotations,
           mirrorX: _mirror || _flipH,
           mirrorY: _flipV,
           rotation: _rotation,
-          sourceWidth: _lastSourceSize.width > 0 ? _lastSourceSize.width : 1280,
-          sourceHeight:
-              _lastSourceSize.height > 0 ? _lastSourceSize.height : 720,
+          sourceWidth: burnSize?.width ?? 1280,
+          sourceHeight: burnSize?.height ?? 720,
           outputFilename: preferredName,
         );
         if (exported != null) {
@@ -3786,11 +3793,11 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
   ) {
     if (!uiStateController.measurementMode) return null;
     final effectiveCalibration = _effectiveCalibrationForLens(_selectedLens);
-    final needsCalibration = effectiveCalibration == null &&
+    final needsCalibrationLabel = effectiveCalibration == null &&
         type != AnnotationType.text &&
         type != AnnotationType.singlePointer;
-    if (needsCalibration) {
-      return null;
+    if (needsCalibrationLabel) {
+      return 'Calibration not set';
     }
     return MeasurementCalculator.getMeasurementText(
       Annotation(

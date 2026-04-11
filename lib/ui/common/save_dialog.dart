@@ -33,7 +33,9 @@ class SaveDialog extends StatefulWidget {
     required Future<void> Function(String, String) onSave,
   }) async {
     final prefs = await SharedPreferences.getInstance();
-    if (!context.mounted) return;
+    if (!context.mounted) {
+      return;
+    }
     if (prefs.getBool(dontAskAgainKey) == true) {
       await onSave('', '');
       return;
@@ -65,7 +67,9 @@ class _SaveDialogState extends State<SaveDialog> {
 
   Future<void> _loadDontAskAgainState() async {
     final prefs = await SharedPreferences.getInstance();
-    if (!mounted) return;
+    if (!mounted) {
+      return;
+    }
     setState(() =>
         _dontAskAgain = prefs.getBool(SaveDialog.dontAskAgainKey) == true);
   }
@@ -184,11 +188,13 @@ class _SaveDialogState extends State<SaveDialog> {
                                         _filenameController.text,
                                         _descriptionController.text,
                                       );
-                                      if (context.mounted)
+                                      if (context.mounted) {
                                         Navigator.pop(context);
+                                      }
                                     } finally {
-                                      if (mounted)
+                                      if (mounted) {
                                         setState(() => _saving = false);
+                                      }
                                     }
                                   },
                           ),

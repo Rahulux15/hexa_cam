@@ -573,11 +573,10 @@ class ViewerScreenState extends State<ViewerScreen> {
   }
 
   String? _measurementFor(Annotation annotation) {
-    if (_tool != ViewerDrawTool.distance) return null;
     final lens = widget.image.lens;
     final calibration =
         lens == null ? null : calibrationController.calibrations[lens];
-    if (calibration == null) return null;
+    if (calibration == null) return 'Calibration not set';
     return MeasurementCalculator.getMeasurementText(
       annotation,
       pixelsPerUnit: calibration.pixelsPerUnit,
