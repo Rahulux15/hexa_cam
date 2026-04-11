@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 import 'package:camera/camera.dart' as cam;
+import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -313,6 +314,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
       // Handle permissions for mobile platforms
       if (!kIsWeb) {
         if (Platform.isAndroid) {
+          final sdkInt = (await DeviceInfoPlugin().androidInfo).version.sdkInt;
           final cameraStatus = await Permission.camera.request().timeout(
                 const Duration(seconds: 6),
                 onTimeout: () => PermissionStatus.denied,
@@ -321,18 +323,21 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                 const Duration(seconds: 6),
                 onTimeout: () => PermissionStatus.denied,
               );
-          await Permission.storage.request().timeout(
-                const Duration(seconds: 6),
-                onTimeout: () => PermissionStatus.denied,
-              );
-          if (await Permission.photos.isDenied) {
-            await Permission.photos.request().timeout(
-                  const Duration(seconds: 6),
-                  onTimeout: () => PermissionStatus.denied,
-                );
-          }
-          if (await Permission.videos.isDenied) {
-            await Permission.videos.request().timeout(
+          if (sdkInt >= 33) {
+            if (await Permission.photos.isDenied) {
+              await Permission.photos.request().timeout(
+                    const Duration(seconds: 6),
+                    onTimeout: () => PermissionStatus.denied,
+                  );
+            }
+            if (await Permission.videos.isDenied) {
+              await Permission.videos.request().timeout(
+                    const Duration(seconds: 6),
+                    onTimeout: () => PermissionStatus.denied,
+                  );
+            }
+          } else {
+            await Permission.storage.request().timeout(
                   const Duration(seconds: 6),
                   onTimeout: () => PermissionStatus.denied,
                 );

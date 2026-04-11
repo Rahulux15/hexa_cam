@@ -69,9 +69,14 @@ class FileService {
     if (kIsWeb) return;
     try {
       if (Platform.isAndroid) {
-        await Permission.photos.request();
-        if (isVideo) {
-          await Permission.videos.request();
+        final sdkInt = (await DeviceInfoPlugin().androidInfo).version.sdkInt;
+        if (sdkInt >= 33) {
+          await Permission.photos.request();
+          if (isVideo) {
+            await Permission.videos.request();
+          }
+        } else {
+          await Permission.storage.request();
         }
       } else if (Platform.isIOS) {
         await Permission.photos.request();
@@ -395,18 +400,38 @@ class FileService {
       return name;
     }
     final safeName = _safeFilename(filename);
-    final mediaDir = await _resolveTargetDirectory(
-      folderName: folderName,
-      subdirectory: subdirectory,
-      preferDownloads: preferDownloads,
-    );
-    final destination = await _uniqueDestination(mediaDir, safeName);
-    final file = await _atomicWriteBytes(
-      destination,
-      bytes,
-      onProgress: onProgress,
-    );
-    return _normalizePath(file.path);
+    try {
+      final mediaDir = await _resolveTargetDirectory(
+        folderName: folderName,
+        subdirectory: subdirectory,
+        preferDownloads: preferDownloads,
+      );
+      final destination = await _uniqueDestination(mediaDir, safeName);
+      final file = await _atomicWriteBytes(
+        destination,
+        bytes,
+        onProgress: onProgress,
+      );
+      return _normalizePath(file.path);
+    } catch (error) {
+      if (!preferDownloads) rethrow;
+      logDebug(
+        'FileService.persistBytes public write failed, falling back to app folder: $error',
+      );
+      final fallbackDir = await _resolveTargetDirectory(
+        folderName: folderName,
+        subdirectory: subdirectory,
+        preferDownloads: false,
+      );
+      final fallbackDestination =
+          await _uniqueDestination(fallbackDir, safeName);
+      final file = await _atomicWriteBytes(
+        fallbackDestination,
+        bytes,
+        onProgress: onProgress,
+      );
+      return _normalizePath(file.path);
+    }
   }
 
   static Future<String> saveToAppFolder({

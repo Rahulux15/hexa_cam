@@ -224,9 +224,24 @@ class ReportController extends GetxController {
         showMessage(
             'Report downloaded to Downloads/Hexa Cam Reports', Colors.green);
       } else {
+        // Fallback paths may not be user-visible on all Android variants.
+        // Open share so user can explicitly save to Files/Drive/Downloads.
+        try {
+          await FileService.sharePdfToDevice(
+            bytes,
+            filename,
+            sharePositionOrigin: sharePositionOrigin,
+          );
+        } catch (_) {
+          await FileService.sharePdfToDevice(
+            bytes,
+            filename,
+            sharePositionOrigin: null,
+          );
+        }
         final folderPath = p.dirname(downloadPath).replaceAll('\\', '/');
         showMessage(
-          'Report downloaded to fallback folder: $folderPath',
+          'Saved to app folder and opened share to save in Downloads/Files: $folderPath',
           Colors.green,
         );
       }
