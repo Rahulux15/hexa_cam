@@ -732,8 +732,8 @@ class ViewerScreenState extends State<ViewerScreen> {
       final p = _displayToSource(details.localPosition);
       final hit = pickAnnotationAt(p, _annotations, maxDist: 54);
       Annotation? labelHit;
-      var bestLabelDistance = 60.0;
-      for (final a in _annotations) {
+      var bestLabelDistance = 220.0;
+      for (final a in _annotations.reversed) {
         final d = annotationLabelHitDistance(p, a);
         if (d < bestLabelDistance) {
           bestLabelDistance = d;
@@ -1460,7 +1460,7 @@ class ViewerScreenState extends State<ViewerScreen> {
     const divisions = 28;
     final sliderValue =
         _drawingStrokeWidth.clamp(minValue, maxValue).toDouble();
-    final labelSize = _drawingLabelSize.clamp(8.0, 160.0).toDouble();
+    final labelSize = _drawingLabelSize.clamp(8.0, 120.0).toDouble();
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
@@ -1533,8 +1533,8 @@ class ViewerScreenState extends State<ViewerScreen> {
                   padding: const EdgeInsets.symmetric(horizontal: 8),
                   child: Slider(
                     min: 8.0,
-                    max: 160.0,
-                    divisions: 152,
+                    max: 120.0,
+                    divisions: 112,
                     value: labelSize,
                     onChanged: _locked
                         ? null

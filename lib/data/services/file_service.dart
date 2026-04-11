@@ -32,14 +32,18 @@ class FileService {
       if (!await ExportPrefs.watermarkEnabled()) return bytes;
       final logoBytes = await _loadReportLogoBytes();
       if (logoBytes == null || logoBytes.isEmpty) return bytes;
-      var out = applyReportLogoWatermark(bytes, logoBytes);
-      if (out == null) {
-        final normalized = reencodeImageBytesAsJpegForWatermark(bytes);
-        if (normalized != null) {
-          out = applyReportLogoWatermark(normalized, logoBytes);
-        }
-      }
-      return out ?? bytes;
+      final payload = <String, Uint8List>{
+        'imageBytes': bytes,
+        'logoBytes': logoBytes,
+      };
+      final shouldUseIsolate = bytes.length >= 1024 * 1024;
+      final out = shouldUseIsolate
+          ? await compute(_applyWatermarkPayload, payload).timeout(
+              const Duration(seconds: 6),
+              onTimeout: () => null,
+            )
+          : _applyWatermarkPayload(payload);
+      return (out != null && out.isNotEmpty) ? out : bytes;
     } catch (e) {
       logDebug('FileService._encodeBytesForExport watermark skipped: $e');
       return bytes;
@@ -71,16 +75,31 @@ class FileService {
       if (Platform.isAndroid) {
         final sdkInt = (await DeviceInfoPlugin().androidInfo).version.sdkInt;
         if (sdkInt >= 33) {
-          await Permission.photos.request();
+          final photosStatus = await Permission.photos.status;
+          if (!_statusOk(photosStatus)) {
+            await Permission.photos.request();
+          }
           if (isVideo) {
-            await Permission.videos.request();
+            final videosStatus = await Permission.videos.status;
+            if (!_statusOk(videosStatus)) {
+              await Permission.videos.request();
+            }
           }
         } else {
-          await Permission.storage.request();
+          final storageStatus = await Permission.storage.status;
+          if (!_statusOk(storageStatus)) {
+            await Permission.storage.request();
+          }
         }
       } else if (Platform.isIOS) {
-        await Permission.photos.request();
-        await Permission.photosAddOnly.request();
+        final photosStatus = await Permission.photos.status;
+        if (!_statusOk(photosStatus)) {
+          await Permission.photos.request();
+        }
+        final addOnlyStatus = await Permission.photosAddOnly.status;
+        if (!_statusOk(addOnlyStatus)) {
+          await Permission.photosAddOnly.request();
+        }
       }
       if (!await Gal.hasAccess(toAlbum: true)) {
         await Gal.requestAccess(toAlbum: true);
@@ -123,7 +142,6 @@ class FileService {
           final name = _galAssetBaseName(filename);
           await Gal.putImageBytes(
             bytes,
-            album: 'Hexa Cam',
             name: name,
           );
           logDebug('FileService.saveToDevice iOS Photos (Gal) name=$name');
@@ -239,7 +257,7 @@ class FileService {
           await Gal.requestAccess(toAlbum: true);
         }
         if (await Gal.hasAccess(toAlbum: true)) {
-          await Gal.putVideo(videoPath, album: 'Hexa Cam');
+          await Gal.putVideo(videoPath);
           logDebug(
               'FileService.saveVideoToDevice iOS Photos (Gal) path=$videoPath');
           return true;
@@ -543,11 +561,21 @@ class FileService {
       onProgress?.call(1.0);
     } else {
       var offset = 0;
+      var lastProgress = 0.0;
+      final stopwatch = Stopwatch()..start();
       while (offset < total) {
         final end = (offset + chunkSize).clamp(0, total);
         sink.add(bytes.sublist(offset, end));
         offset = end;
-        onProgress?.call(offset / total);
+        final progress = offset / total;
+        final shouldEmit = progress >= 1.0 ||
+            (progress - lastProgress) >= 0.05 ||
+            stopwatch.elapsedMilliseconds >= 140;
+        if (shouldEmit) {
+          onProgress?.call(progress);
+          lastProgress = progress;
+          stopwatch.reset();
+        }
       }
     }
     await sink.flush();
@@ -630,4 +658,24 @@ class FileService {
   }
 
   static String _normalizePath(String path) => path.replaceAll('\\', '/');
+}
+
+bool _statusOk(PermissionStatus s) =>
+    s.isGranted || s.isLimited || s.isProvisional;
+
+Uint8List? _applyWatermarkPayload(Map<String, Uint8List> payload) {
+  final imageBytes = payload['imageBytes'];
+  final logoBytes = payload['logoBytes'];
+  if (imageBytes == null ||
+      imageBytes.isEmpty ||
+      logoBytes == null ||
+      logoBytes.isEmpty) {
+    return null;
+  }
+  var out = applyReportLogoWatermark(imageBytes, logoBytes);
+  if (out != null && out.isNotEmpty) return out;
+  final normalized = reencodeImageBytesAsJpegForWatermark(imageBytes);
+  if (normalized == null || normalized.isEmpty) return null;
+  out = applyReportLogoWatermark(normalized, logoBytes);
+  return (out != null && out.isNotEmpty) ? out : null;
 }

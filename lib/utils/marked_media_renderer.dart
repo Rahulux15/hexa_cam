@@ -161,16 +161,16 @@ class MarkedMediaRenderer {
     final syAbs = sy.abs();
     final strokeScale = (sxAbs <= 0 || syAbs <= 0)
         ? 1.0
-        : sqrt(sxAbs * syAbs).clamp(0.25, 12.0).toDouble();
+        : sqrt(sxAbs * syAbs).clamp(0.25, 8.0).toDouble();
     return annotations
         .map(
           (annotation) => annotation.copyWith(
             strokeWidth:
-                (annotation.strokeWidth * strokeScale).clamp(0.5, 240.0),
+                (annotation.strokeWidth * strokeScale).clamp(0.5, 96.0),
             labelFontSize: annotation.labelFontSize == null
                 ? null
                 : (annotation.labelFontSize! * strokeScale)
-                    .clamp(8.0, 240.0)
+                    .clamp(8.0, 120.0)
                     .toDouble(),
             labelOffsetX: annotation.labelOffsetX * sx,
             labelOffsetY: annotation.labelOffsetY * sy,

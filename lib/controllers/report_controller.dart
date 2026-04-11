@@ -119,52 +119,36 @@ class ReportController extends GetxController {
         showMessage('Report downloaded to Downloads', Colors.green);
         return true;
       }
-      logDebug('ReportController.downloadReport native app-folder save start');
-      onProgress?.call('Saving report to app folder...', 0.18);
-      await _saveToAppFolderOnly(
-        bytes,
-        filename: filename,
-        folderName: folderName,
-        onProgress: (p) => onProgress?.call(
-          'Saving report to app folder...',
-          0.18 + (p * 0.12),
-        ),
-      );
-      logDebug('ReportController.downloadReport native app-folder save done');
       if (Platform.isIOS) {
-        // Mirror Android: persist a user-visible copy under app Documents/Downloads
-        // (Files → On My iPhone → Hexa Cam → Downloads/…), then offer share as fallback.
+        // Fast path: direct user-visible save first; avoid extra duplicate writes.
         const reportFolder = 'Hexa Cam Reports';
         try {
           logDebug('ReportController.downloadReport iOS saveToDownloads start');
-          onProgress?.call('Saving report to Downloads…', 0.35);
+          onProgress?.call('Saving report to Downloads…', 0.3);
           final downloadPath = await FileService.saveToDownloads(
             bytes: bytes,
             filename: filename,
             folderName: reportFolder,
             onProgress: (p) => onProgress?.call(
               'Saving report to Downloads…',
-              0.35 + (p * 0.45),
+              0.3 + (p * 0.65),
             ),
           );
           if (downloadPath.isNotEmpty) {
-            onProgress?.call('Report saved', 0.88);
+            onProgress?.call('Report saved', 1.0);
             showMessage(
               'Report saved to Files → Downloads/$reportFolder',
               Colors.green,
             );
+            return true;
           }
         } catch (e) {
           logDebug(
               'ReportController.downloadReport iOS saveToDownloads failed: $e');
-          showMessage(
-            'Could not copy to Downloads folder; try Share below.',
-            Colors.orange,
-          );
         }
         try {
           logDebug('ReportController.downloadReport iOS share start');
-          onProgress?.call('Opening share sheet…', 0.92);
+          onProgress?.call('Opening share sheet…', 0.82);
           await FileService.sharePdfToDevice(
             bytes,
             filename,
@@ -185,7 +169,7 @@ class ReportController extends GetxController {
         return true;
       }
       logDebug('ReportController.downloadReport Android/public download start');
-      onProgress?.call('Preparing report download...', 0.2);
+      onProgress?.call('Preparing report download...', 0.1);
       final permissionController = _permissionController;
       final permissionOk = permissionController == null
           ? true
@@ -196,7 +180,7 @@ class ReportController extends GetxController {
         return false;
       }
       const reportFolder = 'Hexa Cam Reports';
-      onProgress?.call('Downloading report to Downloads/$reportFolder', 0.35);
+      onProgress?.call('Downloading report to Downloads/$reportFolder', 0.2);
       String downloadPath = '';
       if (permissionOk) {
         downloadPath = await FileService.saveToDownloads(
@@ -205,7 +189,7 @@ class ReportController extends GetxController {
           folderName: reportFolder,
           onProgress: (p) => onProgress?.call(
             'Downloading report to Downloads/$reportFolder',
-            0.35 + (p * 0.65),
+            0.2 + (p * 0.8),
           ),
         );
       }

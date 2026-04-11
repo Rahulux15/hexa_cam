@@ -83,7 +83,7 @@ class AnnotationPainter extends CustomPainter {
           final textScale = sqrt(uiTextScale.clamp(0.8, 4.0));
           final fontSize = (ann.labelFontSize ??
                   (10.0 + (strokeWidth * 0.9) + ((textScale - 1.0) * 6.0)))
-              .clamp(10.0, 180.0)
+              .clamp(10.0, 120.0)
               .toDouble();
           final anchor = points[0];
           final maxW = (canvasSize.width * 0.55).clamp(120.0, 820.0).toDouble();
@@ -317,7 +317,7 @@ class AnnotationPainter extends CustomPainter {
     final textScale = sqrt(uiTextScale.clamp(0.8, 4.0));
     final targetFont = (labelFontSize ??
             (10.0 + (strokeWidth * 1.1) + ((textScale - 1.0) * 8.0)))
-        .clamp(8.0, 160.0)
+        .clamp(8.0, 120.0)
         .toDouble();
     final maxLabelWidth =
         (canvasSize.width - (_labelEdgePad * 2) - 4.0).clamp(64.0, 2400.0);

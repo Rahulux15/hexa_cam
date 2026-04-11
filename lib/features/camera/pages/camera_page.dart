@@ -28,7 +28,6 @@ import '../widgets/camera_measurement_grid_painter.dart';
 import '../../../utils/app_logger.dart';
 import '../../../utils/annotation_painter.dart';
 import '../../../utils/calibration_calculator.dart';
-import '../../../utils/coordinate_transformer.dart';
 import '../../../utils/image_bytes_codec.dart';
 import '../../../utils/marked_media_renderer.dart';
 import '../../../utils/measurement_calculator.dart';
@@ -1922,7 +1921,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
     const divisions = 28;
     final sliderValue =
         _drawingStrokeWidth.clamp(minValue, maxValue).toDouble();
-    final labelSize = _drawingLabelSize.clamp(8.0, 160.0).toDouble();
+    final labelSize = _drawingLabelSize.clamp(8.0, 120.0).toDouble();
     return Container(
       width: double.infinity,
       padding: EdgeInsets.all(isTablet ? 12 : 10),
@@ -2016,8 +2015,8 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
             padding: const EdgeInsets.symmetric(horizontal: 10),
             child: Slider(
               min: 8.0,
-              max: 160.0,
-              divisions: 152,
+              max: 120.0,
+              divisions: 112,
               value: labelSize,
               onChanged: (value) {
                 setState(() {
@@ -2908,7 +2907,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
     if (_moveMode) {
       final markIndex = _findClosestAnnotationIndex(point, maxDistance: 56);
       final labelIndex =
-          _findClosestLabelAnnotationIndex(point, maxDistance: 64);
+          _findClosestLabelAnnotationIndex(point, maxDistance: 220);
       if (markIndex == null && labelIndex == null) return;
       setState(() {
         if (labelIndex != null) {
@@ -3546,7 +3545,9 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
   }) async {
     try {
       var annotations = _annotationsForSave();
-      final mediaId = FileService.generateAssetId(isVideo ? 'video' : 'image');
+      String? mediaId = isVideo && !kIsWeb
+          ? null
+          : FileService.generateAssetId(isVideo ? 'video' : 'image');
       String mediaSourcePath;
       late final Uint8List rawBytes;
 
@@ -3618,10 +3619,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
         }
       }
 
-      if (isVideo &&
-          exportToDevice &&
-          !kIsWeb &&
-          await ExportPrefs.watermarkEnabled()) {
+      if (isVideo && !kIsWeb && await ExportPrefs.watermarkEnabled()) {
         final wmPath = await VideoExportService.overlayWatermarkOnVideo(
           sourceVideoPath: mediaSourcePath,
           outputFilename: preferredName,
@@ -3640,7 +3638,9 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
         }
       }
 
-      await MediaDatabase.saveAsset(mediaId, finalBytes);
+      if (mediaId != null && mediaId.isNotEmpty) {
+        await MediaDatabase.saveAsset(mediaId, finalBytes);
+      }
       String? thumbnailId = isVideo ? null : mediaId;
       if (!isVideo && annotations.isNotEmpty) {
         final thumbId = FileService.generateAssetId('thumb');
@@ -3817,21 +3817,16 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
 
   /// Maps a gesture [point] from preview layout space to source coordinates.
   ///
-  /// The preview is visually transformed (rotate/mirror/flip), so gestures must
-  /// be inverse-transformed back to source space before hit-testing or drawing.
+  /// Camera preview gestures are captured inside the same transformed widget tree
+  /// as the preview. Flutter already maps hit tests back to child coordinates,
+  /// so these local positions are effectively source-space and should not be
+  /// inverse-transformed again (double-transform breaks move/label hit in mirror).
   HexaPoint _displayToSource(Offset point) {
     final sw = _lastSourceSize.width <= 0 ? 1.0 : _lastSourceSize.width;
     final sh = _lastSourceSize.height <= 0 ? 1.0 : _lastSourceSize.height;
-    final mapped = CoordinateTransformer.screenToImage(
-      point,
-      imageSize: Size(sw, sh),
-      mirrorX: _flipH || _mirror,
-      mirrorY: _flipV,
-      rotation: _rotation,
-    );
     return HexaPoint(
-      x: mapped.dx.clamp(0.0, sw).toDouble(),
-      y: mapped.dy.clamp(0.0, sh).toDouble(),
+      x: point.dx.clamp(0.0, sw).toDouble(),
+      y: point.dy.clamp(0.0, sh).toDouble(),
     );
   }
 
@@ -3935,9 +3930,9 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
         );
         annotations = normalized.$1;
         annotationSourceSize = normalized.$2 ?? annotationSourceSize;
-        mediaId = FileService.generateAssetId(isVideo ? 'video' : 'image');
-        await MediaDatabase.saveAsset(mediaId, bytes);
         if (!isVideo) {
+          mediaId = FileService.generateAssetId('image');
+          await MediaDatabase.saveAsset(mediaId, bytes);
           thumbnailId = mediaId;
         }
       }
@@ -4878,7 +4873,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
   }) {
     int? closestIndex;
     var closestDistance = maxDistance;
-    for (var i = 0; i < _annotations.length; i++) {
+    for (var i = _annotations.length - 1; i >= 0; i--) {
       final d = annotationHitDistance(point, _annotations[i]);
       if (d < closestDistance) {
         closestDistance = d;
@@ -4894,7 +4889,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
   }) {
     int? closestIndex;
     var closestDistance = maxDistance;
-    for (var i = 0; i < _annotations.length; i++) {
+    for (var i = _annotations.length - 1; i >= 0; i--) {
       final d = annotationLabelHitDistance(point, _annotations[i]);
       if (d < closestDistance) {
         closestDistance = d;

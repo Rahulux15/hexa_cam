@@ -59,10 +59,10 @@ double annotationHitDistance(HexaPoint p, Annotation a) {
 double annotationLabelHitDistance(HexaPoint p, Annotation a) {
   if (a.points.isEmpty) return double.infinity;
   if (a.type == AnnotationType.text) {
-    return _distPointToRect(p, _labelRectForText(a));
+    return _distPointToRect(p, _labelRectForText(a).inflate(34));
   }
   if (a.measurement != null && a.measurement!.trim().isNotEmpty) {
-    return _distPointToRect(p, _labelRectForMeasurement(a));
+    return _distPointToRect(p, _labelRectForMeasurement(a).inflate(34));
   }
   return double.infinity;
 }
@@ -73,7 +73,7 @@ Rect _labelRectForText(Annotation a) {
   final charCount = text.isEmpty ? 1 : text.runes.length.clamp(1, 42);
   final fontSize = (a.labelFontSize ?? (10.0 + (a.strokeWidth * 0.9))).clamp(
     8.0,
-    180.0,
+    120.0,
   );
   final textWidth = (fontSize * 0.58 * charCount).clamp(28.0, 520.0);
   final textHeight = (fontSize * 1.22).clamp(14.0, 128.0);
@@ -91,7 +91,7 @@ Rect _labelRectForMeasurement(Annotation a) {
   final chars = text.runes.length.clamp(1, 40);
   final fontSize = (a.labelFontSize ?? (10.0 + (a.strokeWidth * 1.1))).clamp(
     8.0,
-    160.0,
+    120.0,
   );
   final w = (fontSize * 0.56 * chars).clamp(28.0, 520.0);
   final h = (fontSize * 1.22).clamp(14.0, 120.0);
@@ -213,7 +213,7 @@ Annotation? pickAnnotationAt(
 }) {
   Annotation? best;
   var bestD = maxDist;
-  for (final a in list) {
+  for (final a in list.reversed) {
     final d = annotationHitDistance(sourcePoint, a);
     if (d < bestD) {
       bestD = d;

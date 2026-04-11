@@ -266,7 +266,7 @@ class _ReportPageState extends State<ReportPage> {
                                     child: ResponsiveActionButton(
                                       actionKey: 'report_download',
                                       asyncController: _asyncActions,
-                                  onPressed: _downloadReport,
+                                      onPressed: _downloadReport,
                                       style: ElevatedButton.styleFrom(
                                         backgroundColor:
                                             const Color(0xFF232651),
@@ -301,7 +301,7 @@ class _ReportPageState extends State<ReportPage> {
                                     child: ResponsiveActionButton(
                                       actionKey: 'report_save',
                                       asyncController: _asyncActions,
-                                  onPressed: _saveReport,
+                                      onPressed: _saveReport,
                                       style: ElevatedButton.styleFrom(
                                         backgroundColor: Colors.transparent,
                                         shadowColor: Colors.transparent,
@@ -682,26 +682,16 @@ class _ReportPageState extends State<ReportPage> {
             ? image.thumbnailId
             : image.mediaId)
         : image.mediaId;
-    final hasSeparateVideoThumb = image.type == MediaType.video &&
-        image.thumbnailId != null &&
-        image.thumbnailId!.isNotEmpty &&
-        image.thumbnailId != image.mediaId;
-    final videoNeedsOverlay = image.type == MediaType.video &&
-        image.annotations.isNotEmpty &&
-        !hasSeparateVideoThumb;
+    final shouldOverlay =
+        image.annotations.isNotEmpty && image.isMarkingsBaked != true;
 
     return MediaImage(
       source: image.imageUrl,
       mediaId: previewMediaId,
-      // For videos, reburn only when there is no dedicated thumbnail asset.
-      // Dedicated video thumbnails are generated in capture/viewer flows and
-      // may already include markings.
-      annotations: videoNeedsOverlay
-          ? image.annotations
-          : (image.type == MediaType.video ? const [] : image.annotations),
-      burnAnnotationsIntoPreview: image.type == MediaType.video
-          ? videoNeedsOverlay
-          : (image.annotations.isNotEmpty && image.isMarkingsBaked != true),
+      // Use one deterministic overlay rule for both image and video previews
+      // so report preview always mirrors final rendered output.
+      annotations: shouldOverlay ? image.annotations : const [],
+      burnAnnotationsIntoPreview: shouldOverlay,
       mirrorX: image.mirrored ?? false,
       rotation: image.rotation ?? 0,
       annotationSourceSize: (image.sourceWidth != null &&
@@ -1230,7 +1220,10 @@ class _ReportPageState extends State<ReportPage> {
             image.thumbnailId != null &&
             image.thumbnailId!.isNotEmpty)
           image.thumbnailId!,
-        if (image.mediaId != null && image.mediaId!.isNotEmpty) image.mediaId!,
+        if (image.type != MediaType.video &&
+            image.mediaId != null &&
+            image.mediaId!.isNotEmpty)
+          image.mediaId!,
         if (image.type != MediaType.video &&
             image.thumbnailId != null &&
             image.thumbnailId!.isNotEmpty)
@@ -1241,14 +1234,8 @@ class _ReportPageState extends State<ReportPage> {
         final bytes = await MediaDatabase.getAsset(assetId);
         if (bytes == null || bytes.isEmpty) continue;
         if (image.type == MediaType.video) {
-          final hasSeparateThumb = image.thumbnailId != null &&
-              image.thumbnailId!.isNotEmpty &&
-              image.thumbnailId != image.mediaId;
-          final usingThumb = image.thumbnailId != null &&
-              image.thumbnailId!.isNotEmpty &&
-              assetId == image.thumbnailId;
-          final shouldOverlay = image.annotations.isNotEmpty &&
-              (!hasSeparateThumb || !usingThumb);
+          final shouldOverlay =
+              image.annotations.isNotEmpty && image.isMarkingsBaked != true;
           if (!shouldOverlay) {
             final out = await _optimizePdfImageBytesAsync(bytes);
             _pdfImageBytesCache[cacheKey] = out;

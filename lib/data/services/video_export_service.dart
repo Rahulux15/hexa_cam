@@ -265,13 +265,14 @@ class VideoExportService {
     final inputFile = File(inputPath);
     if (!await inputFile.exists()) return null;
 
-    final logoData = await rootBundle.load('assets/images/report_logo.png');
+    final logoData = await _loadWatermarkLogoBytes();
+    if (logoData == null || logoData.isEmpty) return null;
     final tempDir = await getTemporaryDirectory();
     final logoPath = p.join(
       tempDir.path,
       'wm-logo-${DateTime.now().millisecondsSinceEpoch}.png',
     );
-    await File(logoPath).writeAsBytes(logoData.buffer.asUint8List());
+    await File(logoPath).writeAsBytes(logoData, flush: true);
 
     final outputPath =
         p.join(tempDir.path, _safeOutputName('wm-$outputFilename'));
@@ -362,11 +363,77 @@ class VideoExportService {
       if (await _runFfmpeg(noAudio) && await File(outputPath).exists()) {
         return outputPath;
       }
+
+      // Fallback on devices where libx264 is unavailable/unstable.
+      final mpeg4WithAudio = <String>[
+        '-y',
+        '-i',
+        inputPath,
+        '-i',
+        logoPath,
+        '-filter_complex',
+        filterComplex,
+        '-map',
+        '[outv]',
+        '-map',
+        '0:a?',
+        '-c:v',
+        'mpeg4',
+        '-q:v',
+        '2',
+        '-pix_fmt',
+        'yuv420p',
+        '-c:a',
+        'aac',
+        '-b:a',
+        '192k',
+        outputPath,
+      ];
+      if (await _runFfmpeg(mpeg4WithAudio) && await File(outputPath).exists()) {
+        return outputPath;
+      }
+
+      final mpeg4NoAudio = <String>[
+        '-y',
+        '-i',
+        inputPath,
+        '-i',
+        logoPath,
+        '-filter_complex',
+        filterComplex,
+        '-map',
+        '[outv]',
+        '-an',
+        '-c:v',
+        'mpeg4',
+        '-q:v',
+        '2',
+        '-pix_fmt',
+        'yuv420p',
+        outputPath,
+      ];
+      if (await _runFfmpeg(mpeg4NoAudio) && await File(outputPath).exists()) {
+        return outputPath;
+      }
     } finally {
       try {
         await File(logoPath).delete();
       } catch (_) {}
     }
+    return null;
+  }
+
+  static Future<Uint8List?> _loadWatermarkLogoBytes() async {
+    try {
+      final primary = await rootBundle.load('assets/images/report_logo.png');
+      final bytes = primary.buffer.asUint8List();
+      if (bytes.isNotEmpty) return bytes;
+    } catch (_) {}
+    try {
+      final fallback = await rootBundle.load('assets/images/about_logo.png');
+      final bytes = fallback.buffer.asUint8List();
+      if (bytes.isNotEmpty) return bytes;
+    } catch (_) {}
     return null;
   }
 
