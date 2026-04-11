@@ -26,7 +26,7 @@ val keyProps = Properties().apply {
 }
 val requestedTasks = gradle.startParameter.taskNames.map { it.lowercase() }
 val requiresReleaseSigning = requestedTasks.any { task ->
-    "release" in task || ("publish" in task && !"debug" in task)
+    "release" in task || ("publish" in task && "debug" !in task)
 }
 val storeFilePath = keyProps.getProperty("storeFile")
 val storePass = keyProps.getProperty("storePassword")
