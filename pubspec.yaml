@@ -73,8 +73,8 @@ dev_dependencies:
   build_runner: ^2.13.1
   flutter_launcher_icons: ^0.14.4
 
-# Keeps iOS builds on Xcode 16+ working (Swift no longer exposes the old
-# AVCaptureSession.*Notification symbols; see flutter/flutter#183380).
+# Align camera iOS implementation with camera ^0.12. Pub still ships Swift that
+# breaks on newest Xcode until upstream lands; CI runs scripts/patch_camera_avfoundation_xcode.sh after pub get.
 dependency_overrides:
   camera_avfoundation: ^0.10.1
 
