@@ -3612,11 +3612,14 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
       annotationSourceSize = normalized.$2 ?? annotationSourceSize;
 
       Uint8List finalBytes = rawBytes;
+      /// Baked still used only for "save to gallery/files"; folder + DB keep [rawBytes]
+      /// so the image viewer can toggle vector markings on/off.
+      Uint8List? bakedStillForDeviceExport;
       final shouldBakeStillForExport =
           exportToDevice && annotations.isNotEmpty && !isVideo;
       if (shouldBakeStillForExport) {
         final safeDecodeEdge = (!kIsWeb && Platform.isIOS) ? 2800 : null;
-        finalBytes = await MarkedMediaRenderer.renderPhotoWithAnnotations(
+        var baked = await MarkedMediaRenderer.renderPhotoWithAnnotations(
           baseImageBytes: rawBytes,
           annotations: annotations,
           mirrorX: _mirror || _flipH,
@@ -3625,12 +3628,12 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
           annotationSourceSize: annotationSourceSize,
           maxDecodeEdge: safeDecodeEdge,
         );
-        finalBytes = kIsWeb
-            ? compressMarkedStillForStore(finalBytes)
-            : await compute(compressMarkedStillForStore, finalBytes);
-        if (!kIsWeb) {
-          await File(mediaSourcePath).writeAsBytes(finalBytes, flush: true);
-        }
+        baked = kIsWeb
+            ? compressMarkedStillForStore(baked)
+            : await compute(compressMarkedStillForStore, baked);
+        bakedStillForDeviceExport = baked;
+        // Do not overwrite the persisted capture file or replace [finalBytes]:
+        // in-app storage must stay unmarked so markings can be shown/hidden in the viewer.
       } else if (isVideo && annotations.isNotEmpty && !kIsWeb) {
         final burnSize = annotationSourceSize;
         final exported = await VideoExportService.burnAnnotationsIntoVideo(
@@ -3738,7 +3741,8 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
         type: isVideo ? MediaType.video : MediaType.image,
         sourceWidth: annotationSourceSize?.width,
         sourceHeight: annotationSourceSize?.height,
-        isMarkingsBaked: shouldBakeStillForExport,
+        // Stills: marks are not rasterized into stored media (see bake block above).
+        isMarkingsBaked: false,
       );
 
       await foldersController.addImage(widget.folderId, image);
@@ -3748,7 +3752,9 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
         try {
           if (kIsWeb) {
             exportedDirectToGallery = await FileService.saveToDevice(
-              finalBytes,
+              shouldBakeStillForExport && bakedStillForDeviceExport != null
+                  ? bakedStillForDeviceExport
+                  : finalBytes,
               preferredName,
               sharePositionOrigin: _sharePositionOrigin(),
             );
@@ -3760,7 +3766,9 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
             );
           } else {
             exportedDirectToGallery = await FileService.saveToDevice(
-              finalBytes,
+              shouldBakeStillForExport && bakedStillForDeviceExport != null
+                  ? bakedStillForDeviceExport
+                  : finalBytes,
               preferredName,
               sharePositionOrigin: _sharePositionOrigin(),
             );
@@ -4459,7 +4467,9 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
         );
       },
     );
-    controller.dispose();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      controller.dispose();
+    });
     final text = result?['text'] as String?;
     if (text == null || text.isEmpty || !mounted) return;
     final size = (result?['size'] as num?)?.toDouble() ?? _drawingStrokeWidth;
