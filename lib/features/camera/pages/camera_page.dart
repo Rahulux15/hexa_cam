@@ -4316,101 +4316,125 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
     final result = await showDialog<Map<String, dynamic>>(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) => Dialog(
-          backgroundColor: const Color(0xFF2B295C),
-          insetPadding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
-          child: AnimatedPadding(
-            duration: const Duration(milliseconds: 160),
-            padding: EdgeInsets.only(
-              bottom: MediaQuery.viewInsetsOf(ctx).bottom + 8,
-            ),
-            child: ConstrainedBox(
-              constraints: BoxConstraints(
-                maxWidth: 420,
-                maxHeight: MediaQuery.sizeOf(ctx).height * 0.85,
+      builder: (ctx) {
+        final viewInsets = MediaQuery.viewInsetsOf(ctx);
+        final safePad = MediaQuery.paddingOf(ctx);
+        final keyboardOpen = viewInsets.bottom > 0;
+        // Centered [Dialog] stays behind the iOS keyboard — align to top when
+        // the keyboard is up so title, field, and actions stay visible.
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) => Align(
+            alignment: keyboardOpen ? Alignment.topCenter : Alignment.center,
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(
+                20,
+                keyboardOpen ? safePad.top + 8 : 20,
+                20,
+                20,
               ),
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Add Text',
-                      style: TextStyle(color: Colors.white, fontSize: 18),
+              child: Dialog(
+                backgroundColor: const Color(0xFF2B295C),
+                insetPadding: EdgeInsets.zero,
+                child: AnimatedPadding(
+                  duration: const Duration(milliseconds: 160),
+                  padding: EdgeInsets.only(bottom: viewInsets.bottom + 8),
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxWidth: 420,
+                      maxHeight: MediaQuery.sizeOf(ctx).height *
+                          (keyboardOpen ? 0.55 : 0.85),
                     ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: controller,
-                      autofocus: true,
-                      style: const TextStyle(color: Colors.white),
-                      decoration: const InputDecoration(
-                        hintText: 'Enter text',
-                        hintStyle: TextStyle(color: Color(0xFFAFB5D9)),
-                        enabledBorder: UnderlineInputBorder(
-                          borderSide: BorderSide(color: Color(0xFF4A57AA)),
-                        ),
-                        focusedBorder: UnderlineInputBorder(
-                          borderSide: BorderSide(color: AppTheme.primary),
-                        ),
+                    child: SingleChildScrollView(
+                      keyboardDismissBehavior:
+                          ScrollViewKeyboardDismissBehavior.onDrag,
+                      padding: const EdgeInsets.all(20),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Add Text',
+                            style: TextStyle(color: Colors.white, fontSize: 18),
+                          ),
+                          const SizedBox(height: 12),
+                          TextField(
+                            controller: controller,
+                            autofocus: true,
+                            style: const TextStyle(color: Colors.white),
+                            scrollPadding: const EdgeInsets.only(bottom: 120),
+                            decoration: const InputDecoration(
+                              hintText: 'Enter text',
+                              hintStyle: TextStyle(color: Color(0xFFAFB5D9)),
+                              enabledBorder: UnderlineInputBorder(
+                                borderSide:
+                                    BorderSide(color: Color(0xFF4A57AA)),
+                              ),
+                              focusedBorder: UnderlineInputBorder(
+                                borderSide: BorderSide(color: AppTheme.primary),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          Row(
+                            children: [
+                              const Text(
+                                'Font size',
+                                style: TextStyle(color: Colors.white70),
+                              ),
+                              const Spacer(),
+                              Text(
+                                '${textSize.toStringAsFixed(1)} px',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ],
+                          ),
+                          Slider(
+                            min: 8.0,
+                            max: 52.0,
+                            divisions: 44,
+                            value: textSize,
+                            onChanged: (v) =>
+                                setDialogState(() => textSize = v),
+                          ),
+                          const SizedBox(height: 16),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: [
+                              TextButton(
+                                onPressed: () => Navigator.pop(ctx),
+                                child: const Text(
+                                  'Cancel',
+                                  style: TextStyle(color: Colors.white70),
+                                ),
+                              ),
+                              ElevatedButton(
+                                onPressed: () => Navigator.pop(ctx, {
+                                  'text': controller.text.trim(),
+                                  'size': textSize,
+                                }),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: AppTheme.primary,
+                                ),
+                                child: const Text(
+                                  'Add',
+                                  style: TextStyle(color: Colors.white),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
                       ),
                     ),
-                    const SizedBox(height: 16),
-                    Row(
-                      children: [
-                        const Text(
-                          'Font size',
-                          style: TextStyle(color: Colors.white70),
-                        ),
-                        const Spacer(),
-                        Text(
-                          '${textSize.toStringAsFixed(1)} px',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ],
-                    ),
-                    Slider(
-                      min: 8.0,
-                      max: 52.0,
-                      divisions: 44,
-                      value: textSize,
-                      onChanged: (v) => setDialogState(() => textSize = v),
-                    ),
-                    const SizedBox(height: 16),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      children: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(ctx),
-                          child: const Text(
-                            'Cancel',
-                            style: TextStyle(color: Colors.white70),
-                          ),
-                        ),
-                        ElevatedButton(
-                          onPressed: () => Navigator.pop(ctx, {
-                            'text': controller.text.trim(),
-                            'size': textSize,
-                          }),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppTheme.primary,
-                          ),
-                          child: const Text('Add',
-                              style: TextStyle(color: Colors.white)),
-                        ),
-                      ],
-                    ),
-                  ],
+                  ),
                 ),
               ),
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
     controller.dispose();
     final text = result?['text'] as String?;
