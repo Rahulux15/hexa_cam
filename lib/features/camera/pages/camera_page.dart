@@ -3512,23 +3512,35 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                             );
                             return;
                           }
-                          final previewMedia =
-                              await _buildPreviewMediaForReport(
-                            filePath: filePath,
-                            isVideo: isVideo,
-                            defaultName: defaultName,
-                          );
-                          if (!mounted) return;
-                          // Avoid navigating while the bottom sheet is tearing down (iOS crash).
-                          WidgetsBinding.instance.addPostFrameCallback((_) {
-                            if (!mounted) return;
-                            Get.toNamed<void>(
-                              '/report/${widget.folderId}',
-                              arguments: {
-                                'images': [previewMedia.toJson()],
-                              },
+                          try {
+                            final previewMedia =
+                                await _buildPreviewMediaForReport(
+                              filePath: filePath,
+                              isVideo: isVideo,
+                              defaultName: defaultName,
                             );
-                          });
+                            if (!mounted) return;
+                            // Avoid navigating while the bottom sheet is tearing down (iOS crash).
+                            WidgetsBinding.instance.addPostFrameCallback((_) {
+                              if (!mounted) return;
+                              Get.toNamed<void>(
+                                '/report/${widget.folderId}',
+                                arguments: {
+                                  'images': [previewMedia.toJson()],
+                                },
+                              );
+                            });
+                          } catch (e, st) {
+                            logDebug(
+                              'Create report from capture failed: $e\n$st',
+                            );
+                            if (mounted) {
+                              _showMessage(
+                                'Could not open report. Try Save, then open from the folder.',
+                                backgroundColor: AppTheme.danger,
+                              );
+                            }
+                          }
                         },
                         icon: const Icon(
                           Icons.picture_as_pdf_outlined,
@@ -3559,6 +3571,12 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
     String description = '',
   }) async {
     try {
+      if (exportToDevice && mounted) {
+        _showMessage(
+          'Saving to gallery…',
+          backgroundColor: AppTheme.primary,
+        );
+      }
       var annotations = _annotationsForSave();
       String? mediaId = isVideo && !kIsWeb
           ? null
@@ -3658,12 +3676,9 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
       if (mediaId != null && mediaId.isNotEmpty) {
         await MediaDatabase.saveAsset(mediaId, finalBytes);
       }
+      // One asset id for full image — avoid duplicating the same JPEG in SQLite as
+      // both mediaId and thumbnailId (was doubling writes and OOM risk on device).
       String? thumbnailId = isVideo ? null : mediaId;
-      if (!isVideo && annotations.isNotEmpty) {
-        final thumbId = FileService.generateAssetId('thumb');
-        await MediaDatabase.saveAsset(thumbId, finalBytes);
-        thumbnailId = thumbId;
-      }
       if (isVideo && !kIsWeb) {
         try {
           final thumbBytes =
@@ -3956,9 +3971,17 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
         annotations = normalized.$1;
         annotationSourceSize = normalized.$2 ?? annotationSourceSize;
         if (!isVideo) {
-          mediaId = FileService.generateAssetId('image');
-          await MediaDatabase.saveAsset(mediaId, bytes);
-          thumbnailId = mediaId;
+          if (kIsWeb) {
+            // Web has no stable file:// for the report pipeline — keep in-memory asset.
+            mediaId = FileService.generateAssetId('image');
+            await MediaDatabase.saveAsset(mediaId, bytes);
+            thumbnailId = mediaId;
+          } else {
+            // Mobile: [ReportPage] loads stills from [imageUrl] (file://). Saving the
+            // full raw capture into SQLite here blocked the UI and caused ANRs/crashes.
+            mediaId = null;
+            thumbnailId = null;
+          }
         }
       }
     } catch (_) {}

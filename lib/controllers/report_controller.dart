@@ -78,12 +78,14 @@ class ReportController extends GetxController {
     if (image.type == MediaType.video) {
       return baseBytes;
     }
-    if (image.annotations.isEmpty || image.isMarkingsBaked == true) {
+    // Empty overlay list: use base pixels as-is (may already include baked marks).
+    if (image.annotations.isEmpty) {
       return baseBytes;
     }
+    // Baked base + extra overlay annotations still need a burn pass; do not skip.
     try {
       final safeDecodeEdge = Platform.isIOS ? 2600 : null;
-      return MarkedMediaRenderer.renderPhotoWithAnnotations(
+      return await MarkedMediaRenderer.renderPhotoWithAnnotations(
         baseImageBytes: baseBytes,
         annotations: image.annotations,
         mirrorX: image.mirrored ?? false,
@@ -103,6 +105,21 @@ class ReportController extends GetxController {
     }
   }
 
+  Future<String> saveReportCopyToAppFolder({
+    required Uint8List bytes,
+    required String filename,
+    required String folderName,
+    void Function(double progress)? onProgress,
+  }) async {
+    if (kIsWeb) return '';
+    return _saveToAppFolderOnly(
+      bytes,
+      filename: filename,
+      folderName: folderName,
+      onProgress: onProgress,
+    );
+  }
+
   Future<bool> downloadReport({
     required Uint8List bytes,
     required String filename,
@@ -114,26 +131,18 @@ class ReportController extends GetxController {
   }) async {
     if (isDownloading.value) return false;
     isDownloading.value = true;
-    logDebug(
-      'ReportController.downloadReport start filename=$filename folder=$folderName bytes=${bytes.length}',
-    );
     try {
       if (kIsWeb) {
-        logDebug('ReportController.downloadReport web branch');
         onProgress?.call('Downloading report...', 0.4);
         await FileService.savePdfToDevice(bytes, filename);
         onProgress?.call('Downloading report...', 1.0);
-        logDebug('ReportController.downloadReport web download done');
         showMessage('Report downloaded to Downloads', Colors.green);
         return true;
       }
       if (Platform.isIOS) {
-        // iOS: system share sheet (Save to Files, AirDrop, …). [ShareResult]
-        // tells us if the user dismissed without acting — avoid fake "saved".
         onProgress?.call('Preparing PDF…', 0.25);
         ShareResult shareResult = ShareResult.unavailable;
         try {
-          logDebug('ReportController.downloadReport iOS share start');
           onProgress?.call('Opening share sheet…', 0.55);
           shareResult = await FileService.sharePdfToDevice(
             bytes,
@@ -141,8 +150,6 @@ class ReportController extends GetxController {
             sharePositionOrigin: sharePositionOrigin,
           );
         } catch (_) {
-          logDebug(
-              'ReportController.downloadReport iOS share retry without anchor');
           onProgress?.call('Retrying share…', 0.85);
           shareResult = await FileService.sharePdfToDevice(
             bytes,
@@ -167,10 +174,8 @@ class ReportController extends GetxController {
             Colors.green,
           );
         }
-        logDebug('ReportController.downloadReport iOS done');
         return true;
       }
-      logDebug('ReportController.downloadReport Android/public download start');
       onProgress?.call('Preparing report download...', 0.1);
       final permissionController = _permissionController;
       final permissionOk = permissionController == null
@@ -196,15 +201,12 @@ class ReportController extends GetxController {
         );
       }
       if (downloadPath.isEmpty) {
-        logDebug('ReportController.downloadReport public download path empty');
         showMessage(
           'Failed to download to public storage. Report is still saved in app folder.',
           Colors.red,
         );
         return false;
       }
-      logDebug(
-          'ReportController.downloadReport public download done path=$downloadPath');
       final normalizedPath = downloadPath.replaceAll('\\', '/');
       if (normalizedPath.contains('/Download/')) {
         showMessage(

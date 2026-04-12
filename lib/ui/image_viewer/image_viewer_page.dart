@@ -317,6 +317,8 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
   void _showDownloadOptionsSheet() {
     showModalBottomSheet<void>(
       context: context,
+      isDismissible: true,
+      enableDrag: true,
       backgroundColor: const Color(0xFF16182E),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
@@ -346,9 +348,12 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
                   title: 'Save to Gallery',
                   subtitle: 'Download image or video to your device',
                   onTap: () {
-                    Navigator.pop(sheetCtx);
-                    _showMessage('Downloading media...', AppTheme.success);
-                    unawaited(_saveToGalleryWithMarks());
+                    Navigator.of(sheetCtx).pop();
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (!mounted) return;
+                      _showMessage('Preparing download…', AppTheme.success);
+                      unawaited(_saveToGalleryWithMarks());
+                    });
                   },
                 ),
                 const SizedBox(height: 12),
@@ -359,13 +364,16 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
                   subtitle:
                       'Create a PDF report (Download or Save from report page)',
                   onTap: () {
-                    Navigator.pop(sheetCtx);
-                    _openGenerateReportFlow();
+                    Navigator.of(sheetCtx).pop();
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (!mounted) return;
+                      unawaited(_openGenerateReportFlow());
+                    });
                   },
                 ),
                 const SizedBox(height: 16),
                 TextButton(
-                  onPressed: () => Navigator.pop(sheetCtx),
+                  onPressed: () => Navigator.of(sheetCtx).maybePop(),
                   child: const Text(
                     'Cancel',
                     style: TextStyle(
@@ -465,7 +473,8 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
   Future<void> _saveToGalleryWithMarks() async {
     final image = _image;
     if (image == null) return;
-    await _flushPersistAnnotations();
+    // Persist in background — awaiting folder JSON + SQLite can block the UI for a long time.
+    unawaited(_flushPersistAnnotations());
 
     try {
       var exportDirectToGallery = true;
@@ -596,7 +605,7 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
     try {
       final image = _image;
       if (image == null) return;
-      await _flushPersistAnnotations();
+      unawaited(_flushPersistAnnotations());
 
       if (image.type == MediaType.video) {
         _showMessage(
@@ -612,51 +621,16 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
         }
         return annotation;
       }).toList();
-      final allVisibleReportAnnotations = image.isMarkingsBaked == true
-          ? <Annotation>[
-              ..._bakedAnnotationsAtOpen,
-              ...editableAnnotations,
-            ]
-          : editableAnnotations;
-
-      String? reportMediaId = image.mediaId;
-      String? reportThumbId = image.thumbnailId;
-      var hasBakedCapture = false;
-      try {
-        final flattened = await _viewerKey.currentState?.captureFlattenedPng();
-        if (flattened != null && flattened.isNotEmpty) {
-          // Store JPEG, not raw PNG — large PNGs in SQLite / memory have caused
-          // failures on device (same pipeline as Save to Gallery still export).
-          final bakedId = FileService.generateAssetId('report-preview');
-          final jpegBytes = kIsWeb
-              ? compressMarkedStillForStore(flattened)
-              : await compute(compressMarkedStillForStore, flattened);
-          if (jpegBytes.isNotEmpty) {
-            await MediaDatabase.saveAsset(bakedId, jpegBytes);
-            reportMediaId = bakedId;
-            reportThumbId = bakedId;
-            hasBakedCapture = true;
-          }
-        }
-      } catch (error) {
-        logDebug('ImageViewer capture flattened report preview failed: $error');
-        // Fallback to existing source/media path if flatten capture fails.
-      }
-
-      final reportAnnotations =
-          (image.isMarkingsBaked == true && !hasBakedCapture)
-              ? editableAnnotations
-              : allVisibleReportAnnotations;
+      // Fast path: navigate immediately with file/media + annotations. The previous
+      // flow awaited captureFlattenedPng + SQLite and could freeze for minutes on device.
       final forReport = ImageData(
         id: image.id,
         imageUrl: image.imageUrl,
-        mediaId: reportMediaId,
-        thumbnailId: reportThumbId,
+        mediaId: image.mediaId,
+        thumbnailId: image.thumbnailId,
         timestamp: image.timestamp,
         cameraSettings: image.cameraSettings,
-        // If source pixels are already baked and flattening failed, send only
-        // editable overlays to avoid double-drawing baked marks.
-        annotations: reportAnnotations,
+        annotations: editableAnnotations,
         measurements: image.measurements,
         calibration: image.calibration,
         type: MediaType.image,
@@ -669,8 +643,7 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
         showCalibrationStamp: image.showCalibrationStamp,
         sourceWidth: image.sourceWidth,
         sourceHeight: image.sourceHeight,
-        // Mark as baked when source already had baked pixels or flattened capture succeeded.
-        isMarkingsBaked: image.isMarkingsBaked == true || hasBakedCapture,
+        isMarkingsBaked: image.isMarkingsBaked == true,
       );
 
       if (!mounted) return;
@@ -745,14 +718,8 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
   Future<Uint8List?> _buildStillExportBytes() async {
     final image = _image;
     if (image == null) return null;
-    if (image.type != MediaType.video) {
-      final captured = await _viewerKey.currentState?.captureFlattenedPng();
-      if (captured != null && captured.isNotEmpty) {
-        return kIsWeb
-            ? compressMarkedStillForStore(captured)
-            : await compute(compressMarkedStillForStore, captured);
-      }
-    }
+    if (image.type == MediaType.video) return null;
+
     final assetId = image.thumbnailId?.isNotEmpty == true
         ? image.thumbnailId!
         : image.mediaId;
@@ -765,7 +732,15 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
       final path = image.imageUrl.replaceFirst('file://', '');
       bytes = await FileService.readBytes(path);
     }
-    if (bytes == null || bytes.isEmpty) return null;
+    if (bytes == null || bytes.isEmpty) {
+      final captured = await _viewerKey.currentState?.captureFlattenedPng();
+      if (captured != null && captured.isNotEmpty) {
+        return kIsWeb
+            ? compressMarkedStillForStore(captured)
+            : await compute(compressMarkedStillForStore, captured);
+      }
+      return null;
+    }
 
     if (_annotations.isEmpty) return bytes;
     final annotationSourceSize = (image.sourceWidth != null &&

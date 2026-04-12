@@ -1,4 +1,4 @@
-import 'dart:convert';
+import 'dart:convert' show base64Decode;
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -87,15 +87,31 @@ class _MediaImageState extends State<MediaImage> {
       if (identical(a, b)) return true;
       if (a.length != b.length) return false;
       for (var i = 0; i < a.length; i++) {
-        // Full payload compare: moves, label offsets, stroke, points, text, etc.
-        if (jsonEncode(a[i].toJson()) != jsonEncode(b[i].toJson())) {
-          return false;
-        }
+        if (!_annotationVisualEquals(a[i], b[i])) return false;
       }
       return true;
     } catch (_) {
       return false;
     }
+  }
+
+  /// Cheaper than JSON on every [didUpdateWidget] (grids / report previews).
+  bool _annotationVisualEquals(Annotation x, Annotation y) {
+    if (x.id != y.id || x.type != y.type) return false;
+    if (x.strokeWidth != y.strokeWidth || x.color != y.color) return false;
+    if (x.text != y.text || x.measurement != y.measurement) return false;
+    if (x.labelFontSize != y.labelFontSize) return false;
+    if (x.labelOffsetX != y.labelOffsetX || x.labelOffsetY != y.labelOffsetY) {
+      return false;
+    }
+    if (x.coordinateSpace != y.coordinateSpace) return false;
+    if (x.points.length != y.points.length) return false;
+    for (var j = 0; j < x.points.length; j++) {
+      if (x.points[j].x != y.points[j].x || x.points[j].y != y.points[j].y) {
+        return false;
+      }
+    }
+    return true;
   }
 
   Future<Uint8List?> _buildBytesFuture() async {

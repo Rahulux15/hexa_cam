@@ -26,6 +26,7 @@ import '../../data/services/database_service.dart';
 import '../../data/services/file_service.dart';
 import '../../data/services/video_export_service.dart';
 import '../../state/app_registry.dart';
+import '../../utils/app_logger.dart';
 import '../../utils/marked_media_renderer.dart';
 import '../../utils/responsive.dart';
 import '../common/media_image.dart';
@@ -976,9 +977,11 @@ class _ReportPageState extends State<ReportPage> {
     await _hydrateReportFieldsFromPrefs();
     final reportImages = _reportImages;
     _throwIfExportCancelled();
-    final imageBytes = await Future.wait<Uint8List?>(
-      reportImages.map(_collectPdfImageBytes),
-    );
+    final imageBytes = <Uint8List?>[];
+    for (final img in reportImages) {
+      _throwIfExportCancelled();
+      imageBytes.add(await _collectPdfImageBytes(img));
+    }
     _throwIfExportCancelled();
     final logoBytes = await _loadReportLogoBytes();
     final pdfFonts = await _loadReportPdfFonts();
@@ -1086,7 +1089,6 @@ class _ReportPageState extends State<ReportPage> {
       }),
     };
 
-    await Future<void>.delayed(Duration.zero);
     final pdfBytes = await compute(_generateReportPdfInBackground, payload);
     return _ReportArtifacts(
       pdfBytes: pdfBytes,
@@ -1143,6 +1145,31 @@ class _ReportPageState extends State<ReportPage> {
     return true;
   }
 
+  Future<String?> _tryPersistReportPdfBytes(Uint8List bytes) async {
+    if (kIsWeb) {
+      final id = FileService.generateAssetId('report');
+      try {
+        await MediaDatabase.saveAsset(id, bytes);
+        return id;
+      } catch (e) {
+        logDebug('Report PDF web store failed: $e');
+        return null;
+      }
+    }
+    const maxBlob = 3 * 1024 * 1024;
+    if (bytes.length > maxBlob) {
+      return null;
+    }
+    final id = FileService.generateAssetId('report');
+    try {
+      await MediaDatabase.saveAsset(id, bytes);
+      return id;
+    } catch (e) {
+      logDebug('Report PDF MediaDatabase.saveAsset failed: $e');
+      return null;
+    }
+  }
+
   Future<void> _downloadReport() async {
     await _enqueueExportAction(_QueuedExportAction.download);
   }
@@ -1167,8 +1194,19 @@ class _ReportPageState extends State<ReportPage> {
       _throwIfExportCancelled();
       if (!ok) return;
 
-      final assetId = FileService.generateAssetId('report');
-      await MediaDatabase.saveAsset(assetId, bytes);
+      if (!kIsWeb) {
+        try {
+          await _reportController.saveReportCopyToAppFolder(
+            bytes: bytes,
+            filename: filename,
+            folderName: widget.folderId,
+          );
+        } catch (e, st) {
+          logDebug('Report download: app folder copy failed: $e\n$st');
+        }
+      }
+
+      final pdfAssetId = await _tryPersistReportPdfBytes(bytes);
 
       final primaryImage = _primaryImage;
       final previewAssetId = await _storeSavedReportPreviewAsset(
@@ -1179,7 +1217,7 @@ class _ReportPageState extends State<ReportPage> {
         id: DateTime.now().millisecondsSinceEpoch.toString(),
         filename: filename,
         timestamp: DateTime.now().toIso8601String(),
-        pdfAssetId: assetId,
+        pdfAssetId: pdfAssetId,
         previewImageUrl:
             _items.isNotEmpty ? (_items.first['imageUrl'] as String?) : null,
         previewImageAssetId: previewAssetId,
@@ -1258,7 +1296,7 @@ class _ReportPageState extends State<ReportPage> {
           _pdfImageBytesCache[cacheKey] = out;
           return out;
         }
-        if (image.isMarkingsBaked == true) {
+        if (image.isMarkingsBaked == true && image.annotations.isEmpty) {
           final out = await _optimizePdfImageBytesAsync(bytes);
           _pdfImageBytesCache[cacheKey] = out;
           return out;
@@ -1414,8 +1452,8 @@ class _ReportPageState extends State<ReportPage> {
       );
       _throwIfExportCancelled();
       if (!ok) return;
-      final assetId = FileService.generateAssetId('report');
-      await MediaDatabase.saveAsset(assetId, bytes);
+
+      final pdfAssetId = await _tryPersistReportPdfBytes(bytes);
 
       final primaryImage = _primaryImage;
       final previewAssetId = await _storeSavedReportPreviewAsset(
@@ -1426,7 +1464,7 @@ class _ReportPageState extends State<ReportPage> {
         id: DateTime.now().millisecondsSinceEpoch.toString(),
         filename: filename,
         timestamp: DateTime.now().toIso8601String(),
-        pdfAssetId: assetId,
+        pdfAssetId: pdfAssetId,
         previewImageUrl:
             _items.isNotEmpty ? (_items.first['imageUrl'] as String?) : null,
         previewImageAssetId: previewAssetId,
