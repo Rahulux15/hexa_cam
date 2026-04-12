@@ -17,11 +17,13 @@ import '../../data/models/point.dart';
 import '../../data/models/stored_calibration.dart';
 import '../../state/app_registry.dart';
 import '../../utils/calibration_guard.dart';
+import '../../utils/annotation_geometry.dart';
 import '../../utils/annotation_painter.dart';
 import '../../utils/calibration_calculator.dart';
 import '../../utils/coordinate_transformer.dart';
 import '../../utils/measurement_calculator.dart';
 import '../../utils/responsive.dart';
+import '../common/add_text_marking_sheet.dart';
 import '../../utils/app_logger.dart';
 import 'draw_action.dart';
 import 'viewer_filters.dart';
@@ -120,6 +122,23 @@ class ViewerScreenState extends State<ViewerScreen> {
   List<HexaPoint> _currentPoints = [];
   bool _isDrawing = false;
   Size _lastSourceSize = Size.zero;
+  Size _lastPainterDisplaySize = Size.zero;
+  Size _lastPainterSourceSize = Size.zero;
+
+  double _viewerContentScale() {
+    final d = _lastPainterDisplaySize;
+    final src = _lastPainterSourceSize;
+    if (d.width <= 0 || d.height <= 0) return 1.0;
+    if (src.width <= 0 || src.height <= 0) return 1.0;
+    return annotationContentScale(
+      displaySize: d,
+      sourceSize: src,
+      fit: BoxFit.contain,
+      mirrorX: widget.mirrorX,
+      mirrorY: widget.mirrorY,
+      rotation: widget.rotation,
+    );
+  }
 
   String? _moveId;
   List<HexaPoint>? _moveBefore;
@@ -625,144 +644,25 @@ class ViewerScreenState extends State<ViewerScreen> {
 
   Future<void> _promptText(Offset local) async {
     final source = _displayToSource(local);
-    final controller = TextEditingController();
-    var textSize = _drawingStrokeWidth.clamp(8.0, 52.0).toDouble();
-    final result = await showDialog<Map<String, dynamic>>(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) {
-        final viewInsets = MediaQuery.viewInsetsOf(ctx);
-        final safePad = MediaQuery.paddingOf(ctx);
-        final keyboardOpen = viewInsets.bottom > 0;
-        return StatefulBuilder(
-          builder: (ctx, setDialogState) => Align(
-            alignment: keyboardOpen ? Alignment.topCenter : Alignment.center,
-            child: Padding(
-              padding: EdgeInsets.fromLTRB(
-                20,
-                keyboardOpen ? safePad.top + 8 : 20,
-                20,
-                20,
-              ),
-              child: Dialog(
-                backgroundColor: const Color(0xFF2B295C),
-                insetPadding: EdgeInsets.zero,
-                child: AnimatedPadding(
-                  duration: const Duration(milliseconds: 160),
-                  padding: EdgeInsets.only(bottom: viewInsets.bottom + 8),
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(
-                      maxWidth: Responsive.isTablet(ctx) ? 480 : 420,
-                      maxHeight: MediaQuery.sizeOf(ctx).height *
-                          (keyboardOpen ? 0.55 : 0.85),
-                    ),
-                    child: SingleChildScrollView(
-                      keyboardDismissBehavior:
-                          ScrollViewKeyboardDismissBehavior.onDrag,
-                      padding: const EdgeInsets.all(20),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Add Text',
-                            style: TextStyle(color: Colors.white, fontSize: 18),
-                          ),
-                          const SizedBox(height: 12),
-                          TextField(
-                            controller: controller,
-                            autofocus: true,
-                            style: const TextStyle(color: Colors.white),
-                            scrollPadding: const EdgeInsets.only(bottom: 120),
-                            decoration: const InputDecoration(
-                              hintText: 'Enter text',
-                              hintStyle: TextStyle(color: Color(0xFFAFB5D9)),
-                              enabledBorder: UnderlineInputBorder(
-                                borderSide: BorderSide(color: Color(0xFF4A57AA)),
-                              ),
-                              focusedBorder: UnderlineInputBorder(
-                                borderSide: BorderSide(color: AppTheme.primary),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                          Row(
-                            children: [
-                              const Text(
-                                'Font size',
-                                style: TextStyle(color: Colors.white70),
-                              ),
-                              const Spacer(),
-                              Text(
-                                '${textSize.toStringAsFixed(1)} px',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ],
-                          ),
-                          Slider(
-                            min: 8.0,
-                            max: 52.0,
-                            divisions: 44,
-                            value: textSize,
-                            onChanged: (v) =>
-                                setDialogState(() => textSize = v),
-                          ),
-                          const SizedBox(height: 16),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.end,
-                            children: [
-                              TextButton(
-                                onPressed: () => Navigator.pop(ctx),
-                                child: const Text(
-                                  'Cancel',
-                                  style: TextStyle(color: Colors.white70),
-                                ),
-                              ),
-                              ElevatedButton(
-                                onPressed: () => Navigator.pop(ctx, {
-                                  'text': controller.text.trim(),
-                                  'size': textSize,
-                                }),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: AppTheme.primary,
-                                ),
-                                child: const Text(
-                                  'Add',
-                                  style: TextStyle(color: Colors.white),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        );
-      },
+    final result = await AddTextMarkingSheet.show(
+      context,
+      initialTextSize: _drawingStrokeWidth.clamp(8.0, 52.0).toDouble(),
     );
-    // Let the route finish unmounting before disposing — avoids rare framework
-    // assertions if a TextField still depends on the controller for one frame.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      controller.dispose();
-    });
     final text = result?['text'] as String?;
     if (text == null || text.isEmpty || !mounted) return;
     final size = (result?['size'] as num?)?.toDouble() ?? _drawingStrokeWidth;
+    final uiSz = size.clamp(8.0, 52.0).toDouble();
+    final sc = _viewerContentScale();
+    final srcSz = uiStrokeWidthToSource(uiSz, sc);
     final ann = Annotation(
       id: _uuid.v4(),
       type: AnnotationType.text,
       points: [source],
       text: text,
       color: _drawingColor,
-      strokeWidth: size.clamp(8.0, 52.0).toDouble(),
-      labelFontSize: size.clamp(8.0, 52.0).toDouble(),
+      strokeWidth: srcSz,
+      labelFontSize: srcSz,
+      strokeInSourcePixels: true,
       timestamp: DateTime.now().toIso8601String(),
     );
     setState(() => _annotations.add(ann));
@@ -1002,12 +902,16 @@ class ViewerScreenState extends State<ViewerScreen> {
       });
       return;
     }
+    final sc = _viewerContentScale();
+    final strokeSrc = uiStrokeWidthToSource(_drawingStrokeWidth, sc);
+    final labelSrc = uiStrokeWidthToSource(_drawingLabelSize, sc);
     final preview = Annotation(
       id: '',
       type: type,
       points: _currentPoints,
       color: _drawingColor,
-      strokeWidth: _drawingStrokeWidth,
+      strokeWidth: strokeSrc,
+      strokeInSourcePixels: true,
       timestamp: '',
     );
     final measurement = _measurementFor(preview);
@@ -1016,11 +920,12 @@ class ViewerScreenState extends State<ViewerScreen> {
       type: type,
       points: List.from(_currentPoints),
       color: _drawingColor,
-      strokeWidth: _drawingStrokeWidth,
+      strokeWidth: strokeSrc,
       timestamp: DateTime.now().toIso8601String(),
       measurement:
           measurement != null && measurement.isNotEmpty ? measurement : null,
-      labelFontSize: _drawingLabelSize,
+      labelFontSize: labelSrc,
+      strokeInSourcePixels: true,
     );
     setState(() {
       _annotations.add(ann);
@@ -1052,8 +957,8 @@ class ViewerScreenState extends State<ViewerScreen> {
   @override
   Widget build(BuildContext context) {
     final image = widget.image;
-    final uiTextScale =
-        MediaQuery.textScalerOf(context).scale(1.0).clamp(0.85, 1.65);
+    // Keep canvas text/strokes aligned with [MarkedMediaRenderer] exports (1.0).
+    const uiTextScale = 1.0;
 
     return Stack(
       fit: StackFit.expand,
@@ -1075,6 +980,8 @@ class ViewerScreenState extends State<ViewerScreen> {
                     source.width <= 0 ? size.width : source.width,
                     source.height <= 0 ? size.height : source.height,
                   );
+                  _lastPainterDisplaySize = fitted;
+                  _lastPainterSourceSize = source;
                   return FittedBox(
                     fit: BoxFit.contain,
                     child: SizedBox(
@@ -1160,25 +1067,40 @@ class ViewerScreenState extends State<ViewerScreen> {
                                       annotations: _annotationsForPaint(),
                                       currentDrawing: _isDrawing &&
                                               _annotationType != null
-                                          ? Annotation(
-                                              id: 'current',
-                                              type: _annotationType!,
-                                              points: _currentPoints,
-                                              color: _drawingColor,
-                                              strokeWidth: _drawingStrokeWidth,
-                                              timestamp: '',
-                                              measurement: _measurementFor(
-                                                Annotation(
-                                                  id: '',
-                                                  type: _annotationType!,
-                                                  points: _currentPoints,
-                                                  color: _drawingColor,
-                                                  strokeWidth:
-                                                      _drawingStrokeWidth,
-                                                  timestamp: '',
+                                          ? () {
+                                              final sc = _viewerContentScale();
+                                              final strokeSrc =
+                                                  uiStrokeWidthToSource(
+                                                _drawingStrokeWidth,
+                                                sc,
+                                              );
+                                              final labelSrc =
+                                                  uiStrokeWidthToSource(
+                                                _drawingLabelSize,
+                                                sc,
+                                              );
+                                              return Annotation(
+                                                id: 'current',
+                                                type: _annotationType!,
+                                                points: _currentPoints,
+                                                color: _drawingColor,
+                                                strokeWidth: strokeSrc,
+                                                labelFontSize: labelSrc,
+                                                strokeInSourcePixels: true,
+                                                timestamp: '',
+                                                measurement: _measurementFor(
+                                                  Annotation(
+                                                    id: '',
+                                                    type: _annotationType!,
+                                                    points: _currentPoints,
+                                                    color: _drawingColor,
+                                                    strokeWidth: strokeSrc,
+                                                    strokeInSourcePixels: true,
+                                                    timestamp: '',
+                                                  ),
                                                 ),
-                                              ),
-                                            )
+                                              );
+                                            }()
                                           : null,
                                       displaySize: fitted,
                                       sourceSize: source,

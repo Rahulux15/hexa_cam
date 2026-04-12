@@ -57,6 +57,20 @@ class MarkedMediaRenderer {
     Size? annotationSourceSize,
     int? maxDecodeEdge,
   }) async {
+    // Authoring resolution (full file) — used so stroke/text scale with decode
+    // downscaling ([maxDecodeEdge]) instead of looking thinner than capture UI.
+    final peeked = await peekEncodedImageSize(baseImageBytes);
+    final Size authoringSize;
+    if (annotationSourceSize != null &&
+        annotationSourceSize.width > 0 &&
+        annotationSourceSize.height > 0) {
+      authoringSize = annotationSourceSize;
+    } else if (peeked != null && peeked.width > 0 && peeked.height > 0) {
+      authoringSize = peeked;
+    } else {
+      authoringSize = Size.zero;
+    }
+
     final image = await _decodeImage(
       baseImageBytes,
       maxDecodeEdge: maxDecodeEdge,
@@ -64,7 +78,8 @@ class MarkedMediaRenderer {
     final sourceSize = Size(image.width.toDouble(), image.height.toDouble());
     final normalizedAnnotations = normalizeAnnotationsToTarget(
       annotations: annotations,
-      annotationSourceSize: annotationSourceSize,
+      annotationSourceSize:
+          authoringSize == Size.zero ? null : authoringSize,
       targetSize: sourceSize,
     );
     final lineScale = _exportLineScale(sourceSize);
@@ -126,7 +141,8 @@ class MarkedMediaRenderer {
     final sy = targetSize.height / src.height;
     final swappedSx = targetSize.width / src.height;
     final swappedSy = targetSize.height / src.width;
-    if ((sx - 1.0).abs() < 0.001 && (sy - 1.0).abs() < 0.001) {
+    // Only skip normalization when decoded size matches authoring size (no downscale).
+    if ((sx - 1.0).abs() < 1e-5 && (sy - 1.0).abs() < 1e-5) {
       return annotations;
     }
     final direct = _scaleAnnotations(annotations, sx: sx, sy: sy);
@@ -163,27 +179,50 @@ class MarkedMediaRenderer {
   }) {
     final sxAbs = sx.abs();
     final syAbs = sy.abs();
+    // Isotropic scale for pen thickness / font (matches area scaling of the bitmap).
+    // Do **not** cap the upper bound (was 8.0): preview buffers are often much
+    // smaller than full-resolution stills, so capping made saved/exported strokes
+    // look thinner than on-screen (points used unclamped sx/sy).
     final strokeScale = (sxAbs <= 0 || syAbs <= 0)
         ? 1.0
-        : sqrt(sxAbs * syAbs).clamp(0.25, 8.0).toDouble();
+        : sqrt(sxAbs * syAbs).clamp(0.01, 2048.0).toDouble();
     return annotations
         .map(
           (annotation) => annotation.copyWith(
             strokeWidth:
-                (annotation.strokeWidth * strokeScale).clamp(0.5, 96.0),
+                (annotation.strokeWidth * strokeScale).clamp(0.5, 256.0),
             labelFontSize: annotation.labelFontSize == null
                 ? null
                 : (annotation.labelFontSize! * strokeScale)
-                    .clamp(8.0, 120.0)
+                    .clamp(8.0, 512.0)
                     .toDouble(),
             labelOffsetX: annotation.labelOffsetX * sx,
             labelOffsetY: annotation.labelOffsetY * sy,
+            strokeInSourcePixels: annotation.strokeInSourcePixels,
             points: annotation.points
                 .map((p) => HexaPoint(x: p.x * sx, y: p.y * sy))
                 .toList(),
           ),
         )
         .toList(growable: false);
+  }
+
+  /// Raster dimensions from encoded bytes without full decode (cheap).
+  /// Used to scale annotations when [ImageData.sourceWidth]/Height are missing.
+  static Future<Size?> peekEncodedImageSize(Uint8List bytes) async {
+    if (bytes.isEmpty) return null;
+    try {
+      final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
+      final descriptor = await ui.ImageDescriptor.encoded(buffer);
+      final w = descriptor.width;
+      final h = descriptor.height;
+      descriptor.dispose();
+      buffer.dispose();
+      if (w <= 0 || h <= 0) return null;
+      return Size(w.toDouble(), h.toDouble());
+    } catch (_) {
+      return null;
+    }
   }
 
   static double _placementScore(List<Annotation> annotations, Size size) {

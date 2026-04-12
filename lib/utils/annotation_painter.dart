@@ -2,6 +2,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import '../data/models/annotation.dart';
 import '../data/models/point.dart';
+import 'annotation_geometry.dart';
 import 'coordinate_transformer.dart';
 import 'package:vector_math/vector_math_64.dart' show Vector3;
 
@@ -57,8 +58,14 @@ class AnnotationPainter extends CustomPainter {
   }
 
   void _drawAnnotation(Canvas canvas, Annotation ann, Size canvasSize) {
-    final strokeWidth =
-        (ann.strokeWidth * lineWidthScale).clamp(2.0, 120.0).toDouble();
+    _ensureTransformCache();
+    final s = _cachedScale ?? 1.0;
+    final src = ann.strokeInSourcePixels;
+    // Source-space storage × layout scale ⇒ same visual proportion as capture UI
+    // and full-resolution export (see [annotation_geometry.dart]).
+    final strokeWidth = src
+        ? (ann.strokeWidth * lineWidthScale * s).clamp(2.0, 220.0).toDouble()
+        : (ann.strokeWidth * lineWidthScale).clamp(2.0, 120.0).toDouble();
     final paint = Paint()
       ..color = ann.color
       ..strokeWidth = strokeWidth
@@ -81,14 +88,30 @@ class AnnotationPainter extends CustomPainter {
       case AnnotationType.text:
         if (ann.text != null) {
           final textScale = sqrt(uiTextScale.clamp(0.8, 4.0));
-          final fontSize = (ann.labelFontSize ??
-                  (10.0 + (strokeWidth * 0.9) + ((textScale - 1.0) * 6.0)))
-              .clamp(10.0, 120.0)
-              .toDouble();
+          final double fontSize;
+          if (src) {
+            final strokeSrc = ann.strokeWidth;
+            final defaultSrc = (10.0 +
+                    (strokeSrc * 0.9) +
+                    ((textScale - 1.0) * 6.0))
+                .clamp(10.0, 120.0)
+                .toDouble();
+            final baseSrc =
+                (ann.labelFontSize ?? defaultSrc).clamp(10.0, 120.0).toDouble();
+            fontSize = (baseSrc * s).clamp(6.0, 480.0);
+          } else {
+            final legacyStroke = ann.strokeWidth * lineWidthScale;
+            fontSize = (ann.labelFontSize ??
+                    (10.0 +
+                        (legacyStroke * 0.9) +
+                        ((textScale - 1.0) * 6.0)))
+                .clamp(10.0, 120.0)
+                .toDouble();
+          }
           final anchor = points[0];
           final maxW = (canvasSize.width * 0.55).clamp(120.0, 820.0).toDouble();
           final strokeW =
-              (1.4 + (strokeWidth * 0.12)).clamp(1.4, 6.0).toDouble();
+              (1.4 + (strokeWidth * 0.12)).clamp(1.4, 10.0).toDouble();
           final lum = ann.color.computeLuminance();
           final fillColor = lum > 0.52 ? const Color(0xFF121212) : Colors.white;
           final strokeColor =
@@ -161,14 +184,15 @@ class AnnotationPainter extends CustomPainter {
           final start = points[0];
           final end = points[points.length - 1];
           final angle = atan2(end.dy - start.dy, end.dx - start.dx);
+          final headLen = (strokeWidth * 2.6).clamp(14.0, 72.0);
           canvas.drawLine(start, end, paint);
           final path = Path();
           path.moveTo(end.dx, end.dy);
-          path.lineTo(end.dx - 20 * cos(angle - pi / 6),
-              end.dy - 20 * sin(angle - pi / 6));
+          path.lineTo(end.dx - headLen * cos(angle - pi / 6),
+              end.dy - headLen * sin(angle - pi / 6));
           path.moveTo(end.dx, end.dy);
-          path.lineTo(end.dx - 20 * cos(angle + pi / 6),
-              end.dy - 20 * sin(angle + pi / 6));
+          path.lineTo(end.dx - headLen * cos(angle + pi / 6),
+              end.dy - headLen * sin(angle + pi / 6));
           canvas.drawPath(path, paint);
         }
         break;
@@ -178,9 +202,10 @@ class AnnotationPainter extends CustomPainter {
             ..color = ann.color
             ..style = PaintingStyle.fill
             ..isAntiAlias = true;
+          final dotR = (strokeWidth * 0.35).clamp(2.5, 14.0);
           canvas.drawLine(points[0], points[1], paint);
-          canvas.drawCircle(points[0], 3.5, fill);
-          canvas.drawCircle(points[1], 3.5, fill);
+          canvas.drawCircle(points[0], dotR, fill);
+          canvas.drawCircle(points[1], dotR, fill);
         }
         break;
       case AnnotationType.singlePointer:
@@ -189,9 +214,11 @@ class AnnotationPainter extends CustomPainter {
           ..style = PaintingStyle.fill
           ..isAntiAlias = true;
         final p = points[0];
-        canvas.drawCircle(Offset(p.dx, p.dy), 4, fill);
-        canvas.drawLine(Offset(p.dx - 8, p.dy), Offset(p.dx + 8, p.dy), paint);
-        canvas.drawLine(Offset(p.dx, p.dy - 8), Offset(p.dx, p.dy + 8), paint);
+        final pr = (strokeWidth * 0.45).clamp(3.0, 16.0);
+        final cross = (strokeWidth * 2.0).clamp(8.0, 36.0);
+        canvas.drawCircle(Offset(p.dx, p.dy), pr, fill);
+        canvas.drawLine(Offset(p.dx - cross, p.dy), Offset(p.dx + cross, p.dy), paint);
+        canvas.drawLine(Offset(p.dx, p.dy - cross), Offset(p.dx, p.dy + cross), paint);
         break;
       case AnnotationType.rectangle:
       case AnnotationType.square:
@@ -221,6 +248,8 @@ class AnnotationPainter extends CustomPainter {
         _sourceDeltaToDisplayDelta(
           HexaPoint(x: ann.labelOffsetX, y: ann.labelOffsetY),
         ),
+        strokeInSourcePixels: src,
+        contentScale: s,
       );
     }
   }
@@ -285,10 +314,15 @@ class AnnotationPainter extends CustomPainter {
     final maxY = corners.map((p) => p.dy).reduce(max);
     final transformedW = (maxX - minX).clamp(1.0, double.infinity);
     final transformedH = (maxY - minY).clamp(1.0, double.infinity);
-    final baseScale = fit == BoxFit.cover
-        ? max(displayW / transformedW, displayH / transformedH)
-        : min(displayW / transformedW, displayH / transformedH);
-    final scale = baseScale * zoom;
+    final scale = annotationContentScale(
+      displaySize: Size(displayW, displayH),
+      sourceSize: Size(sourceW, sourceH),
+      fit: fit,
+      mirrorX: mirrorX,
+      mirrorY: mirrorY,
+      rotation: rotation,
+      zoom: zoom,
+    );
     final offsetX = (displayW - transformedW * scale) / 2;
     final offsetY = (displayH - transformedH * scale) / 2;
 
@@ -311,14 +345,19 @@ class AnnotationPainter extends CustomPainter {
     AnnotationType type,
     double strokeWidth,
     double? labelFontSize,
-    Offset labelOffset,
-  ) {
+    Offset labelOffset, {
+    required bool strokeInSourcePixels,
+    required double contentScale,
+  }) {
     if (points.isEmpty) return;
     final textScale = sqrt(uiTextScale.clamp(0.8, 4.0));
-    final targetFont = (labelFontSize ??
+    var targetFont = (labelFontSize ??
             (10.0 + (strokeWidth * 1.1) + ((textScale - 1.0) * 8.0)))
         .clamp(8.0, 120.0)
         .toDouble();
+    if (strokeInSourcePixels) {
+      targetFont = (targetFont * contentScale).clamp(8.0, 240.0);
+    }
     final maxLabelWidth =
         (canvasSize.width - (_labelEdgePad * 2) - 4.0).clamp(64.0, 2400.0);
     const baseStyle = TextStyle(
@@ -332,8 +371,10 @@ class AnnotationPainter extends CustomPainter {
       minFont: 8.0,
       maxWidth: maxLabelWidth,
     );
-    final strokeW =
-        (1.35 + ((textScale - 1.0) * 1.15)).clamp(1.35, 4.2).toDouble();
+    final strokeW = ((1.35 + ((textScale - 1.0) * 1.15)) *
+            (strokeInSourcePixels ? contentScale : 1.0))
+        .clamp(1.35, 12.0)
+        .toDouble();
 
     final lum = annotationColor.computeLuminance();
     final fillColor = lum > 0.52 ? const Color(0xFF121212) : Colors.white;

@@ -1,5 +1,5 @@
 import 'dart:convert' show base64Decode;
-import 'dart:io';
+import 'dart:io' show File;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -132,6 +132,10 @@ class _MediaImageState extends State<MediaImage> {
         return raw;
       }
       try {
+        // Match [ReportController.prepareMediaBytes]: full-res decode + burn
+        // can fail on iOS; downscale decode keeps report preview == PDF output.
+        final maxEdge =
+            !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS ? 2600 : null;
         return await MarkedMediaRenderer.renderPhotoWithAnnotations(
           baseImageBytes: raw,
           annotations: widget.annotations,
@@ -139,6 +143,7 @@ class _MediaImageState extends State<MediaImage> {
           mirrorY: widget.mirrorY,
           rotation: widget.rotation,
           annotationSourceSize: widget.annotationSourceSize,
+          maxDecodeEdge: maxEdge,
         );
       } catch (e, st) {
         logDebug('MediaImage burn (mediaId) failed: $e\n$st');
@@ -152,6 +157,8 @@ class _MediaImageState extends State<MediaImage> {
       try {
         final path = widget.source.replaceFirst('file://', '');
         final raw = await File(path).readAsBytes();
+        final maxEdge =
+            !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS ? 2600 : null;
         return await MarkedMediaRenderer.renderPhotoWithAnnotations(
           baseImageBytes: raw,
           annotations: widget.annotations,
@@ -159,6 +166,7 @@ class _MediaImageState extends State<MediaImage> {
           mirrorY: widget.mirrorY,
           rotation: widget.rotation,
           annotationSourceSize: widget.annotationSourceSize,
+          maxDecodeEdge: maxEdge,
         );
       } catch (e, st) {
         logDebug('MediaImage burn (file) failed: $e\n$st');

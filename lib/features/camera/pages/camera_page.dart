@@ -26,6 +26,7 @@ import '../camera_color_matrix.dart';
 import '../camera_types.dart';
 import '../widgets/camera_measurement_grid_painter.dart';
 import '../../../utils/app_logger.dart';
+import '../../../utils/annotation_geometry.dart';
 import '../../../utils/annotation_painter.dart';
 import '../../../utils/calibration_calculator.dart';
 import '../../../utils/image_bytes_codec.dart';
@@ -33,6 +34,7 @@ import '../../../utils/marked_media_renderer.dart';
 import '../../../utils/measurement_calculator.dart';
 import '../../../utils/calibration_guard.dart';
 import '../../../utils/responsive.dart';
+import '../../../ui/common/add_text_marking_sheet.dart';
 import '../../../ui/common/hexa_toast.dart';
 import '../../../ui/common/save_dialog.dart';
 import '../../../ui/viewer/viewer_hit_test.dart';
@@ -236,8 +238,22 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
     c.addListener(_onCameraPreviewValueChanged);
   }
 
-  double _annotationUiTextScale(BuildContext context) =>
-      MediaQuery.textScalerOf(context).scale(1.0).clamp(0.85, 1.65);
+  /// Uniform scale from source image coords → annotation canvas (must match
+  /// [AnnotationPainter] / [annotationContentScale]).
+  double _capturePreviewContentScale() {
+    final d = _cameraPreviewDisplaySize;
+    final src = _lastSourceSize;
+    if (d.width <= 0 || d.height <= 0) return 1.0;
+    if (src.width <= 0 || src.height <= 0) return 1.0;
+    return annotationContentScale(
+      displaySize: d,
+      sourceSize: src,
+      fit: _cameraPreviewFit,
+      mirrorX: _flipH || _mirror,
+      mirrorY: _flipV,
+      rotation: _rotation,
+    );
+  }
 
   /// Same priority as [cam.CameraPreview] for which orientation drives layout.
   DeviceOrientation _applicablePreviewOrientation(cam.CameraValue v) {
@@ -912,7 +928,9 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
             final previewFit = shouldCropToFill ? BoxFit.cover : BoxFit.contain;
             _cameraPreviewDisplaySize = Size(viewport.width, viewport.height);
             _cameraPreviewFit = previewFit;
-            final uiTextScale = _annotationUiTextScale(context);
+            final sc = _capturePreviewContentScale();
+            // Match [MarkedMediaRenderer] — canvas uses source-space stroke (see [AnnotationPainter]).
+            const uiTextScale = 1.0;
             return Stack(
               fit: StackFit.expand,
               children: [
@@ -989,7 +1007,16 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                                               type: _selectedTool!,
                                               points: _currentPoints,
                                               color: _drawingColor,
-                                              strokeWidth: _drawingStrokeWidth,
+                                              strokeWidth: uiStrokeWidthToSource(
+                                                _drawingStrokeWidth,
+                                                sc,
+                                              ),
+                                              labelFontSize:
+                                                  uiStrokeWidthToSource(
+                                                _drawingLabelSize,
+                                                sc,
+                                              ),
+                                              strokeInSourcePixels: true,
                                               timestamp: '',
                                             )
                                           : null,
@@ -3092,16 +3119,20 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
         : null;
 
     late final Annotation createdAnnotation;
+    final sc = _capturePreviewContentScale();
+    final strokeSrc = uiStrokeWidthToSource(_drawingStrokeWidth, sc);
+    final labelSrc = uiStrokeWidthToSource(_drawingLabelSize, sc);
     setState(() {
       createdAnnotation = Annotation(
         id: _uuid.v4(),
         type: _selectedTool!,
         points: List<HexaPoint>.from(_currentPoints),
         color: _drawingColor,
-        strokeWidth: _drawingStrokeWidth,
+        strokeWidth: strokeSrc,
         timestamp: DateTime.now().toIso8601String(),
         measurement: measurement,
-        labelFontSize: _drawingLabelSize,
+        labelFontSize: labelSrc,
+        strokeInSourcePixels: true,
       );
       _annotations.add(
         Annotation(
@@ -3115,6 +3146,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
           labelFontSize: createdAnnotation.labelFontSize,
           labelOffsetX: createdAnnotation.labelOffsetX,
           labelOffsetY: createdAnnotation.labelOffsetY,
+          strokeInSourcePixels: createdAnnotation.strokeInSourcePixels,
         ),
       );
       _redoStack.clear();
@@ -3363,9 +3395,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                                                   mirrorX: _mirror || _flipH,
                                                   mirrorY: _flipV,
                                                   rotation: _rotation,
-                                                  uiTextScale:
-                                                      _annotationUiTextScale(
-                                                          context),
+                                                  uiTextScale: 1.0,
                                                 ),
                                               ),
                                             ],
@@ -3423,9 +3453,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                                               mirrorX: _mirror || _flipH,
                                               mirrorY: _flipV,
                                               rotation: _rotation,
-                                              uiTextScale:
-                                                  _annotationUiTextScale(
-                                                      context),
+                                              uiTextScale: 1.0,
                                             ),
                                           ),
                                         ],
@@ -3824,6 +3852,8 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
     final stampPoint = Responsive.calibrationStampAnchor(
       _lastSourceSize == Size.zero ? _getFallbackSourceSize() : _lastSourceSize,
     );
+    final sc = _capturePreviewContentScale();
+    final stampFont = uiStrokeWidthToSource(14, sc);
     return [
       ...base,
       Annotation(
@@ -3831,6 +3861,9 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
         type: AnnotationType.text,
         points: [HexaPoint(x: stampPoint.dx, y: stampPoint.dy)],
         color: Colors.white,
+        strokeWidth: stampFont,
+        labelFontSize: stampFont,
+        strokeInSourcePixels: true,
         timestamp: DateTime.now().toIso8601String(),
         text: _buildStampLabel(),
       ),
@@ -3849,13 +3882,15 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
     if (needsCalibrationLabel) {
       return 'Calibration not set';
     }
+    final sc = _capturePreviewContentScale();
     return MeasurementCalculator.getMeasurementText(
       Annotation(
         id: 'preview',
         type: type,
         points: points,
         color: _drawingColor,
-        strokeWidth: _drawingStrokeWidth,
+        strokeWidth: uiStrokeWidthToSource(_drawingStrokeWidth, sc),
+        strokeInSourcePixels: true,
         timestamp: '',
       ),
       pixelsPerUnit: effectiveCalibration?.pixelsPerUnit,
@@ -4082,7 +4117,8 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
     }
     final bytes = stillBytes;
     if (bytes == null || bytes.isEmpty) return (annotations, sourceSize);
-    final targetSize = await MarkedMediaRenderer.decodeImageSize(bytes);
+    // Cheap metadata read — matches burn/report pipeline ([peekEncodedImageSize]).
+    final targetSize = await MarkedMediaRenderer.peekEncodedImageSize(bytes);
     if (targetSize == null || targetSize.width <= 0 || targetSize.height <= 0) {
       return (annotations, sourceSize);
     }
@@ -4198,6 +4234,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
             labelFontSize: annotation.labelFontSize,
             labelOffsetX: annotation.labelOffsetX,
             labelOffsetY: annotation.labelOffsetY,
+            strokeInSourcePixels: annotation.strokeInSourcePixels,
           ),
         )
         .toList();
@@ -4342,146 +4379,26 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
   }
 
   Future<void> _showTextDialog(HexaPoint tapPoint) async {
-    final TextEditingController controller = TextEditingController();
-    var textSize = _drawingStrokeWidth.clamp(8.0, 52.0).toDouble();
-    final result = await showDialog<Map<String, dynamic>>(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) {
-        final viewInsets = MediaQuery.viewInsetsOf(ctx);
-        final safePad = MediaQuery.paddingOf(ctx);
-        final keyboardOpen = viewInsets.bottom > 0;
-        // Centered [Dialog] stays behind the iOS keyboard — align to top when
-        // the keyboard is up so title, field, and actions stay visible.
-        return StatefulBuilder(
-          builder: (ctx, setDialogState) => Align(
-            alignment: keyboardOpen ? Alignment.topCenter : Alignment.center,
-            child: Padding(
-              padding: EdgeInsets.fromLTRB(
-                20,
-                keyboardOpen ? safePad.top + 8 : 20,
-                20,
-                20,
-              ),
-              child: Dialog(
-                backgroundColor: const Color(0xFF2B295C),
-                insetPadding: EdgeInsets.zero,
-                child: AnimatedPadding(
-                  duration: const Duration(milliseconds: 160),
-                  padding: EdgeInsets.only(bottom: viewInsets.bottom + 8),
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(
-                      maxWidth: 420,
-                      maxHeight: MediaQuery.sizeOf(ctx).height *
-                          (keyboardOpen ? 0.55 : 0.85),
-                    ),
-                    child: SingleChildScrollView(
-                      keyboardDismissBehavior:
-                          ScrollViewKeyboardDismissBehavior.onDrag,
-                      padding: const EdgeInsets.all(20),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Add Text',
-                            style: TextStyle(color: Colors.white, fontSize: 18),
-                          ),
-                          const SizedBox(height: 12),
-                          TextField(
-                            controller: controller,
-                            autofocus: true,
-                            style: const TextStyle(color: Colors.white),
-                            scrollPadding: const EdgeInsets.only(bottom: 120),
-                            decoration: const InputDecoration(
-                              hintText: 'Enter text',
-                              hintStyle: TextStyle(color: Color(0xFFAFB5D9)),
-                              enabledBorder: UnderlineInputBorder(
-                                borderSide:
-                                    BorderSide(color: Color(0xFF4A57AA)),
-                              ),
-                              focusedBorder: UnderlineInputBorder(
-                                borderSide: BorderSide(color: AppTheme.primary),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                          Row(
-                            children: [
-                              const Text(
-                                'Font size',
-                                style: TextStyle(color: Colors.white70),
-                              ),
-                              const Spacer(),
-                              Text(
-                                '${textSize.toStringAsFixed(1)} px',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ],
-                          ),
-                          Slider(
-                            min: 8.0,
-                            max: 52.0,
-                            divisions: 44,
-                            value: textSize,
-                            onChanged: (v) =>
-                                setDialogState(() => textSize = v),
-                          ),
-                          const SizedBox(height: 16),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.end,
-                            children: [
-                              TextButton(
-                                onPressed: () => Navigator.pop(ctx),
-                                child: const Text(
-                                  'Cancel',
-                                  style: TextStyle(color: Colors.white70),
-                                ),
-                              ),
-                              ElevatedButton(
-                                onPressed: () => Navigator.pop(ctx, {
-                                  'text': controller.text.trim(),
-                                  'size': textSize,
-                                }),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: AppTheme.primary,
-                                ),
-                                child: const Text(
-                                  'Add',
-                                  style: TextStyle(color: Colors.white),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        );
-      },
+    final result = await AddTextMarkingSheet.show(
+      context,
+      initialTextSize: _drawingStrokeWidth.clamp(8.0, 52.0).toDouble(),
     );
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      controller.dispose();
-    });
     final text = result?['text'] as String?;
     if (text == null || text.isEmpty || !mounted) return;
     final size = (result?['size'] as num?)?.toDouble() ?? _drawingStrokeWidth;
+    final uiSz = size.clamp(8.0, 52.0).toDouble();
+    final sc = _capturePreviewContentScale();
+    final srcSz = uiStrokeWidthToSource(uiSz, sc);
     final annotation = Annotation(
       id: _uuid.v4(),
       type: AnnotationType.text,
       points: [tapPoint],
       color: _drawingColor,
-      strokeWidth: size.clamp(8.0, 52.0).toDouble(),
+      strokeWidth: srcSz,
       timestamp: DateTime.now().toIso8601String(),
       text: text,
-      labelFontSize: size.clamp(8.0, 52.0).toDouble(),
+      labelFontSize: srcSz,
+      strokeInSourcePixels: true,
     );
     setState(() {
       _annotations.add(annotation);

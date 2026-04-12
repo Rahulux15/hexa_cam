@@ -27,6 +27,11 @@ class Annotation {
   final double labelOffsetX;
   final double labelOffsetY;
 
+  /// When true, [strokeWidth] / [labelFontSize] are in **full-image source
+  /// pixels**; [AnnotationPainter] multiplies by the layout scale to canvas px.
+  /// When false (legacy), values are treated as canvas pixels (preview/export mismatch).
+  final bool strokeInSourcePixels;
+
   Annotation({
     required this.id,
     required this.type,
@@ -40,6 +45,7 @@ class Annotation {
     this.labelFontSize,
     this.labelOffsetX = 0,
     this.labelOffsetY = 0,
+    this.strokeInSourcePixels = false,
   });
 
   Annotation copyWith({
@@ -50,6 +56,7 @@ class Annotation {
     double? labelFontSize,
     double? labelOffsetX,
     double? labelOffsetY,
+    bool? strokeInSourcePixels,
   }) =>
       Annotation(
         id: id,
@@ -64,6 +71,7 @@ class Annotation {
         labelFontSize: labelFontSize ?? this.labelFontSize,
         labelOffsetX: labelOffsetX ?? this.labelOffsetX,
         labelOffsetY: labelOffsetY ?? this.labelOffsetY,
+        strokeInSourcePixels: strokeInSourcePixels ?? this.strokeInSourcePixels,
       );
 
   factory Annotation.fromJson(Map<String, dynamic> json) => Annotation(
@@ -80,6 +88,7 @@ class Annotation {
         labelFontSize: (json['labelFontSize'] as num?)?.toDouble(),
         labelOffsetX: (json['labelOffsetX'] as num?)?.toDouble() ?? 0,
         labelOffsetY: (json['labelOffsetY'] as num?)?.toDouble() ?? 0,
+        strokeInSourcePixels: json['strokeInSourcePixels'] == true,
       );
 
   Map<String, dynamic> toJson() => {
@@ -95,6 +104,7 @@ class Annotation {
         if (labelFontSize != null) 'labelFontSize': labelFontSize,
         if (labelOffsetX != 0) 'labelOffsetX': labelOffsetX,
         if (labelOffsetY != 0) 'labelOffsetY': labelOffsetY,
+        if (strokeInSourcePixels) 'strokeInSourcePixels': true,
       };
 
   static Color _parseColor(dynamic raw) {
