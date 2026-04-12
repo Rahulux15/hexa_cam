@@ -1,11 +1,12 @@
-import 'dart:io';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../data/models/annotation.dart';
 import '../../data/services/database_service.dart';
+import '../../utils/app_logger.dart';
 import '../../utils/marked_media_renderer.dart';
 
 /// Loads image bytes from [mediaId] and/or [source].
@@ -82,54 +83,71 @@ class _MediaImageState extends State<MediaImage> {
   }
 
   bool _sameAnnotationList(List<Annotation> a, List<Annotation> b) {
-    if (identical(a, b)) return true;
-    if (a.length != b.length) return false;
-    for (var i = 0; i < a.length; i++) {
-      if (a[i].id != b[i].id || a[i].points.length != b[i].points.length) {
-        return false;
+    try {
+      if (identical(a, b)) return true;
+      if (a.length != b.length) return false;
+      for (var i = 0; i < a.length; i++) {
+        // Full payload compare: moves, label offsets, stroke, points, text, etc.
+        if (jsonEncode(a[i].toJson()) != jsonEncode(b[i].toJson())) {
+          return false;
+        }
       }
+      return true;
+    } catch (_) {
+      return false;
     }
-    return true;
   }
 
   Future<Uint8List?> _buildBytesFuture() async {
     if (widget.mediaId != null && widget.mediaId!.isNotEmpty) {
-      final cached = _assetByteCache[widget.mediaId!];
-      if (cached != null && cached.isNotEmpty) {
-        return cached;
-      }
-      final bytes = await MediaDatabase.getAsset(widget.mediaId!);
-      if (bytes == null || bytes.isEmpty) return null;
-      _assetByteCache[widget.mediaId!] = bytes;
-      if (_assetByteCache.length > _maxAssetCacheEntries) {
-        _assetByteCache.remove(_assetByteCache.keys.first);
+      // Cache only the raw asset from DB. Always run the burn step when
+      // annotations are shown — returning cached bytes early skipped overlays
+      // on any second [MediaImage] using the same [mediaId] (folder grid, etc.).
+      Uint8List? raw = _assetByteCache[widget.mediaId!];
+      if (raw == null || raw.isEmpty) {
+        raw = await MediaDatabase.getAsset(widget.mediaId!);
+        if (raw == null || raw.isEmpty) return null;
+        _assetByteCache[widget.mediaId!] = raw;
+        if (_assetByteCache.length > _maxAssetCacheEntries) {
+          _assetByteCache.remove(_assetByteCache.keys.first);
+        }
       }
       if (widget.annotations.isEmpty || !widget.burnAnnotationsIntoPreview) {
-        return bytes;
+        return raw;
       }
-      return MarkedMediaRenderer.renderPhotoWithAnnotations(
-        baseImageBytes: bytes,
-        annotations: widget.annotations,
-        mirrorX: widget.mirrorX,
-        mirrorY: widget.mirrorY,
-        rotation: widget.rotation,
-        annotationSourceSize: widget.annotationSourceSize,
-      );
+      try {
+        return await MarkedMediaRenderer.renderPhotoWithAnnotations(
+          baseImageBytes: raw,
+          annotations: widget.annotations,
+          mirrorX: widget.mirrorX,
+          mirrorY: widget.mirrorY,
+          rotation: widget.rotation,
+          annotationSourceSize: widget.annotationSourceSize,
+        );
+      } catch (e, st) {
+        logDebug('MediaImage burn (mediaId) failed: $e\n$st');
+        return null;
+      }
     }
     if (!kIsWeb &&
         widget.source.startsWith('file://') &&
         widget.burnAnnotationsIntoPreview &&
         widget.annotations.isNotEmpty) {
-      final path = widget.source.replaceFirst('file://', '');
-      final raw = await File(path).readAsBytes();
-      return MarkedMediaRenderer.renderPhotoWithAnnotations(
-        baseImageBytes: raw,
-        annotations: widget.annotations,
-        mirrorX: widget.mirrorX,
-        mirrorY: widget.mirrorY,
-        rotation: widget.rotation,
-        annotationSourceSize: widget.annotationSourceSize,
-      );
+      try {
+        final path = widget.source.replaceFirst('file://', '');
+        final raw = await File(path).readAsBytes();
+        return await MarkedMediaRenderer.renderPhotoWithAnnotations(
+          baseImageBytes: raw,
+          annotations: widget.annotations,
+          mirrorX: widget.mirrorX,
+          mirrorY: widget.mirrorY,
+          rotation: widget.rotation,
+          annotationSourceSize: widget.annotationSourceSize,
+        );
+      } catch (e, st) {
+        logDebug('MediaImage burn (file) failed: $e\n$st');
+        return null;
+      }
     }
     return null;
   }
@@ -161,6 +179,10 @@ class _MediaImageState extends State<MediaImage> {
                 : const Center(
                     child: CircularProgressIndicator(strokeWidth: 2),
                   );
+          }
+          if (snapshot.hasError) {
+            logDebug('MediaImage future error: ${snapshot.error}');
+            return _buildFromSource();
           }
           if (bytes != null && bytes.isNotEmpty) {
             return Image.memory(

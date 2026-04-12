@@ -22,6 +22,7 @@ import '../../utils/calibration_calculator.dart';
 import '../../utils/coordinate_transformer.dart';
 import '../../utils/measurement_calculator.dart';
 import '../../utils/responsive.dart';
+import '../../utils/app_logger.dart';
 import 'draw_action.dart';
 import 'viewer_filters.dart';
 import 'viewer_hit_test.dart';
@@ -212,13 +213,18 @@ class ViewerScreenState extends State<ViewerScreen> {
 
   /// Flattened PNG (filters + annotations). Video: current frame + overlays.
   Future<Uint8List?> captureFlattenedPng() async {
-    final boundary = repaintBoundaryKey.currentContext?.findRenderObject()
-        as RenderRepaintBoundary?;
-    if (boundary == null) return null;
-    final dpr = MediaQuery.devicePixelRatioOf(context);
-    final image = await boundary.toImage(pixelRatio: dpr);
-    final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
-    return byteData?.buffer.asUint8List();
+    try {
+      final boundary = repaintBoundaryKey.currentContext?.findRenderObject()
+          as RenderRepaintBoundary?;
+      if (boundary == null) return null;
+      final dpr = MediaQuery.devicePixelRatioOf(context);
+      final image = await boundary.toImage(pixelRatio: dpr);
+      final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+      return byteData?.buffer.asUint8List();
+    } catch (e, st) {
+      logDebug('ViewerScreen.captureFlattenedPng failed: $e\n$st');
+      return null;
+    }
   }
 
   void _notify() {

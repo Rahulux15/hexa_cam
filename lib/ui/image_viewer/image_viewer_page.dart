@@ -593,88 +593,104 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
   }
 
   Future<void> _openGenerateReportFlow() async {
-    final image = _image;
-    if (image == null) return;
-    await _flushPersistAnnotations();
+    try {
+      final image = _image;
+      if (image == null) return;
+      await _flushPersistAnnotations();
 
-    if (image.type == MediaType.video) {
+      if (image.type == MediaType.video) {
+        _showMessage(
+          'PDF reports use still images. Save the marked video from Download, or use a photo.',
+          AppTheme.danger,
+        );
+        return;
+      }
+
+      final editableAnnotations = _annotations.map((annotation) {
+        if (annotation.type == AnnotationType.twoPointer) {
+          return annotation.copyWith(measurement: _measurementFor(annotation));
+        }
+        return annotation;
+      }).toList();
+      final allVisibleReportAnnotations = image.isMarkingsBaked == true
+          ? <Annotation>[
+              ..._bakedAnnotationsAtOpen,
+              ...editableAnnotations,
+            ]
+          : editableAnnotations;
+
+      String? reportMediaId = image.mediaId;
+      String? reportThumbId = image.thumbnailId;
+      var hasBakedCapture = false;
+      try {
+        final flattened = await _viewerKey.currentState?.captureFlattenedPng();
+        if (flattened != null && flattened.isNotEmpty) {
+          // Store JPEG, not raw PNG — large PNGs in SQLite / memory have caused
+          // failures on device (same pipeline as Save to Gallery still export).
+          final bakedId = FileService.generateAssetId('report-preview');
+          final jpegBytes = kIsWeb
+              ? compressMarkedStillForStore(flattened)
+              : await compute(compressMarkedStillForStore, flattened);
+          if (jpegBytes.isNotEmpty) {
+            await MediaDatabase.saveAsset(bakedId, jpegBytes);
+            reportMediaId = bakedId;
+            reportThumbId = bakedId;
+            hasBakedCapture = true;
+          }
+        }
+      } catch (error) {
+        logDebug('ImageViewer capture flattened report preview failed: $error');
+        // Fallback to existing source/media path if flatten capture fails.
+      }
+
+      final reportAnnotations =
+          (image.isMarkingsBaked == true && !hasBakedCapture)
+              ? editableAnnotations
+              : allVisibleReportAnnotations;
+      final forReport = ImageData(
+        id: image.id,
+        imageUrl: image.imageUrl,
+        mediaId: reportMediaId,
+        thumbnailId: reportThumbId,
+        timestamp: image.timestamp,
+        cameraSettings: image.cameraSettings,
+        // If source pixels are already baked and flattening failed, send only
+        // editable overlays to avoid double-drawing baked marks.
+        annotations: reportAnnotations,
+        measurements: image.measurements,
+        calibration: image.calibration,
+        type: MediaType.image,
+        duration: image.duration,
+        rotation: _rotation,
+        mirrored: _flipH || _mirror,
+        lens: image.lens,
+        filename: image.filename,
+        description: image.description,
+        showCalibrationStamp: image.showCalibrationStamp,
+        sourceWidth: image.sourceWidth,
+        sourceHeight: image.sourceHeight,
+        // Mark as baked when source already had baked pixels or flattened capture succeeded.
+        isMarkingsBaked: image.isMarkingsBaked == true || hasBakedCapture,
+      );
+
+      if (!mounted) return;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        Get.toNamed<void>(
+          '/report/${widget.folderId}',
+          arguments: {
+            'images': [forReport.toJson()],
+          },
+        );
+      });
+    } catch (e, st) {
+      logDebug('ImageViewer _openGenerateReportFlow failed: $e\n$st');
+      if (!mounted) return;
       _showMessage(
-        'PDF reports use still images. Save the marked video from Download, or use a photo.',
+        'Could not open report. Try again, or reopen the image.',
         AppTheme.danger,
       );
-      return;
     }
-
-    final editableAnnotations = _annotations.map((annotation) {
-      if (annotation.type == AnnotationType.twoPointer) {
-        return annotation.copyWith(measurement: _measurementFor(annotation));
-      }
-      return annotation;
-    }).toList();
-    final allVisibleReportAnnotations = image.isMarkingsBaked == true
-        ? <Annotation>[
-            ..._bakedAnnotationsAtOpen,
-            ...editableAnnotations,
-          ]
-        : editableAnnotations;
-
-    String? reportMediaId = image.mediaId;
-    String? reportThumbId = image.thumbnailId;
-    var hasBakedCapture = false;
-    try {
-      final flattened = await _viewerKey.currentState?.captureFlattenedPng();
-      if (flattened != null && flattened.isNotEmpty) {
-        final bakedId = FileService.generateAssetId('report-preview');
-        await MediaDatabase.saveAsset(bakedId, flattened);
-        reportMediaId = bakedId;
-        reportThumbId = bakedId;
-        hasBakedCapture = true;
-      }
-    } catch (error) {
-      logDebug('ImageViewer capture flattened report preview failed: $error');
-      // Fallback to existing source/media path if flatten capture fails.
-    }
-
-    final reportAnnotations =
-        (image.isMarkingsBaked == true && !hasBakedCapture)
-            ? editableAnnotations
-            : allVisibleReportAnnotations;
-    final forReport = ImageData(
-      id: image.id,
-      imageUrl: image.imageUrl,
-      mediaId: reportMediaId,
-      thumbnailId: reportThumbId,
-      timestamp: image.timestamp,
-      cameraSettings: image.cameraSettings,
-      // If source pixels are already baked and flattening failed, send only
-      // editable overlays to avoid double-drawing baked marks.
-      annotations: reportAnnotations,
-      measurements: image.measurements,
-      calibration: image.calibration,
-      type: MediaType.image,
-      duration: image.duration,
-      rotation: _rotation,
-      mirrored: _flipH || _mirror,
-      lens: image.lens,
-      filename: image.filename,
-      description: image.description,
-      showCalibrationStamp: image.showCalibrationStamp,
-      sourceWidth: image.sourceWidth,
-      sourceHeight: image.sourceHeight,
-      // Mark as baked when source already had baked pixels or flattened capture succeeded.
-      isMarkingsBaked: image.isMarkingsBaked == true || hasBakedCapture,
-    );
-
-    if (!mounted) return;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      Get.toNamed<void>(
-        '/report/${widget.folderId}',
-        arguments: {
-          'images': [forReport.toJson()],
-        },
-      );
-    });
   }
 
   void _schedulePersistAnnotations() {
