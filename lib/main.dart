@@ -25,11 +25,18 @@ void main() async {
       DeviceOrientation.landscapeRight,
     ]);
 
+    // Android 15+ / SDK 35: match Activity edge-to-edge; Flutter applies safe padding.
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    }
+
     SystemChrome.setSystemUIOverlayStyle(
       const SystemUiOverlayStyle(
         statusBarColor: Colors.transparent,
         statusBarIconBrightness: Brightness.light,
-        systemNavigationBarColor: Color(0xFF0F0F23),
+        // Edge-to-edge: draw behind nav bar; scrim matches app chrome (see AppTheme).
+        systemNavigationBarColor: Colors.transparent,
+        systemNavigationBarDividerColor: Colors.transparent,
         systemNavigationBarIconBrightness: Brightness.light,
       ),
     );

@@ -116,3 +116,8 @@ android {
 flutter {
     source = "../.."
 }
+
+dependencies {
+    // Align with Android 15 edge-to-edge guidance (enableEdgeToEdge).
+    implementation("androidx.activity:activity-ktx:1.10.1")
+}
