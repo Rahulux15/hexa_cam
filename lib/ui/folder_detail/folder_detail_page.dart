@@ -418,6 +418,48 @@ class _FolderDetailPageState extends State<FolderDetailPage> {
     );
   }
 
+  Widget _buildMediaCaption(ImageData image) {
+    final name = (image.filename?.trim().isNotEmpty ?? false)
+        ? image.filename!.trim()
+        : (image.type == MediaType.video ? 'Video' : 'Photo');
+    final description = image.description?.trim() ?? '';
+    return SizedBox(
+      height: 72,
+      width: double.infinity,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            name,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w600,
+              fontSize: 14,
+              height: 1.2,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Expanded(
+            child: Text(
+              description.isEmpty ? ' ' : description,
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: description.isEmpty
+                    ? Colors.transparent
+                    : const Color(0xFFAFC0E4),
+                fontSize: 12,
+                height: 1.25,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildMediaCard(ImageData image, double screenWidth) {
     final selected = _selectedImages.contains(image.id);
     final cardWidth = screenWidth >= 1200
@@ -440,62 +482,70 @@ class _FolderDetailPageState extends State<FolderDetailPage> {
               color: const Color(0xFF2A2C63),
               border:
                   selected ? AppTheme.primaryLight : const Color(0xFF343B7A)),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(16),
-            child: Stack(children: [
-              AspectRatio(
-                aspectRatio: 1,
-                child: _buildMediaPreview(
-                  image,
-                  layoutWidth: (cardWidth == double.infinity
-                          ? MediaQuery.sizeOf(context).width - 72
-                          : cardWidth) -
-                      28,
-                ),
-              ),
-              if (image.type == MediaType.video)
-                const Positioned.fill(
-                  child: Center(
-                    child: CircleAvatar(
-                      radius: 24,
-                      backgroundColor: Color(0x88000000),
-                      child: Icon(Icons.play_arrow_rounded,
-                          color: Colors.white, size: 28),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(16),
+                child: Stack(children: [
+                  AspectRatio(
+                    aspectRatio: 1,
+                    child: _buildMediaPreview(
+                      image,
+                      layoutWidth: (cardWidth == double.infinity
+                              ? MediaQuery.sizeOf(context).width - 72
+                              : cardWidth) -
+                          28,
                     ),
                   ),
-                ),
-              if (image.annotations.isNotEmpty)
-                Positioned(
-                  left: 10,
-                  top: 10,
-                  child: Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: const Color(0xCC10162E),
-                      borderRadius: BorderRadius.circular(999),
-                      border: Border.all(color: Colors.white24),
-                    ),
-                    child: Text(
-                      '${image.annotations.length} mark${image.annotations.length == 1 ? '' : 's'}',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w700,
+                  if (image.type == MediaType.video)
+                    const Positioned.fill(
+                      child: Center(
+                        child: CircleAvatar(
+                          radius: 24,
+                          backgroundColor: Color(0x88000000),
+                          child: Icon(Icons.play_arrow_rounded,
+                              color: Colors.white, size: 28),
+                        ),
                       ),
                     ),
-                  ),
-                ),
-              if (selected)
-                const Positioned(
-                    top: 10,
-                    right: 10,
-                    child: CircleAvatar(
-                        radius: 14,
-                        backgroundColor: AppTheme.primary,
-                        child:
-                            Icon(Icons.check, size: 16, color: Colors.white))),
-            ]),
+                  if (image.annotations.isNotEmpty)
+                    Positioned(
+                      left: 10,
+                      top: 10,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: const Color(0xCC10162E),
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(color: Colors.white24),
+                        ),
+                        child: Text(
+                          '${image.annotations.length} mark${image.annotations.length == 1 ? '' : 's'}',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ),
+                  if (selected)
+                    const Positioned(
+                        top: 10,
+                        right: 10,
+                        child: CircleAvatar(
+                            radius: 14,
+                            backgroundColor: AppTheme.primary,
+                            child: Icon(Icons.check,
+                                size: 16, color: Colors.white))),
+                ]),
+              ),
+              const SizedBox(height: 10),
+              _buildMediaCaption(image),
+            ],
           ),
         ),
       ),
@@ -585,6 +635,19 @@ class _FolderDetailPageState extends State<FolderDetailPage> {
                     style:
                         const TextStyle(color: Color(0xFFAFC0E4), fontSize: 14))
               ]),
+              if (image.description?.trim().isNotEmpty ?? false) ...[
+                const SizedBox(height: 6),
+                Text(
+                  image.description!.trim(),
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xFFAFC0E4),
+                    fontSize: 13,
+                    height: 1.25,
+                  ),
+                ),
+              ],
             ]),
           ),
           if (selected)

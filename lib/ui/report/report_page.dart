@@ -53,6 +53,8 @@ class _ReportPageState extends State<ReportPage> {
   final _emailController = TextEditingController();
   final _phoneController = TextEditingController();
   final _locationController = TextEditingController();
+  final _reportNameController = TextEditingController();
+  final _reportDescriptionController = TextEditingController();
   List<Map<String, dynamic>> _items = [];
   Timer? _progressToastDebounce;
   final Map<String, Uint8List?> _pdfImageBytesCache = <String, Uint8List?>{};
@@ -81,6 +83,8 @@ class _ReportPageState extends State<ReportPage> {
       _emailController.text = reportForm.email;
       _phoneController.text = reportForm.phone;
       _locationController.text = reportForm.location;
+      _reportNameController.text = reportForm.reportName;
+      _reportDescriptionController.text = reportForm.reportDescription;
     }
     WidgetsBinding.instance.addPostFrameCallback(
         (_) => _hydrateReportFieldsFromPrefs(notify: true));
@@ -114,6 +118,8 @@ class _ReportPageState extends State<ReportPage> {
     _emailController.dispose();
     _phoneController.dispose();
     _locationController.dispose();
+    _reportNameController.dispose();
+    _reportDescriptionController.dispose();
     super.dispose();
   }
 
@@ -382,6 +388,17 @@ class _ReportPageState extends State<ReportPage> {
                                           ? (constraints.maxWidth - 24) / 2
                                           : constraints.maxWidth;
                                       final fields = [
+                                        _FieldData(
+                                            'Report Name',
+                                            _reportNameController,
+                                            Icons.badge_outlined,
+                                            'Enter report name'),
+                                        _FieldData(
+                                            'Report Description',
+                                            _reportDescriptionController,
+                                            Icons.notes_outlined,
+                                            'Enter report description',
+                                            maxLines: 3),
                                         _FieldData(
                                             'Organization Name',
                                             _orgController,
@@ -823,6 +840,7 @@ class _ReportPageState extends State<ReportPage> {
         const SizedBox(height: 12),
         TextField(
           controller: field.controller,
+          maxLines: field.maxLines,
           style: const TextStyle(color: Colors.white),
           decoration: InputDecoration(
             hintText: field.hint,
@@ -1045,6 +1063,8 @@ class _ReportPageState extends State<ReportPage> {
       'phone': _phoneController.text.isEmpty ? '-' : _phoneController.text,
       'location':
           _locationController.text.isEmpty ? '-' : _locationController.text,
+      'reportName': _reportNameController.text.trim(),
+      'reportDescription': _reportDescriptionController.text.trim(),
       'date': DateTime.now().toIso8601String(),
       'reportDownloadStamp': _formatReportDownloadStamp(DateTime.now()),
       'logoBytes': logoBytes,
@@ -1229,6 +1249,8 @@ class _ReportPageState extends State<ReportPage> {
           email: _emailController.text,
           phone: _phoneController.text,
           location: _locationController.text,
+          reportName: _reportNameController.text,
+          reportDescription: _reportDescriptionController.text,
         ),
         sourceImages: _items,
       );
@@ -1476,6 +1498,8 @@ class _ReportPageState extends State<ReportPage> {
           email: _emailController.text,
           phone: _phoneController.text,
           location: _locationController.text,
+          reportName: _reportNameController.text,
+          reportDescription: _reportDescriptionController.text,
         ),
         sourceImages: _items,
       );
@@ -1598,11 +1622,13 @@ class _ExportCancelled implements Exception {
 }
 
 class _FieldData {
-  const _FieldData(this.label, this.controller, this.icon, this.hint);
+  const _FieldData(this.label, this.controller, this.icon, this.hint,
+      {this.maxLines = 1});
   final String label;
   final TextEditingController controller;
   final IconData icon;
   final String hint;
+  final int maxLines;
 }
 
 class _MetricCard extends StatelessWidget {
@@ -1798,6 +1824,26 @@ Future<Uint8List> _generateReportPdfInBackground(
         ],
       ),
       build: (context) => [
+        if (((payload['reportName'] as String?) ?? '').trim().isNotEmpty)
+          pw.Text(
+            (payload['reportName'] as String).trim(),
+            style: pw.TextStyle(
+              fontSize: 16,
+              fontWeight: pw.FontWeight.bold,
+              color: PdfColors.grey800,
+            ),
+          ),
+        if (((payload['reportDescription'] as String?) ?? '').trim().isNotEmpty) ...[
+          if (((payload['reportName'] as String?) ?? '').trim().isNotEmpty)
+            pw.SizedBox(height: 8),
+          pw.Text(
+            (payload['reportDescription'] as String).trim(),
+            style: pw.TextStyle(fontSize: 10, color: PdfColors.grey700),
+          ),
+        ],
+        if ((((payload['reportName'] as String?) ?? '').trim().isNotEmpty) ||
+            (((payload['reportDescription'] as String?) ?? '').trim().isNotEmpty))
+          pw.SizedBox(height: 16),
         pw.Text(
           'Camera settings',
           style: pw.TextStyle(

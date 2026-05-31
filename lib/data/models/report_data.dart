@@ -62,13 +62,17 @@ class ReportFormData {
   final String email;
   final String phone;
   final String location;
+  final String reportName;
+  final String reportDescription;
 
   ReportFormData(
       {this.organizationName = '',
       this.fullName = '',
       this.email = '',
       this.phone = '',
-      this.location = ''});
+      this.location = '',
+      this.reportName = '',
+      this.reportDescription = ''});
 
   factory ReportFormData.fromJson(Map<String, dynamic> json) => ReportFormData(
         organizationName: json['organizationName'] ?? '',
@@ -76,6 +80,8 @@ class ReportFormData {
         email: json['email'] ?? '',
         phone: json['phone'] ?? '',
         location: json['location'] ?? '',
+        reportName: json['reportName'] ?? '',
+        reportDescription: json['reportDescription'] ?? '',
       );
 
   Map<String, dynamic> toJson() => {
@@ -83,6 +89,8 @@ class ReportFormData {
         'fullName': fullName,
         'email': email,
         'phone': phone,
-        'location': location
+        'location': location,
+        'reportName': reportName,
+        'reportDescription': reportDescription,
       };
 }
