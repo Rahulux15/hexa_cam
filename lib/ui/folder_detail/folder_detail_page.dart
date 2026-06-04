@@ -503,115 +503,6 @@ class _FolderDetailPageState extends State<FolderDetailPage> {
               const SizedBox(height: 10),
               _buildMediaCaption(image),
             ],
-            borderRadius: BorderRadius.circular(20),
-            color: const Color(0xFF2A2C63),
-            border: selected ? AppTheme.primaryLight : const Color(0xFF343B7A),
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Stack(
-                  children: [
-                    AspectRatio(
-                      aspectRatio: 1,
-                      child: _buildMediaPreview(
-                        image,
-                        layoutWidth: (cardWidth == double.infinity
-                                ? MediaQuery.sizeOf(context).width - 72
-                                : cardWidth) -
-                            28,
-                      ),
-                    ),
-                    if (image.type == MediaType.video)
-                      const Positioned.fill(
-                        child: Center(
-                          child: CircleAvatar(
-                            radius: 24,
-                            backgroundColor: Color(0x88000000),
-                            child: Icon(Icons.play_arrow_rounded,
-                                color: Colors.white, size: 28),
-                          ),
-                        ),
-                      ),
-                    if (image.annotations.isNotEmpty)
-                      Positioned(
-                        left: 10,
-                        top: 10,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: const Color(0xCC10162E),
-                            borderRadius: BorderRadius.circular(999),
-                            border: Border.all(color: Colors.white24),
-                          ),
-                          child: Text(
-                            '${image.annotations.length} mark${image.annotations.length == 1 ? '' : 's'}',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 10,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ),
-                      ),
-                    if (selected)
-                      const Positioned(
-                        top: 10,
-                        right: 10,
-                        child: CircleAvatar(
-                          radius: 14,
-                          backgroundColor: AppTheme.primary,
-                          child: Icon(Icons.check, size: 16, color: Colors.white),
-                        ),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                SizedBox(
-                  height: 72,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        image.filename ??
-                            (image.type == MediaType.video ? 'Video' : 'Photo'),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 14,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Expanded(
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          children: [
-                            Expanded(
-                              child: Text(
-                                image.description?.trim().isNotEmpty == true
-                                    ? image.description!.trim()
-                                    : '',
-                                maxLines: 3,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  color: Color(0xFFAFC0E4),
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
           ),
         ),
       ),
@@ -706,13 +597,11 @@ class _FolderDetailPageState extends State<FolderDetailPage> {
                     if ((image.description ?? '').trim().isNotEmpty)
                       Padding(
                         padding: const EdgeInsets.only(top: 6.0),
-                        child: Text(
-                          image.description!.trim(),
-                          maxLines: 3,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                              color: Color(0xFFAFC0E4), fontSize: 13),
-                        ),
+                        child: Text(image.description!,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                                color: Color(0xFFAFC0E4), fontSize: 13)),
                       ),
                   ],
                 ),
