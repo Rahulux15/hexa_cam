@@ -3710,9 +3710,9 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
             .renderPhotoWithAnnotationsAndCaption(
           baseImageBytes: rawBytes,
           annotations: annotations,
-          mirrorX: false,
-          mirrorY: false,
-          rotation: 0,
+          mirrorX: _mirror || _flipH,
+          mirrorY: _flipV,
+          rotation: _rotation,
           annotationSourceSize: annotationSourceSize,
           maxDecodeEdge: safeDecodeEdge,
           title: preferredName,
@@ -3729,9 +3729,9 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
         final exported = await VideoExportService.burnAnnotationsIntoVideo(
           sourcePath: mediaSourcePath,
           annotations: annotations,
-          mirrorX: false,
-          mirrorY: false,
-          rotation: 0,
+          mirrorX: _mirror || _flipH,
+          mirrorY: _flipV,
+          rotation: _rotation,
           sourceWidth: burnSize?.width ?? 1280,
           sourceHeight: burnSize?.height ?? 720,
           outputFilename: preferredName,
@@ -3782,9 +3782,9 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                   .renderPhotoWithAnnotationsAndCaption(
                   baseImageBytes: thumbBytes,
                   annotations: annotations,
-                  mirrorX: false,
-                  mirrorY: false,
-                  rotation: 0,
+                  mirrorX: _mirror || _flipH,
+                  mirrorY: _flipV,
+                  rotation: _rotation,
                   annotationSourceSize: annotationSourceSize,
                   title: preferredName,
                   description:
@@ -3805,9 +3805,9 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                     .renderPhotoWithAnnotationsAndCaption(
                     baseImageBytes: thumbBytes,
                     annotations: annotations,
-                    mirrorX: false,
-                    mirrorY: false,
-                    rotation: 0,
+                    mirrorX: _mirror || _flipH,
+                    mirrorY: _flipV,
+                    rotation: _rotation,
                     annotationSourceSize: annotationSourceSize,
                     title: preferredName,
                     description:
