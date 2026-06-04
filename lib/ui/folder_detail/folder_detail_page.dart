@@ -571,7 +571,7 @@ class _FolderDetailPageState extends State<FolderDetailPage> {
                 ),
                 const SizedBox(height: 10),
                 SizedBox(
-                  height: 56,
+                  height: 72,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -591,20 +591,12 @@ class _FolderDetailPageState extends State<FolderDetailPage> {
                         child: Row(
                           crossAxisAlignment: CrossAxisAlignment.center,
                           children: [
-                            Icon(
-                              image.description?.trim().isNotEmpty == true
-                                  ? Icons.note_alt
-                                  : Icons.info_outline,
-                              size: 14,
-                              color: const Color(0xFFAFC0E4),
-                            ),
-                            const SizedBox(width: 6),
                             Expanded(
                               child: Text(
                                 image.description?.trim().isNotEmpty == true
-                                    ? 'Description available'
-                                    : 'No description available',
-                                maxLines: 2,
+                                    ? image.description!.trim()
+                                    : '',
+                                maxLines: 3,
                                 overflow: TextOverflow.ellipsis,
                                 style: const TextStyle(
                                   color: Color(0xFFAFC0E4),
@@ -714,11 +706,13 @@ class _FolderDetailPageState extends State<FolderDetailPage> {
                     if ((image.description ?? '').trim().isNotEmpty)
                       Padding(
                         padding: const EdgeInsets.only(top: 6.0),
-                        child: Text(image.description!,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                                color: Color(0xFFAFC0E4), fontSize: 13)),
+                        child: Text(
+                          image.description!.trim(),
+                          maxLines: 3,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                              color: Color(0xFFAFC0E4), fontSize: 13),
+                        ),
                       ),
                   ],
                 ),

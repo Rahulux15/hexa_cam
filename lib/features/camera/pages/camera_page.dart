@@ -680,6 +680,32 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
               child: _buildCameraViewport(),
             ),
           ),
+          if (_isRecording)
+            Positioned(
+              top: previewPadding.top + 8,
+              right: previewPadding.right + 18,
+              child: IgnorePointer(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 5,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xCC10162E),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.white24),
+                  ),
+                  child: Text(
+                    _formatRecordingElapsed(_recordingElapsed),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 11,
+                    ),
+                  ),
+                ),
+              ),
+            ),
           if (isPortrait) ...[
             Positioned(
               top: topRailTop,
@@ -1066,32 +1092,6 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                             color: Colors.white,
                             fontWeight: FontWeight.w700,
                             fontSize: 10,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                if (_isRecording)
-                  Positioned(
-                    top: 18,
-                    left: 18,
-                    child: IgnorePointer(
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 5,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(0xCC10162E),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: Colors.white24),
-                        ),
-                        child: Text(
-                          _formatRecordingElapsed(_recordingElapsed),
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w700,
-                            fontSize: 11,
                           ),
                         ),
                       ),
@@ -3710,9 +3710,9 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
             .renderPhotoWithAnnotationsAndCaption(
           baseImageBytes: rawBytes,
           annotations: annotations,
-          mirrorX: _mirror || _flipH,
-          mirrorY: _flipV,
-          rotation: _rotation,
+          mirrorX: false,
+          mirrorY: false,
+          rotation: 0,
           annotationSourceSize: annotationSourceSize,
           maxDecodeEdge: safeDecodeEdge,
           title: preferredName,
@@ -3729,9 +3729,9 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
         final exported = await VideoExportService.burnAnnotationsIntoVideo(
           sourcePath: mediaSourcePath,
           annotations: annotations,
-          mirrorX: _mirror || _flipH,
-          mirrorY: _flipV,
-          rotation: _rotation,
+          mirrorX: false,
+          mirrorY: false,
+          rotation: 0,
           sourceWidth: burnSize?.width ?? 1280,
           sourceHeight: burnSize?.height ?? 720,
           outputFilename: preferredName,
@@ -3782,9 +3782,9 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                   .renderPhotoWithAnnotationsAndCaption(
                   baseImageBytes: thumbBytes,
                   annotations: annotations,
-                  mirrorX: _mirror || _flipH,
-                  mirrorY: _flipV,
-                  rotation: _rotation,
+                  mirrorX: false,
+                  mirrorY: false,
+                  rotation: 0,
                   annotationSourceSize: annotationSourceSize,
                   title: preferredName,
                   description:
@@ -3805,9 +3805,9 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                     .renderPhotoWithAnnotationsAndCaption(
                     baseImageBytes: thumbBytes,
                     annotations: annotations,
-                    mirrorX: _mirror || _flipH,
-                    mirrorY: _flipV,
-                    rotation: _rotation,
+                    mirrorX: false,
+                    mirrorY: false,
+                    rotation: 0,
                     annotationSourceSize: annotationSourceSize,
                     title: preferredName,
                     description:
