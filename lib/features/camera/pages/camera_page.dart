@@ -59,6 +59,9 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
   bool _isPaused = false;
   bool _isLocked = false;
   bool _isRecording = false;
+  DateTime? _recordingStartedAt;
+  Timer? _recordingTimer;
+  Duration _recordingElapsed = Duration.zero;
   bool _flipH = false;
   bool _flipV = false;
   bool _mirror = false;
@@ -594,6 +597,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _focusIndicatorTimer?.cancel();
+    _recordingTimer?.cancel();
     _manualOverrideController.dispose();
     _detachCameraListener();
     _controller?.dispose();
@@ -1067,6 +1071,32 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                       ),
                     ),
                   ),
+                if (_isRecording)
+                  Positioned(
+                    top: 18,
+                    left: 18,
+                    child: IgnorePointer(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 5,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xCC10162E),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.white24),
+                        ),
+                        child: Text(
+                          _formatRecordingElapsed(_recordingElapsed),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
                 Positioned.fill(
                   child: IgnorePointer(
                     child: DecoratedBox(
@@ -1305,6 +1335,13 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
         ),
       ],
     );
+  }
+
+  String _formatRecordingElapsed(Duration elapsed) {
+    final totalSeconds = elapsed.inSeconds;
+    final minutes = totalSeconds ~/ 60;
+    final seconds = totalSeconds % 60;
+    return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
   }
 
   Widget _buildBottomHorizontalRail(bool isTablet) {
@@ -3212,6 +3249,15 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
       }
       await _controller!.startVideoRecording();
       if (!mounted) return;
+      _recordingStartedAt = DateTime.now();
+      _recordingElapsed = Duration.zero;
+      _recordingTimer?.cancel();
+      _recordingTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+        if (!mounted || !_isRecording || _recordingStartedAt == null) return;
+        setState(() {
+          _recordingElapsed = DateTime.now().difference(_recordingStartedAt!);
+        });
+      });
       setState(() => _isRecording = true);
       _showMessage('Recording started');
     } catch (error) {
@@ -3232,11 +3278,19 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
     try {
       final file = await _controller!.stopVideoRecording();
       if (!mounted) return;
+      _recordingTimer?.cancel();
+      _recordingTimer = null;
+      _recordingStartedAt = null;
+      _recordingElapsed = Duration.zero;
       setState(() => _isRecording = false);
       await _showCaptureReview(filePath: file.path, isVideo: true);
     } catch (error) {
       logDebug('Video stop error: $error');
       if (!mounted) return;
+      _recordingTimer?.cancel();
+      _recordingTimer = null;
+      _recordingStartedAt = null;
+      _recordingElapsed = Duration.zero;
       setState(() => _isRecording = false);
       _showMessage(
         'Unable to save recording',
@@ -3623,7 +3677,11 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
           filename: preferredName,
           folderName: widget.folderId,
         );
-        rawBytes = await FileService.readBytes(mediaSourcePath);
+        if (isVideo) {
+          rawBytes = Uint8List(0);
+        } else {
+          rawBytes = await FileService.readBytes(mediaSourcePath);
+        }
       }
 
       Size? annotationSourceSize =
@@ -3643,11 +3701,13 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
       /// Baked still used only for "save to gallery/files"; folder + DB keep [rawBytes]
       /// so the image viewer can toggle vector markings on/off.
       Uint8List? bakedStillForDeviceExport;
-      final shouldBakeStillForExport =
-          exportToDevice && annotations.isNotEmpty && !isVideo;
+        // Bake title/description into exported stills so saved files always
+        // show the user-provided name/description regardless of annotations.
+        final shouldBakeStillForExport = exportToDevice && !isVideo;
       if (shouldBakeStillForExport) {
         final safeDecodeEdge = (!kIsWeb && Platform.isIOS) ? 2800 : null;
-        var baked = await MarkedMediaRenderer.renderPhotoWithAnnotations(
+        var baked = await MarkedMediaRenderer
+            .renderPhotoWithAnnotationsAndCaption(
           baseImageBytes: rawBytes,
           annotations: annotations,
           mirrorX: _mirror || _flipH,
@@ -3655,6 +3715,8 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
           rotation: _rotation,
           annotationSourceSize: annotationSourceSize,
           maxDecodeEdge: safeDecodeEdge,
+          title: preferredName,
+          description: description.trim().isEmpty ? null : description.trim(),
         );
         baked = kIsWeb
             ? compressMarkedStillForStore(baked)
@@ -3680,8 +3742,6 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
             filename: preferredName,
             folderName: widget.folderId,
           );
-          // Ensure the bytes we store/download match the burned-in video.
-          finalBytes = await FileService.readBytes(mediaSourcePath);
         }
       }
 
@@ -3700,7 +3760,6 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
           try {
             await File(wmPath).delete();
           } catch (_) {}
-          finalBytes = await FileService.readBytes(mediaSourcePath);
         }
       }
 
@@ -3717,15 +3776,19 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
             sourcePath: mediaSourcePath,
           );
           if (thumbBytes != null && thumbBytes.isNotEmpty) {
-            final thumbWithMarks = annotations.isEmpty
-                ? thumbBytes
-                : await MarkedMediaRenderer.renderPhotoWithAnnotations(
-                    baseImageBytes: thumbBytes,
-                    annotations: annotations,
-                    mirrorX: _mirror || _flipH,
-                    mirrorY: _flipV,
-                    rotation: _rotation,
-                    annotationSourceSize: annotationSourceSize,
+          final thumbWithMarks = annotations.isEmpty
+              ? thumbBytes
+              : await MarkedMediaRenderer
+                  .renderPhotoWithAnnotationsAndCaption(
+                  baseImageBytes: thumbBytes,
+                  annotations: annotations,
+                  mirrorX: _mirror || _flipH,
+                  mirrorY: _flipV,
+                  rotation: _rotation,
+                  annotationSourceSize: annotationSourceSize,
+                  title: preferredName,
+                  description:
+                      description.trim().isEmpty ? null : description.trim(),
                   );
             thumbnailId = FileService.generateAssetId('thumb');
             await MediaDatabase.saveAsset(thumbnailId, thumbWithMarks);
@@ -3738,14 +3801,18 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
           if (thumbBytes != null && thumbBytes.isNotEmpty) {
             final thumbWithMarks = annotations.isEmpty
                 ? thumbBytes
-                : await MarkedMediaRenderer.renderPhotoWithAnnotations(
+                : await MarkedMediaRenderer
+                    .renderPhotoWithAnnotationsAndCaption(
                     baseImageBytes: thumbBytes,
                     annotations: annotations,
                     mirrorX: _mirror || _flipH,
                     mirrorY: _flipV,
                     rotation: _rotation,
                     annotationSourceSize: annotationSourceSize,
-                  );
+                    title: preferredName,
+                    description:
+                        description.trim().isEmpty ? null : description.trim(),
+                    );
             thumbnailId = FileService.generateAssetId('thumb');
             await MediaDatabase.saveAsset(thumbnailId, thumbWithMarks);
           }
@@ -4036,13 +4103,15 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
         if (thumbBytes != null && thumbBytes.isNotEmpty) {
           final thumbWithMarks = annotations.isEmpty
               ? thumbBytes
-              : await MarkedMediaRenderer.renderPhotoWithAnnotations(
+              : await MarkedMediaRenderer.renderPhotoWithAnnotationsAndCaption(
                   baseImageBytes: thumbBytes,
                   annotations: annotations,
                   mirrorX: _mirror || _flipH,
                   mirrorY: _flipV,
                   rotation: _rotation,
                   annotationSourceSize: annotationSourceSize,
+                  title: defaultName,
+                  description: null,
                 );
           thumbnailId = FileService.generateAssetId('thumb');
           await MediaDatabase.saveAsset(thumbnailId, thumbWithMarks);
@@ -4055,13 +4124,15 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
         if (thumbBytes != null && thumbBytes.isNotEmpty) {
           final thumbWithMarks = annotations.isEmpty
               ? thumbBytes
-              : await MarkedMediaRenderer.renderPhotoWithAnnotations(
+              : await MarkedMediaRenderer.renderPhotoWithAnnotationsAndCaption(
                   baseImageBytes: thumbBytes,
                   annotations: annotations,
                   mirrorX: _mirror || _flipH,
                   mirrorY: _flipV,
                   rotation: _rotation,
                   annotationSourceSize: annotationSourceSize,
+                  title: defaultName,
+                  description: null,
                 );
           thumbnailId = FileService.generateAssetId('thumb');
           await MediaDatabase.saveAsset(thumbnailId, thumbWithMarks);

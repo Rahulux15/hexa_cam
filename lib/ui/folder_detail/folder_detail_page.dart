@@ -83,129 +83,85 @@ class _FolderDetailPageState extends State<FolderDetailPage> {
               child: Center(
                 child: ConstrainedBox(
                   constraints: BoxConstraints(maxWidth: contentMaxWidth),
-                  child: Row(children: [
-                    _roundButton(
-                        icon: Icons.arrow_back_rounded,
-                        onTap: _goBackSafely,
-                        isTab: isTab),
-                    SizedBox(width: isTab ? 20 : 14),
-                    Expanded(
-                      child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(folder.name,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          _roundButton(
+                              icon: Icons.arrow_back_ios_new,
+                              onTap: _goBackSafely,
+                              isTab: isTab),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(folder.name ?? 'Folder',
                                 style: TextStyle(
                                     color: Colors.white,
-                                    fontSize: isTab ? 28 : 22,
+                                    fontSize: isTab ? 20 : 18,
                                     fontWeight: FontWeight.w800)),
-                            const SizedBox(height: 6),
-                            Wrap(spacing: 18, runSpacing: 6, children: [
-                              _headerStat(Icons.image_outlined,
-                                  '${photos.length} photos'),
-                              _headerStat(Icons.videocam_outlined,
-                                  '${videos.length} videos'),
-                            ]),
-                          ]),
-                    ),
-                    _roundButton(
-                        icon: Icons.fact_check_outlined,
-                        onTap: () => _showInspectionEditor(context, folder),
-                        isTab: isTab,
-                        active: (folder.inspectionOutcome != null &&
-                            folder.inspectionOutcome!.isNotEmpty)),
-                    SizedBox(width: isTab ? 12 : 8),
-                    _roundButton(
-                        icon: _selectionMode
-                            ? Icons.check_box_outlined
-                            : Icons.checklist_rounded,
-                        onTap: () => setState(() {
-                              _selectionMode = !_selectionMode;
-                              if (!_selectionMode) {
-                                _clearSelection();
+                          ),
+                          const SizedBox(width: 8),
+                          _roundButton(
+                              icon: _gridView ? Icons.grid_view : Icons.view_agenda_outlined,
+                              onTap: () => setState(() => _gridView = !_gridView),
+                              isTab: isTab),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      if (_selectionMode)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 12),
+                          decoration: AppTheme.softCardDecoration(
+                              borderRadius: BorderRadius.circular(18)),
+                          child: LayoutBuilder(
+                            builder: (context, constraints) {
+                              final compact = constraints.maxWidth < 560;
+                              if (!compact) {
+                                return Row(children: [
+                                  Text('$_selectedCount selected',
+                                      style: const TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.w700)),
+                                  const Spacer(),
+                                  if (_selectedImages.isNotEmpty)
+                                    _selectionChip('Report', AppTheme.primary, _generateReport),
+                                  if (_selectedImages.isNotEmpty)
+                                    const SizedBox(width: 8),
+                                  _selectionChip('Delete', AppTheme.danger, () => _deleteSelected()),
+                                  const SizedBox(width: 8),
+                                  _selectionChip('Cancel', AppTheme.textMuted, () => setState(_exitSelectionMode)),
+                                ]);
                               }
-                            }),
-                        isTab: isTab,
-                        active: _selectionMode),
-                    SizedBox(width: isTab ? 12 : 8),
-                    _roundButton(
-                        icon: _gridView
-                            ? Icons.view_list_rounded
-                            : Icons.grid_view_rounded,
-                        onTap: () => setState(() => _gridView = !_gridView),
-                        isTab: isTab),
-                  ]),
-                ),
-              ),
-            ),
-          ),
-          if (_selectedCount > 0)
-            Padding(
-              padding: EdgeInsets.fromLTRB(pad, 14, pad, 0),
-              child: Center(
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(maxWidth: contentMaxWidth),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 12),
-                    decoration: AppTheme.softCardDecoration(
-                        borderRadius: BorderRadius.circular(18)),
-                    child: LayoutBuilder(
-                      builder: (context, constraints) {
-                        final compact = constraints.maxWidth < 560;
-                        if (!compact) {
-                          return Row(children: [
-                            Text('$_selectedCount selected',
-                                style: const TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w700)),
-                            const Spacer(),
-                            if (_selectedImages.isNotEmpty)
-                              _selectionChip(
-                                  'Report', AppTheme.primary, _generateReport),
-                            if (_selectedImages.isNotEmpty)
-                              const SizedBox(width: 8),
-                            _selectionChip(
-                                'Delete', AppTheme.danger, () => _deleteSelected()),
-                            const SizedBox(width: 8),
-                            _selectionChip(
-                                'Cancel',
-                                AppTheme.textMuted,
-                                () => setState(_exitSelectionMode)),
-                          ]);
-                        }
-                        return Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('$_selectedCount selected',
-                                style: const TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w700)),
-                            const SizedBox(height: 10),
-                            Wrap(
-                              spacing: 8,
-                              runSpacing: 8,
-                              children: [
-                                if (_selectedImages.isNotEmpty)
-                                  _selectionChip('Report', AppTheme.primary,
-                                      _generateReport),
-                                _selectionChip(
-                                    'Delete', AppTheme.danger, () => _deleteSelected()),
-                                _selectionChip(
-                                    'Cancel',
-                                    AppTheme.textMuted,
-                                    () => setState(_exitSelectionMode)),
-                              ],
-                            ),
-                          ],
-                        );
-                      },
-                    ),
+                              return Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text('$_selectedCount selected',
+                                      style: const TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.w700)),
+                                  const SizedBox(height: 10),
+                                  Wrap(
+                                    spacing: 8,
+                                    runSpacing: 8,
+                                    children: [
+                                      if (_selectedImages.isNotEmpty)
+                                        _selectionChip('Report', AppTheme.primary, _generateReport),
+                                      _selectionChip('Delete', AppTheme.danger, () => _deleteSelected()),
+                                      _selectionChip('Cancel', AppTheme.textMuted, () => setState(_exitSelectionMode)),
+                                    ],
+                                  ),
+                                ],
+                              );
+                            },
+                          ),
+                        ),
+                    ],
                   ),
                 ),
               ),
             ),
+          ),
           Expanded(
             child: SingleChildScrollView(
               padding: EdgeInsets.fromLTRB(pad, 24, pad, 28),
@@ -469,6 +425,7 @@ class _FolderDetailPageState extends State<FolderDetailPage> {
             : screenWidth >= 700
                 ? (screenWidth - 72) / 2
                 : double.infinity;
+
     return GestureDetector(
       onTap: () => _onMediaTap(image),
       onLongPressStart: (_) => _queueSelection(image),
@@ -546,6 +503,123 @@ class _FolderDetailPageState extends State<FolderDetailPage> {
               const SizedBox(height: 10),
               _buildMediaCaption(image),
             ],
+            borderRadius: BorderRadius.circular(20),
+            color: const Color(0xFF2A2C63),
+            border: selected ? AppTheme.primaryLight : const Color(0xFF343B7A),
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Stack(
+                  children: [
+                    AspectRatio(
+                      aspectRatio: 1,
+                      child: _buildMediaPreview(
+                        image,
+                        layoutWidth: (cardWidth == double.infinity
+                                ? MediaQuery.sizeOf(context).width - 72
+                                : cardWidth) -
+                            28,
+                      ),
+                    ),
+                    if (image.type == MediaType.video)
+                      const Positioned.fill(
+                        child: Center(
+                          child: CircleAvatar(
+                            radius: 24,
+                            backgroundColor: Color(0x88000000),
+                            child: Icon(Icons.play_arrow_rounded,
+                                color: Colors.white, size: 28),
+                          ),
+                        ),
+                      ),
+                    if (image.annotations.isNotEmpty)
+                      Positioned(
+                        left: 10,
+                        top: 10,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: const Color(0xCC10162E),
+                            borderRadius: BorderRadius.circular(999),
+                            border: Border.all(color: Colors.white24),
+                          ),
+                          child: Text(
+                            '${image.annotations.length} mark${image.annotations.length == 1 ? '' : 's'}',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ),
+                    if (selected)
+                      const Positioned(
+                        top: 10,
+                        right: 10,
+                        child: CircleAvatar(
+                          radius: 14,
+                          backgroundColor: AppTheme.primary,
+                          child: Icon(Icons.check, size: 16, color: Colors.white),
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                SizedBox(
+                  height: 56,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        image.filename ??
+                            (image.type == MediaType.video ? 'Video' : 'Photo'),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 14,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Expanded(
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            Icon(
+                              image.description?.trim().isNotEmpty == true
+                                  ? Icons.note_alt
+                                  : Icons.info_outline,
+                              size: 14,
+                              color: const Color(0xFFAFC0E4),
+                            ),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                image.description?.trim().isNotEmpty == true
+                                    ? 'Description available'
+                                    : 'No description available',
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: Color(0xFFAFC0E4),
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -599,8 +673,8 @@ class _FolderDetailPageState extends State<FolderDetailPage> {
                     ),
                 ],
               ),
+              ),
             ),
-          ),
           const SizedBox(width: 14),
           Expanded(
             child:
@@ -631,9 +705,23 @@ class _FolderDetailPageState extends State<FolderDetailPage> {
                 const Icon(Icons.calendar_today_outlined,
                     color: Color(0xFFAFC0E4), size: 14),
                 const SizedBox(width: 6),
-                Text(_formatTimestamp(image.timestamp),
-                    style:
-                        const TextStyle(color: Color(0xFFAFC0E4), fontSize: 14))
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(_formatTimestamp(image.timestamp),
+                        style: const TextStyle(
+                            color: Color(0xFFAFC0E4), fontSize: 14)),
+                    if ((image.description ?? '').trim().isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6.0),
+                        child: Text(image.description!,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                                color: Color(0xFFAFC0E4), fontSize: 13)),
+                      ),
+                  ],
+                ),
               ]),
               if (image.description?.trim().isNotEmpty ?? false) ...[
                 const SizedBox(height: 6),
@@ -831,6 +919,9 @@ class _FolderDetailPageState extends State<FolderDetailPage> {
           _selectedImages.remove(image.id);
         } else {
           _selectedImages.add(image.id);
+        }
+        if (_selectedCount == 0) {
+          _selectionMode = false;
         }
       });
       return;

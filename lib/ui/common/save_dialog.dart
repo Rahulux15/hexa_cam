@@ -89,7 +89,6 @@ class _SaveDialogState extends State<SaveDialog> {
   @override
   Widget build(BuildContext context) {
     final isTab = Responsive.isTablet(context);
-    final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
     return Dialog(
       backgroundColor: Colors.transparent,
       insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
@@ -98,111 +97,107 @@ class _SaveDialogState extends State<SaveDialog> {
           maxWidth: isTab ? 420 : 360,
           maxHeight: MediaQuery.sizeOf(context).height * 0.9,
         ),
-        child: AnimatedPadding(
-          duration: const Duration(milliseconds: 160),
-          padding: EdgeInsets.only(bottom: keyboardInset + 8),
-          child: Container(
-            padding: EdgeInsets.all(isTab ? 26 : 22),
-            decoration: AppTheme.softCardDecoration(
-                borderRadius: BorderRadius.circular(22),
-                color: const Color(0xFF2A295D)),
-            child: SingleChildScrollView(
-              child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Save Capture',
-                        style: TextStyle(
-                            color: Colors.white,
-                            fontSize: isTab ? 22 : 18,
-                            fontWeight: FontWeight.w700)),
-                    const SizedBox(height: 18),
-                    if (widget.imageUrl != null)
-                      Container(
-                        width: double.infinity,
-                        height: isTab ? 160 : 138,
-                        decoration: BoxDecoration(
-                            color: const Color(0xFF191737),
-                            borderRadius: BorderRadius.circular(16)),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(16),
-                          child: MediaImage(
-                            source: widget.imageUrl!,
-                            mediaId: widget.mediaId,
-                            annotations: widget.annotations,
-                            fit: BoxFit.contain,
-                            errorWidget: const Center(
-                                child: Icon(Icons.image_outlined,
-                                    color: AppTheme.textMuted, size: 28)),
-                          ),
+        child: Container(
+          padding: EdgeInsets.all(isTab ? 26 : 22),
+          decoration: AppTheme.softCardDecoration(
+              borderRadius: BorderRadius.circular(22),
+              color: const Color(0xFF2A295D)),
+          child: SingleChildScrollView(
+            child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Save Capture',
+                      style: TextStyle(
+                          color: Colors.white,
+                          fontSize: isTab ? 22 : 18,
+                          fontWeight: FontWeight.w700)),
+                  const SizedBox(height: 18),
+                  if (widget.imageUrl != null)
+                    Container(
+                      width: double.infinity,
+                      height: isTab ? 160 : 138,
+                      decoration: BoxDecoration(
+                          color: const Color(0xFF191737),
+                          borderRadius: BorderRadius.circular(16)),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(16),
+                        child: MediaImage(
+                          source: widget.imageUrl!,
+                          mediaId: widget.mediaId,
+                          annotations: widget.annotations,
+                          fit: BoxFit.contain,
+                          errorWidget: const Center(
+                              child: Icon(Icons.image_outlined,
+                                  color: AppTheme.textMuted, size: 28)),
                         ),
                       ),
-                    const SizedBox(height: 18),
-                    _field(_filenameController, 'Enter file name'),
-                    const SizedBox(height: 14),
-                    _field(_descriptionController, 'Description', maxLines: 4),
-                    const SizedBox(height: 14),
-                    Row(children: [
-                      const Expanded(
-                          child: Text("Don't Ask me Again",
-                              style: TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w600))),
-                      Switch(
-                          value: _dontAskAgain,
-                          onChanged: (value) =>
-                              setState(() => _dontAskAgain = value),
-                          activeThumbColor: Colors.white,
-                          activeTrackColor: AppTheme.primary,
-                          inactiveThumbColor: Colors.white70,
-                          inactiveTrackColor: Colors.white24),
-                    ]),
-                    const SizedBox(height: 10),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _actionButton(
-                              label: 'Cancel', onTap: widget.onCancel),
-                        ),
-                        const SizedBox(width: 14),
-                        Expanded(
-                          child: _actionButton(
-                            label: _saving ? 'Saving…' : 'Save',
-                            gradient: true,
-                            busy: _saving,
-                            onTap: _saving
-                                ? null
-                                : () async {
-                                    setState(() => _saving = true);
-                                    try {
-                                      final prefs =
-                                          await SharedPreferences.getInstance();
-                                      if (_dontAskAgain) {
-                                        await prefs.setBool(
-                                            SaveDialog.dontAskAgainKey, true);
-                                      } else {
-                                        await prefs
-                                            .remove(SaveDialog.dontAskAgainKey);
-                                      }
-                                      await widget.onSave(
-                                        _filenameController.text,
-                                        _descriptionController.text,
-                                      );
-                                      if (context.mounted) {
-                                        Navigator.pop(context);
-                                      }
-                                    } finally {
-                                      if (mounted) {
-                                        setState(() => _saving = false);
-                                      }
-                                    }
-                                  },
-                          ),
-                        ),
-                      ],
                     ),
+                  const SizedBox(height: 18),
+                  _field(_filenameController, 'Enter file name'),
+                  const SizedBox(height: 14),
+                  _field(_descriptionController, 'Description', maxLines: 4),
+                  const SizedBox(height: 14),
+                  Row(children: [
+                    const Expanded(
+                        child: Text("Don't Ask me Again",
+                            style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w600))),
+                    Switch(
+                        value: _dontAskAgain,
+                        onChanged: (value) =>
+                            setState(() => _dontAskAgain = value),
+                        activeThumbColor: Colors.white,
+                        activeTrackColor: AppTheme.primary,
+                        inactiveThumbColor: Colors.white70,
+                        inactiveTrackColor: Colors.white24),
                   ]),
-            ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _actionButton(
+                            label: 'Cancel', onTap: widget.onCancel),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: _actionButton(
+                          label: _saving ? 'Saving…' : 'Save',
+                          gradient: true,
+                          busy: _saving,
+                          onTap: _saving
+                              ? null
+                              : () async {
+                                  setState(() => _saving = true);
+                                  try {
+                                    final prefs =
+                                        await SharedPreferences.getInstance();
+                                    if (_dontAskAgain) {
+                                      await prefs.setBool(
+                                          SaveDialog.dontAskAgainKey, true);
+                                    } else {
+                                      await prefs
+                                          .remove(SaveDialog.dontAskAgainKey);
+                                    }
+                                    await widget.onSave(
+                                      _filenameController.text,
+                                      _descriptionController.text,
+                                    );
+                                    if (context.mounted) {
+                                      Navigator.pop(context);
+                                    }
+                                  } finally {
+                                    if (mounted) {
+                                      setState(() => _saving = false);
+                                    }
+                                  }
+                                },
+                        ),
+                      ),
+                    ],
+                  ),
+                ]),
           ),
         ),
       ),

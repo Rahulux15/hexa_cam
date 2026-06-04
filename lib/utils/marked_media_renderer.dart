@@ -124,6 +124,119 @@ class MarkedMediaRenderer {
     return outData!.buffer.asUint8List();
   }
 
+  static Future<Uint8List> renderPhotoWithAnnotationsAndCaption({
+    required Uint8List baseImageBytes,
+    required List<Annotation> annotations,
+    required bool mirrorX,
+    required bool mirrorY,
+    required int rotation,
+    required String title,
+    String? description,
+    Size? annotationSourceSize,
+    int? maxDecodeEdge,
+  }) async {
+    final annotated = await renderPhotoWithAnnotations(
+      baseImageBytes: baseImageBytes,
+      annotations: annotations,
+      mirrorX: mirrorX,
+      mirrorY: mirrorY,
+      rotation: rotation,
+      annotationSourceSize: annotationSourceSize,
+      maxDecodeEdge: maxDecodeEdge,
+    );
+    return renderCaptionOnImage(
+      baseImageBytes: annotated,
+      title: title,
+      description: description,
+    );
+  }
+
+  static Future<Uint8List> renderCaptionOnImage({
+    required Uint8List baseImageBytes,
+    required String title,
+    String? description,
+  }) async {
+    final image = await _decodeImage(baseImageBytes);
+    final sourceSize = Size(image.width.toDouble(), image.height.toDouble());
+    final lines = <String>[
+      title.trim(),
+      if ((description ?? '').trim().isNotEmpty) description!.trim(),
+    ].where((line) => line.isNotEmpty).toList(growable: false);
+    if (lines.isEmpty) return baseImageBytes;
+
+    const padding = 18.0;
+    const textSpacing = 6.0;
+    final titlePaint = _textPainter(
+      lines.first,
+      fontSize: 22,
+      bold: true,
+      maxWidth: sourceSize.width - (padding * 2),
+    );
+    final descPainter = lines.length > 1
+        ? _textPainter(
+            lines[1],
+            fontSize: 16,
+            bold: false,
+            maxWidth: sourceSize.width - (padding * 2),
+          )
+        : null;
+    final captionHeight = padding +
+        titlePaint.height +
+        (descPainter == null ? 0 : textSpacing + descPainter.height) +
+        padding;
+    final totalHeight = (sourceSize.height + captionHeight).round().clamp(1, 8192);
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
+    canvas.drawRect(
+      Rect.fromLTWH(0, 0, sourceSize.width, totalHeight.toDouble()),
+      Paint()..color = const Color(0xFF0D1020),
+    );
+    canvas.drawImageRect(
+      image,
+      Rect.fromLTWH(0, 0, sourceSize.width, sourceSize.height),
+      Rect.fromLTWH(0, 0, sourceSize.width, sourceSize.height),
+      Paint(),
+    );
+    final captionTop = sourceSize.height + padding;
+    titlePaint.paint(canvas, const Offset(padding, 0).translate(0, captionTop));
+    if (descPainter != null) {
+      descPainter.paint(
+        canvas,
+        Offset(padding, captionTop + titlePaint.height + textSpacing),
+      );
+    }
+    final outImage = await recorder.endRecording().toImage(
+          sourceSize.width.round().clamp(1, 8192),
+          totalHeight,
+        );
+    final outData = await outImage.toByteData(format: ui.ImageByteFormat.png);
+    return outData!.buffer.asUint8List();
+  }
+
+  static TextPainter _textPainter(
+    String text, {
+    required double fontSize,
+    required bool bold,
+    required double maxWidth,
+  }) {
+    final painter = TextPainter(
+      textDirection: TextDirection.ltr,
+      maxLines: 3,
+      ellipsis: '…',
+    );
+    painter.text = TextSpan(
+      text: text,
+      style: TextStyle(
+        color: Colors.white,
+        fontSize: fontSize,
+        fontWeight: bold ? FontWeight.w700 : FontWeight.w400,
+        height: 1.25,
+      ),
+    );
+    painter.layout(maxWidth: maxWidth);
+    return painter;
+  }
+
   static List<Annotation> normalizeAnnotationsToTarget({
     required List<Annotation> annotations,
     required Size? annotationSourceSize,

@@ -55,6 +55,8 @@ class _ReportPageState extends State<ReportPage> {
   final _locationController = TextEditingController();
   final _reportNameController = TextEditingController();
   final _reportDescriptionController = TextEditingController();
+  final Map<String, TextEditingController> _captureNameControllers = {};
+  final Map<String, TextEditingController> _captureDescriptionControllers = {};
   List<Map<String, dynamic>> _items = [];
   Timer? _progressToastDebounce;
   final Map<String, Uint8List?> _pdfImageBytesCache = <String, Uint8List?>{};
@@ -73,6 +75,7 @@ class _ReportPageState extends State<ReportPage> {
       _items =
           (widget.reportData!['images'] as List).cast<Map<String, dynamic>>();
     }
+    _initializeImageMetadataControllers();
     final formData = widget.reportData?['formData'];
     if (formData is Map<String, dynamic>) {
       final reportForm = ReportFormData.fromJson(formData);
@@ -120,11 +123,27 @@ class _ReportPageState extends State<ReportPage> {
     _locationController.dispose();
     _reportNameController.dispose();
     _reportDescriptionController.dispose();
+    for (final controller in _captureNameControllers.values) {
+      controller.dispose();
+    }
+    for (final controller in _captureDescriptionControllers.values) {
+      controller.dispose();
+    }
     super.dispose();
   }
 
-  List<ImageData> get _reportImages =>
-      _items.map((item) => ImageData.fromJson(item)).toList();
+  List<ImageData> get _reportImages => _items.map((item) {
+        final image = ImageData.fromJson(item);
+        final nameText = _captureNameControllers[image.id]?.text.trim();
+        final descriptionText =
+            _captureDescriptionControllers[image.id]?.text.trim();
+        return image.copyWith(
+          filename: nameText?.isNotEmpty == true ? nameText : image.filename,
+          description: descriptionText?.isNotEmpty == true
+              ? descriptionText
+              : image.description,
+        );
+      }).toList();
 
   String _pdfImageCacheKey(ImageData image) {
     final annSig = image.annotations
@@ -493,6 +512,8 @@ class _ReportPageState extends State<ReportPage> {
                               ),
                             ),
                             SizedBox(height: isTab ? 28 : 22),
+                            _imageDetailsSection(isTab),
+                            SizedBox(height: isTab ? 28 : 22),
                             if (image != null)
                               _sectionCard(
                                 child: Column(
@@ -825,7 +846,78 @@ class _ReportPageState extends State<ReportPage> {
     );
   }
 
-  Widget _inputField(_FieldData field) {
+  void _initializeImageMetadataControllers() {
+    for (final item in _items) {
+      final id = item['id'] as String?;
+      if (id == null) continue;
+      _captureNameControllers.putIfAbsent(
+        id,
+        () => TextEditingController(text: item['filename'] as String? ?? ''),
+      );
+      _captureDescriptionControllers.putIfAbsent(
+        id,
+        () => TextEditingController(text: item['description'] as String? ?? ''),
+      );
+    }
+  }
+
+  Widget _imageDetailsSection(bool isTab) {
+    final images = _reportImages;
+    if (images.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    return _sectionCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Image Details',
+            style: TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w700,
+              fontSize: isTab ? 20 : 17,
+            ),
+          ),
+          const SizedBox(height: 22),
+          ...images.asMap().entries.map((entry) {
+            final index = entry.key;
+            final image = entry.value;
+            return Padding(
+              padding: EdgeInsets.only(bottom: index == images.length - 1 ? 0 : 24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Image ${index + 1}',
+                    style: const TextStyle(
+                        color: Color(0xFFAFC0E4), fontSize: 14),
+                  ),
+                  const SizedBox(height: 12),
+                  _inputField(_FieldData(
+                      'Image Name',
+                      _captureNameControllers[image.id]!,
+                      Icons.image_outlined,
+                      'Enter image name')),
+                  const SizedBox(height: 18),
+                  _inputField(
+                    _FieldData(
+                      'Description',
+                      _captureDescriptionControllers[image.id]!,
+                      Icons.notes_outlined,
+                      'Enter image description',
+                    ),
+                    maxLines: 4,
+                  ),
+                ],
+              ),
+            );
+          }),
+        ],
+      ),
+    );
+  }
+
+  Widget _inputField(_FieldData field, {int maxLines = 1}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -838,7 +930,7 @@ class _ReportPageState extends State<ReportPage> {
           ],
         ),
         const SizedBox(height: 12),
-        TextField(
+      TextField(
           controller: field.controller,
           maxLines: field.maxLines,
           style: const TextStyle(color: Colors.white),
@@ -1102,6 +1194,8 @@ class _ReportPageState extends State<ReportPage> {
                     '${(entry.value.measurement ?? '').isNotEmpty ? ' - ${_pdfSafeText(entry.value.measurement!, forceAsciiUnits: asciiMeasurementFallback)}' : ''}',
               )
               .toList(),
+          'captureName': image.filename ?? '',
+          'captureDescription': image.description ?? '',
           // Baked file shows markings but DB may have no annotation rows for PDF text.
           'embeddedMarkingsInImageOnly':
               image.annotations.isEmpty && image.isMarkingsBaked == true,
@@ -1910,6 +2004,46 @@ Future<Uint8List> _generateReportPdfInBackground(
                               color: PdfColors.grey800,
                             ),
                           ),
+                          if ((section['captureName'] as String?)?.trim().isNotEmpty == true ||
+                              (section['captureDescription'] as String?)?.trim().isNotEmpty == true) ...[
+                            pw.SizedBox(height: 6),
+                            pw.Container(
+                              width: double.infinity,
+                              padding: const pw.EdgeInsets.all(10),
+                              decoration: pw.BoxDecoration(
+                                color: PdfColors.grey100,
+                                borderRadius: pw.BorderRadius.circular(4),
+                                border: pw.Border.all(
+                                  color: PdfColors.grey300,
+                                  width: 0.5,
+                                ),
+                              ),
+                              child: pw.Column(
+                                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                                children: [
+                                  if ((section['captureName'] as String?)?.trim().isNotEmpty == true)
+                                    pw.Text(
+                                      'Name: ${section['captureName']}',
+                                      style: pw.TextStyle(
+                                        fontSize: 9,
+                                        fontWeight: pw.FontWeight.bold,
+                                        color: PdfColors.grey800,
+                                      ),
+                                    ),
+                                  if ((section['captureDescription'] as String?)?.trim().isNotEmpty == true) ...[
+                                    pw.SizedBox(height: 4),
+                                    pw.Text(
+                                      'Description: ${section['captureDescription']}',
+                                      style: pw.TextStyle(
+                                        fontSize: 9,
+                                        color: PdfColors.grey700,
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
+                          ],
                           pw.SizedBox(height: 10),
                           if (bytes != null && bytes.isNotEmpty)
                             pw.Container(
