@@ -511,9 +511,6 @@ class _ReportPageState extends State<ReportPage> {
                                 ],
                               ),
                             ),
-                            SizedBox(height: isTab ? 28 : 22),
-                            _imageDetailsSection(isTab),
-                            SizedBox(height: isTab ? 28 : 22),
                             if (image != null)
                               _sectionCard(
                                 child: Column(
@@ -527,13 +524,15 @@ class _ReportPageState extends State<ReportPage> {
                                         fontSize: isTab ? 20 : 17,
                                       ),
                                     ),
-                                    const SizedBox(height: 18),
+                                    SizedBox(height: isTab ? 14 : 12),
+                                    _imageDetailsSection(isTab),
+                                    SizedBox(height: isTab ? 14 : 10),
                                     ClipRRect(
                                       borderRadius: BorderRadius.circular(18),
                                       child: Container(
                                         width: double.infinity,
                                         constraints: BoxConstraints(
-                                            minHeight: isTab ? 360 : 280),
+                                            minHeight: isTab ? 320 : 240),
                                         color: const Color(0xFF1D284D),
                                         child: _buildPreviewImage(image),
                                       ),
@@ -878,12 +877,14 @@ class _ReportPageState extends State<ReportPage> {
               fontSize: isTab ? 20 : 17,
             ),
           ),
-          const SizedBox(height: 22),
+          SizedBox(height: isTab ? 18 : 14),
           ...images.asMap().entries.map((entry) {
             final index = entry.key;
             final image = entry.value;
             return Padding(
-              padding: EdgeInsets.only(bottom: index == images.length - 1 ? 0 : 24),
+              padding: EdgeInsets.only(
+                bottom: index == images.length - 1 ? 0 : (isTab ? 18 : 14),
+              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -906,7 +907,7 @@ class _ReportPageState extends State<ReportPage> {
                       Icons.notes_outlined,
                       'Enter image description',
                     ),
-                    maxLines: 4,
+                    maxLines: 3,
                   ),
                 ],
               ),
@@ -2044,7 +2045,7 @@ Future<Uint8List> _generateReportPdfInBackground(
                               ),
                             ),
                           ],
-                          pw.SizedBox(height: 10),
+                          pw.SizedBox(height: 6),
                           if (bytes != null && bytes.isNotEmpty)
                             pw.Container(
                               height: imageHeight,
@@ -2054,9 +2055,9 @@ Future<Uint8List> _generateReportPdfInBackground(
                               child: pw.Image(pw.MemoryImage(bytes),
                                   fit: pw.BoxFit.contain),
                             )
-                          else
+                            else
                             pw.Container(
-                              height: 340,
+                              height: imageHeight,
                               width: double.infinity,
                               alignment: pw.Alignment.center,
                               decoration: const pw.BoxDecoration(
