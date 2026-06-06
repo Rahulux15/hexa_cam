@@ -74,6 +74,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
   bool _useFourByThreeViewport = true;
   bool _awaitingCalibrationLine = false;
   bool _stampEnabled = false;
+  bool _videoSaveInProgress = false;
   bool _eraserMode = false;
   bool _moveMode = false;
   String _calibrationUnit = 'μm';
@@ -3528,6 +3529,9 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                               onPressed: () async {
                                 Navigator.pop(sheetContext);
                                 if (!mounted) return;
+                                if (isVideo) {
+                                  _startVideoSaveToast(filePath);
+                                }
                                 await _persistMedia(
                                   sourcePath: filePath,
                                   preferredName: defaultName,
@@ -3551,6 +3555,9 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                               onPressed: () async {
                                 Navigator.pop(sheetContext);
                                 if (!mounted) return;
+                                if (isVideo) {
+                                  _startVideoSaveToast(filePath);
+                                }
                                 await SaveDialog.show(
                                   context,
                                   imageUrl: isVideo
@@ -3653,7 +3660,13 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
     String description = '',
   }) async {
     try {
-      if (exportToDevice && mounted) {
+      if (mounted && isVideo) {
+        _videoSaveInProgress = true;
+        _showMessage(
+          'Saving video… ETA ${_estimateVideoSaveEtaSeconds(sourcePath)}s',
+          backgroundColor: AppTheme.primary,
+        );
+      } else if (exportToDevice && mounted) {
         _showMessage(
           'Saving to gallery…',
           backgroundColor: AppTheme.primary,
@@ -3769,54 +3782,14 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
       // One asset id for full image — avoid duplicating the same JPEG in SQLite as
       // both mediaId and thumbnailId (was doubling writes and OOM risk on device).
       String? thumbnailId = isVideo ? null : mediaId;
+      Future<Uint8List?>? thumbBytesFuture;
       if (isVideo && !kIsWeb) {
-        try {
-          final thumbBytes =
-              await VideoExportService.extractVideoThumbnailBytes(
-            sourcePath: mediaSourcePath,
-          );
-          if (thumbBytes != null && thumbBytes.isNotEmpty) {
-          final thumbWithMarks = annotations.isEmpty
-              ? thumbBytes
-              : await MarkedMediaRenderer
-                  .renderPhotoWithAnnotationsAndCaption(
-                  baseImageBytes: thumbBytes,
-                  annotations: annotations,
-                  mirrorX: false,
-                  mirrorY: false,
-                  rotation: 0,
-                  annotationSourceSize: annotationSourceSize,
-                  title: preferredName,
-                  description:
-                      description.trim().isEmpty ? null : description.trim(),
-                  );
-            thumbnailId = FileService.generateAssetId('thumb');
-            await MediaDatabase.saveAsset(thumbnailId, thumbWithMarks);
-          }
-        } catch (_) {}
+        thumbBytesFuture = VideoExportService.extractVideoThumbnailBytes(
+          sourcePath: mediaSourcePath,
+        );
       }
       if (isVideo && kIsWeb) {
-        try {
-          final thumbBytes = await extractVideoThumbnailForSource(sourcePath);
-          if (thumbBytes != null && thumbBytes.isNotEmpty) {
-            final thumbWithMarks = annotations.isEmpty
-                ? thumbBytes
-                : await MarkedMediaRenderer
-                    .renderPhotoWithAnnotationsAndCaption(
-                    baseImageBytes: thumbBytes,
-                    annotations: annotations,
-                    mirrorX: false,
-                    mirrorY: false,
-                    rotation: 0,
-                    annotationSourceSize: annotationSourceSize,
-                    title: preferredName,
-                    description:
-                        description.trim().isEmpty ? null : description.trim(),
-                    );
-            thumbnailId = FileService.generateAssetId('thumb');
-            await MediaDatabase.saveAsset(thumbnailId, thumbWithMarks);
-          }
-        } catch (_) {}
+        thumbBytesFuture = extractVideoThumbnailForSource(sourcePath);
       }
 
       final image = ImageData(
@@ -3872,12 +3845,42 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
           logDebug('Export to device failed: $exportError');
           if (mounted) {
             _showMessage(
-              'Saved to ${_folderLabel(_displayFolderName())}. Export to gallery/files failed — check permissions.',
+              _saveErrorMessage(exportError),
               backgroundColor: AppTheme.warning,
             );
           }
           return image;
         }
+      }
+
+      if (isVideo) {
+        try {
+          final thumbBytes = await thumbBytesFuture;
+          if (thumbBytes != null && thumbBytes.isNotEmpty) {
+            final thumbWithMarks = annotations.isEmpty
+                ? thumbBytes
+                : await MarkedMediaRenderer.renderPhotoWithAnnotationsAndCaption(
+                    baseImageBytes: thumbBytes,
+                    annotations: annotations,
+                    mirrorX: false,
+                    mirrorY: false,
+                    rotation: 0,
+                    annotationSourceSize: annotationSourceSize,
+                    title: preferredName,
+                    description: description.trim().isEmpty
+                        ? null
+                        : description.trim(),
+                  );
+            thumbnailId = FileService.generateAssetId('thumb');
+            await MediaDatabase.saveAsset(thumbnailId, thumbWithMarks);
+            final updated = image.copyWith(thumbnailId: thumbnailId);
+            await foldersController.updateImage(
+              widget.folderId,
+              image.id,
+              updated,
+            );
+          }
+        } catch (_) {}
       }
 
       final savedDesktop = exportToDevice &&
@@ -3908,9 +3911,46 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
       return image;
     } catch (error) {
       logDebug('Persist media error: $error');
-      _showMessage('Unable to save media', backgroundColor: AppTheme.danger);
+      _showMessage(_saveErrorMessage(error), backgroundColor: AppTheme.danger);
       return null;
+    } finally {
+      _videoSaveInProgress = false;
     }
+  }
+
+  void _startVideoSaveToast(String sourcePath) {
+    if (!mounted) return;
+    _showMessage(
+      'Saving video… ETA ${_estimateVideoSaveEtaSeconds(sourcePath)}s',
+      backgroundColor: AppTheme.primary,
+    );
+  }
+
+  int _estimateVideoSaveEtaSeconds(String sourcePath) {
+    try {
+      final path = sourcePath.startsWith('file://')
+          ? sourcePath.replaceFirst('file://', '')
+          : sourcePath;
+      final size = File(path).lengthSync();
+      final mb = size / (1024 * 1024);
+      final estimated = (mb / 8).ceil() + 3;
+      return estimated.clamp(5, 180);
+    } catch (_) {
+      return 10;
+    }
+  }
+
+  String _saveErrorMessage(Object error) {
+    final text = error.toString().toLowerCase();
+    if (text.contains('permission') ||
+        text.contains('denied') ||
+        text.contains('operation not permitted')) {
+      return 'Save failed: storage permission is missing or denied.';
+    }
+    if (text.contains('space') || text.contains('no such file')) {
+      return 'Save failed: storage path is unavailable.';
+    }
+    return 'Failed to save media. Please try again.';
   }
 
   List<Annotation> _annotationsForSave() {

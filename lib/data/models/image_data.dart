@@ -42,6 +42,7 @@ class ImageData {
   ImageData copyWith({
     String? imageUrl,
     String? thumbnail,
+    String? thumbnailId,
     List<Annotation>? annotations,
     CameraSettings? cameraSettings,
     bool? showCalibrationStamp,
@@ -57,7 +58,7 @@ class ImageData {
         mediaId: mediaId,
         mediaMimeType: mediaMimeType,
         thumbnail: thumbnail ?? this.thumbnail,
-        thumbnailId: thumbnailId,
+        thumbnailId: thumbnailId ?? this.thumbnailId,
         comment: comment,
         timestamp: timestamp,
         cameraSettings: cameraSettings ?? this.cameraSettings,

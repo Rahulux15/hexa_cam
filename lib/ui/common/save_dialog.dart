@@ -77,7 +77,6 @@ class _SaveDialogState extends State<SaveDialog> {
   final _filenameController = TextEditingController();
   final _descriptionController = TextEditingController();
   bool _dontAskAgain = false;
-  bool _saving = false;
 
   @override
   void dispose() {
@@ -163,36 +162,23 @@ class _SaveDialogState extends State<SaveDialog> {
                       const SizedBox(width: 14),
                       Expanded(
                         child: _actionButton(
-                          label: _saving ? 'Saving…' : 'Save',
+                          label: 'Save',
                           gradient: true,
-                          busy: _saving,
-                          onTap: _saving
-                              ? null
-                              : () async {
-                                  setState(() => _saving = true);
-                                  try {
-                                    final prefs =
-                                        await SharedPreferences.getInstance();
-                                    if (_dontAskAgain) {
-                                      await prefs.setBool(
-                                          SaveDialog.dontAskAgainKey, true);
-                                    } else {
-                                      await prefs
-                                          .remove(SaveDialog.dontAskAgainKey);
-                                    }
-                                    await widget.onSave(
-                                      _filenameController.text,
-                                      _descriptionController.text,
-                                    );
-                                    if (context.mounted) {
-                                      Navigator.pop(context);
-                                    }
-                                  } finally {
-                                    if (mounted) {
-                                      setState(() => _saving = false);
-                                    }
-                                  }
-                                },
+                          onTap: () async {
+                            final prefs = await SharedPreferences.getInstance();
+                            if (_dontAskAgain) {
+                              await prefs.setBool(
+                                  SaveDialog.dontAskAgainKey, true);
+                            } else {
+                              await prefs.remove(SaveDialog.dontAskAgainKey);
+                            }
+                            final filename = _filenameController.text;
+                            final description = _descriptionController.text;
+                            if (context.mounted) {
+                              Navigator.pop(context);
+                            }
+                            await widget.onSave(filename, description);
+                          },
                         ),
                       ),
                     ],
@@ -234,7 +220,6 @@ class _SaveDialogState extends State<SaveDialog> {
     required String label,
     required VoidCallback? onTap,
     bool gradient = false,
-    bool busy = false,
   }) {
     return SizedBox(
       width: double.infinity,
@@ -254,21 +239,14 @@ class _SaveDialogState extends State<SaveDialog> {
               color: gradient ? null : const Color(0xFF1D284D),
               borderRadius: BorderRadius.circular(18)),
           child: Center(
-            child: busy
-                ? const SizedBox(
-                    width: 22,
-                    height: 22,
-                    child: CircularProgressIndicator(
-                        strokeWidth: 2, color: Colors.white),
-                  )
-                : Text(
-                    label,
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w600,
-                      fontSize: Responsive.isTablet(context) ? 18 : 16,
-                    ),
-                  ),
+            child: Text(
+              label,
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w600,
+                fontSize: Responsive.isTablet(context) ? 18 : 16,
+              ),
+            ),
           ),
         ),
       ),
