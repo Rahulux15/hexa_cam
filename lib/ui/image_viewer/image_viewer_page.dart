@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -46,6 +47,8 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
   final bool _mirror = false;
   Timer? _annotationSaveDebounce;
   Timer? _imageMetaSaveDebounce;
+  Timer? _videoProgressTimer;
+  bool _videoSaveInProgress = false;
   final GlobalKey<ViewerScreenState> _viewerKey =
       GlobalKey<ViewerScreenState>();
 
@@ -97,6 +100,7 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
 
   Future<void> _initVideoController(String source) async {
     _videoController?.dispose();
+    _videoProgressTimer?.cancel();
     try {
       late final VideoPlayerController controller;
       if (!kIsWeb &&
@@ -114,8 +118,11 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
       await controller.initialize();
       controller.setLooping(true);
       await controller.setVolume(0);
+      controller.addListener(_onVideoControllerChanged);
       unawaited(controller.play());
+      _startVideoProgressTimer();
       if (!mounted) {
+        controller.removeListener(_onVideoControllerChanged);
         controller.dispose();
         return;
       }
@@ -130,6 +137,8 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
   void dispose() {
     _annotationSaveDebounce?.cancel();
     _imageMetaSaveDebounce?.cancel();
+    _videoProgressTimer?.cancel();
+    _videoController?.removeListener(_onVideoControllerChanged);
     _videoController?.dispose();
     super.dispose();
   }
@@ -216,6 +225,13 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
                 onDeleteOrClear: _confirmDeleteOrClear,
               ),
             ),
+            if (isVideo)
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                child: _buildVideoFooter(context),
+              ),
           ],
         ),
       ),
@@ -351,7 +367,11 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
                     Navigator.of(sheetCtx).pop();
                     WidgetsBinding.instance.addPostFrameCallback((_) {
                       if (!mounted) return;
-                      _showMessage('Preparing download…', AppTheme.success);
+                      if (_image?.type == MediaType.video) {
+                        _startVideoSaveToast();
+                      } else {
+                        _showMessage('Saving image…', AppTheme.success);
+                      }
                       unawaited(_saveToGalleryWithMarks());
                     });
                   },
@@ -373,7 +393,15 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
                 ),
                 const SizedBox(height: 16),
                 TextButton(
-                  onPressed: () => Navigator.of(sheetCtx).maybePop(),
+                  onPressed: () {
+                    Navigator.of(sheetCtx).maybePop();
+                    if (_videoSaveInProgress) {
+                      _showMessage(
+                        'Video saving in background, will appear shortly',
+                        AppTheme.success,
+                      );
+                    }
+                  },
                   child: const Text(
                     'Cancel',
                     style: TextStyle(
@@ -479,11 +507,13 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
     try {
       var exportDirectToGallery = true;
       if (image.type == MediaType.video) {
+        _videoSaveInProgress = true;
         if (kIsWeb) {
           _showMessage(
             'Video download is not supported in the browser.',
             AppTheme.danger,
           );
+          _videoSaveInProgress = false;
           return;
         }
         var videoPath = image.imageUrl.startsWith('file://')
@@ -563,6 +593,7 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
         final bytes = await _buildStillExportBytes();
         if (bytes == null || bytes.isEmpty) {
           _showMessage('Unable to read image data', AppTheme.danger);
+          _videoSaveInProgress = false;
           return;
         }
         exportDirectToGallery = await FileService.saveToDevice(
@@ -594,11 +625,57 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
                         : 'Image downloaded to Gallery')),
         AppTheme.success,
       );
+      foldersController.update();
     } catch (error) {
       logDebug('ImageViewer save/download media failed: $error');
       if (!mounted) return;
-      _showMessage('Failed to download media', AppTheme.danger);
+      _showMessage(_saveErrorMessage(error), AppTheme.danger);
+      foldersController.update();
+    } finally {
+      _videoSaveInProgress = false;
     }
+  }
+
+  Future<int> _estimateVideoSaveEtaSeconds(ImageData image) async {
+    final path = image.imageUrl.startsWith('file://')
+        ? image.imageUrl.replaceFirst('file://', '')
+        : image.imageUrl;
+    try {
+      final file = File(path);
+      final sizeBytes = await file.length();
+      final mb = sizeBytes / (1024 * 1024);
+      final baseSpeedMbps = 8.0;
+      final burnPenalty = _syncedAnnotations().isNotEmpty ? 1.4 : 1.0;
+      final watermarkPenalty = await ExportPrefs.watermarkEnabled() ? 1.15 : 1.0;
+      final estimatedSeconds =
+          (mb / baseSpeedMbps * burnPenalty * watermarkPenalty).ceil();
+      return estimatedSeconds.clamp(5, 180);
+    } catch (_) {
+      return 10;
+    }
+  }
+
+  void _startVideoSaveToast() {
+    final image = _image;
+    if (image == null) return;
+    unawaited(() async {
+      final eta = await _estimateVideoSaveEtaSeconds(image);
+      if (!mounted) return;
+      _showMessage('Saving video… ETA ${eta}s', AppTheme.success);
+    }());
+  }
+
+  String _saveErrorMessage(Object error) {
+    final text = error.toString().toLowerCase();
+    if (text.contains('permission') ||
+        text.contains('denied') ||
+        text.contains('operation not permitted')) {
+      return 'Save failed: storage permission is missing or denied.';
+    }
+    if (text.contains('space') || text.contains('no such file')) {
+      return 'Save failed: storage path is unavailable.';
+    }
+    return 'Failed to save media. Please try again.';
   }
 
   Future<void> _openGenerateReportFlow() async {
@@ -1012,40 +1089,191 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
     if (controller == null || !controller.value.isInitialized) {
       return _placeholder();
     }
-    return Stack(
-      alignment: Alignment.center,
-      children: [
-        AspectRatio(
-          aspectRatio: controller.value.aspectRatio,
-          child: VideoPlayer(controller),
-        ),
-        GestureDetector(
-          onTap: () {
-            if (controller.value.isPlaying) {
-              controller.pause();
-            } else {
-              controller.play();
-            }
-            setState(() {});
-          },
-          child: Container(
-            width: 72,
-            height: 72,
-            decoration: BoxDecoration(
-              color: Colors.black.withValues(alpha: 0.35),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(
-              controller.value.isPlaying
-                  ? Icons.pause_rounded
-                  : Icons.play_arrow_rounded,
-              color: Colors.white,
-              size: 42,
-            ),
-          ),
-        ),
-      ],
+    return AspectRatio(
+      aspectRatio: controller.value.aspectRatio,
+      child: VideoPlayer(controller),
     );
+  }
+
+  void _onVideoControllerChanged() {
+    if (!mounted) return;
+    setState(() {});
+  }
+
+  void _startVideoProgressTimer() {
+    _videoProgressTimer?.cancel();
+    _videoProgressTimer = Timer.periodic(const Duration(milliseconds: 500), (_) {
+      if (!mounted || _videoController == null) return;
+      setState(() {});
+    });
+  }
+
+  Widget _buildVideoFooter(BuildContext context) {
+    final controller = _videoController;
+    if (controller == null || !controller.value.isInitialized) {
+      return const SizedBox.shrink();
+    }
+    final position = controller.value.position;
+    final duration = controller.value.duration;
+    final canSeek = duration.inMilliseconds > 0;
+    final totalMs = duration.inMilliseconds <= 0 ? 1 : duration.inMilliseconds;
+    final currentMs = position.inMilliseconds.clamp(0, totalMs).toInt();
+    final currentLabel = _formatVideoDuration(position);
+    final totalLabel = _formatVideoDuration(duration);
+    final bottomPad = MediaQuery.paddingOf(context).bottom;
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(16, 0, 16, 12 + bottomPad),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.45),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+              ),
+              child: Row(
+                children: [
+                  Text(
+                    currentLabel,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: SliderTheme(
+                      data: SliderTheme.of(context).copyWith(
+                        trackHeight: 2.5,
+                        thumbShape: const RoundSliderThumbShape(
+                          enabledThumbRadius: 7,
+                        ),
+                        overlayShape: const RoundSliderOverlayShape(
+                          overlayRadius: 14,
+                        ),
+                      ),
+                      child: Slider(
+                        value: currentMs.toDouble(),
+                        min: 0,
+                        max: totalMs.toDouble(),
+                        onChanged: canSeek
+                            ? (value) async {
+                                await controller.seekTo(
+                                  Duration(milliseconds: value.round()),
+                                );
+                              }
+                            : null,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    totalLabel,
+                    style: const TextStyle(
+                      color: Colors.white70,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                _videoControlButton(
+                  icon: Icons.replay_10_rounded,
+                  size: 52,
+                  onTap: () =>
+                      _seekBy(controller, const Duration(seconds: -10)),
+                ),
+                const SizedBox(width: 14),
+                _videoControlButton(
+                  icon: controller.value.isPlaying
+                      ? Icons.pause_rounded
+                      : Icons.play_arrow_rounded,
+                  size: 62,
+                  onTap: () => _togglePlayback(controller),
+                ),
+                const SizedBox(width: 14),
+                _videoControlButton(
+                  icon: Icons.forward_10_rounded,
+                  size: 52,
+                  onTap: () => _seekBy(controller, const Duration(seconds: 10)),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _seekBy(
+    VideoPlayerController controller,
+    Duration offset,
+  ) async {
+    if (!controller.value.isInitialized) return;
+    final duration = controller.value.duration;
+    final current = controller.value.position;
+    final target = current + offset;
+    final clamped = Duration(
+      milliseconds: target.inMilliseconds.clamp(
+        0,
+        duration.inMilliseconds <= 0 ? 0 : duration.inMilliseconds,
+      ),
+    );
+    await controller.seekTo(clamped);
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _togglePlayback(VideoPlayerController controller) async {
+    if (!controller.value.isInitialized) return;
+    try {
+      if (controller.value.isPlaying) {
+        await controller.pause();
+      } else {
+        await controller.play();
+      }
+    } catch (_) {
+      return;
+    }
+    if (mounted) setState(() {});
+  }
+
+  Widget _videoControlButton({
+    required IconData icon,
+    required VoidCallback? onTap,
+    double size = 44,
+  }) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Container(
+        width: size + 10,
+        height: size + 10,
+        padding: const EdgeInsets.all(5),
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: Colors.black.withValues(alpha: 0.45),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
+        ),
+        child: Icon(icon, color: Colors.white, size: size * 0.5),
+      ),
+    );
+  }
+
+  String _formatVideoDuration(Duration duration) {
+    final totalSeconds = duration.inSeconds;
+    final minutes = totalSeconds ~/ 60;
+    final seconds = totalSeconds % 60;
+    return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
   }
 
   Widget _buildImageSource(String source) {

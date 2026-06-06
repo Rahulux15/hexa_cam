@@ -49,6 +49,7 @@ class _FoldersPageState extends State<FoldersPage> {
             .where((folder) =>
                 folder.name.toLowerCase().contains(_searchQuery.toLowerCase()))
             .toList();
+    final displayFolders = filtered.reversed.toList();
     final totalImages =
         folders.fold<int>(0, (sum, folder) => sum + folder.imageCount);
     final totalVideos =
@@ -142,7 +143,7 @@ class _FoldersPageState extends State<FoldersPage> {
                             videos: totalVideos,
                             reports: totalReports),
                         SizedBox(height: isTab ? 12 : 10),
-                        if (filtered.isEmpty)
+                        if (displayFolders.isEmpty)
                           Container(
                             width: double.infinity,
                             padding:
@@ -175,7 +176,8 @@ class _FoldersPageState extends State<FoldersPage> {
                                     .map((entry) => SizedBox(
                                           width: itemWidth,
                                           child: _buildFolderCard(
-                                              entry.value, entry.key),
+                                              displayFolders[entry.key],
+                                              entry.key),
                                         ))
                                     .toList(),
                               );

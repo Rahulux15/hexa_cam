@@ -63,6 +63,8 @@ class _FolderDetailPageState extends State<FolderDetailPage> {
     final isTab = Responsive.isTablet(context);
     final pad = Responsive.pagePadding(context);
     final contentMaxWidth = Responsive.contentMaxWidth(context);
+    final images = folder.images.reversed.toList();
+    final reports = folder.reports?.reversed.toList() ?? const <ReportData>[];
 
     return Scaffold(
       body: Container(
@@ -167,7 +169,7 @@ class _FolderDetailPageState extends State<FolderDetailPage> {
                   child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        if (folder.images.isEmpty)
+                        if (images.isEmpty)
                           Container(
                             height: isTab ? 320 : 240,
                             width: double.infinity,
@@ -183,15 +185,14 @@ class _FolderDetailPageState extends State<FolderDetailPage> {
                           Wrap(
                             spacing: isTab ? 22 : 16,
                             runSpacing: isTab ? 22 : 16,
-                            children: folder.images
+                            children: images
                                 .map((image) =>
                                     _buildMediaCard(image, contentMaxWidth))
                                 .toList(),
                           )
                         else
-                          ...folder.images.map(_buildMediaListCard),
-                        if (folder.reports != null &&
-                            folder.reports!.isNotEmpty) ...[
+                          ...images.map(_buildMediaListCard),
+                        if (reports.isNotEmpty) ...[
                           SizedBox(height: isTab ? 34 : 28),
                           Text('Reports',
                               style: TextStyle(
@@ -199,7 +200,7 @@ class _FolderDetailPageState extends State<FolderDetailPage> {
                                   fontSize: isTab ? 22 : 18,
                                   fontWeight: FontWeight.w700)),
                           SizedBox(height: isTab ? 14 : 12),
-                          ...folder.reports!.map((report) => GestureDetector(
+                          ...reports.map((report) => GestureDetector(
                                 onTap: () => _onReportTap(report),
                                 onLongPressStart: (_) => _queueReportSelection(report),
                                 onLongPressEnd: (_) => _longPressTimer?.cancel(),
