@@ -74,7 +74,6 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
   bool _useFourByThreeViewport = true;
   bool _awaitingCalibrationLine = false;
   bool _stampEnabled = false;
-  bool _videoSaveInProgress = false;
   bool _eraserMode = false;
   bool _moveMode = false;
   String _calibrationUnit = 'μm';
@@ -3661,7 +3660,6 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
   }) async {
     try {
       if (mounted && isVideo) {
-        _videoSaveInProgress = true;
         _showMessage(
           'Saving video… ETA ${_estimateVideoSaveEtaSeconds(sourcePath)}s',
           backgroundColor: AppTheme.primary,
@@ -3914,7 +3912,6 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
       _showMessage(_saveErrorMessage(error), backgroundColor: AppTheme.danger);
       return null;
     } finally {
-      _videoSaveInProgress = false;
     }
   }
 
